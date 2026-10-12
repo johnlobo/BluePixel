@@ -4,6 +4,9 @@
 #include <string.h>
 #include "z80.h"
 #include "cpc.h"
+#include "cpc_keys.h"
+#include "dsk.h"
+#include "fdc.h"
 
 static uint8_t mem[65536];
 static int done;
@@ -69,21 +72,29 @@ static void load_roms(CPC *c, const char *dir, CPCModel m) {
 }
 
 static int run_boot(int argc, char **argv) {
-    CPCModel m = CPC_MODEL_6128; const char *roms = "roms", *out = "frame.bmp"; int frames = 150;
+    CPCModel m = CPC_MODEL_6128; const char *roms = "roms", *out = "frame.bmp"; int frames = 150, wait = 100; const char *disc = NULL, *typed = NULL;
     for (int i = 0; i < argc; i++) {
         if (!strcmp(argv[i], "--model") && i + 1 < argc) { const char *v = argv[++i]; m = !strcmp(v, "464") ? CPC_MODEL_464 : !strcmp(v, "664") ? CPC_MODEL_664 : CPC_MODEL_6128; }
         else if (!strcmp(argv[i], "--roms") && i + 1 < argc) roms = argv[++i];
         else if (!strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
+        else if (!strcmp(argv[i], "--disc") && i + 1 < argc) disc = argv[++i];
+        else if (!strcmp(argv[i], "--type") && i + 1 < argc) typed = argv[++i];
+        else if (!strcmp(argv[i], "--wait") && i + 1 < argc) wait = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
     }
     CPC *c = cpc_create(m); load_roms(c, roms, m); cpc_reset(c, true);
-    for (int i = 0; i < frames; i++) cpc_run_frame(c);
+    if (disc) { CPCDisc *d = dsk_load_file(disc); if (!d) fprintf(stderr, "cannot load %s\n", disc); else { fdc_insert(c->fdc, 0, d); } }
+    for (int i = 0; i < frames; i++) {
+        if (typed && i == wait) { char *t = strdup(typed); for (char *p = t; *p; p++) if (*p == '~') *p = '\n'; cpc_autotype(c, t); free(t); }
+        cpc_run_frame(c);
+    }
     write_bmp(out, cpc_frame(c), CPC_SCREEN_W, CPC_SCREEN_H);
     printf("frames=%llu pc=%04x cycles=%llu\n", (unsigned long long)c->frames, c->z80.pc, (unsigned long long)c->cycles);
     cpc_destroy(c); return 0;
 }
 
 int main(int argc, char **argv) {
+    if (argc >= 3 && !strcmp(argv[1], "newdisc")) { CPCDisc *d = dsk_new(); dsk_format(d, DSK_FORMAT_DATA, 40, 1); d->extended = false; bool ok = dsk_save_file(d, argv[2]); dsk_free(d); return ok ? 0 : 1; }
     if (argc >= 2 && !strcmp(argv[1], "boot")) return run_boot(argc - 2, argv + 2);
     if (argc >= 3 && !strcmp(argv[1], "zex")) return run_zex(argv[2]);
     fprintf(stderr, "usage: cpcrun zex <file.com>\n");

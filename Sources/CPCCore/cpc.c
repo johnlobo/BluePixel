@@ -1,6 +1,7 @@
 #include "cpc.h"
 #include "fdc.h"
 #include "tape.h"
+#include "cpc_keys.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -433,6 +434,7 @@ int cpc_step(CPC *c) {
 void cpc_run_frame(CPC *c) {
     uint64_t start = c->cycles;
     c->frame_ready = false;
+    cpc_autotype_tick(c);
     while (!c->frame_ready && c->cycles - start < 40000) {
         cpc_step(c);
         if (c->z80.brk_hit) return;
