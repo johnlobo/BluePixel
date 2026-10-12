@@ -2,11 +2,13 @@
 #include "fdc.h"
 #include "tape.h"
 #include "cpc_keys.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define RAM_MAX (576 * 1024)
 #define AUDIO_CAP 16384
+#define SPRITE_PIXEL_W 4
 
 /* Hardware colour number (0..31) to RGB */
 static const uint32_t hw_colours[32] = {
@@ -101,9 +103,15 @@ void cpc_update_mapping(CPC *c) {
         if (phys + 16384 > c->ram_size) phys %= c->ram_size;
         c->wr_map[i] = c->rd_map[i] = c->ram + phys;
     }
-    if (c->lower_rom_en && c->rom_lower) c->rd_map[0] = c->rom_lower;
+    bool cart = c->cfg.plus && c->cartridge;
+    if (c->lower_rom_en) {
+        if (cart) { int b = c->asic.cart_bank; if (b < 32) c->rd_map[c->asic.lower_base] = c->cartridge + (size_t)b * 16384; }
+        else if (c->rom_lower) c->rd_map[0] = c->rom_lower;
+    }
     if (c->upper_rom_en) {
-        uint8_t *u = c->rom_upper[c->upper_rom_sel & 31];
+        uint8_t sel = c->upper_rom_sel;
+        uint8_t *u = sel < 32 ? c->rom_upper[sel] : NULL;
+        if (!u && cart) { int b = sel >= 0x80 ? (sel & 0x1F) : (sel == 7 ? 3 : 1); u = c->cartridge + (size_t)b * 16384; }
         if (!u) u = c->rom_upper[0];
         if (u) c->rd_map[3] = u;
     }
@@ -119,6 +127,7 @@ void cpc_reset(CPC *c, bool cold) {
     for (int i = 0; i < 17; i++) c->ga_palette[i] = 20;
     c->ga_irq_counter = 0; c->ga_vsync_delay = 0; c->irq_line = false;
     crtc_reset(&c->crtc, c->cfg.type);
+    asic_reset(c);
     c->beam_x = 0; c->beam_y = -37; c->beam_vsync = false;
     c->ppi_a = c->ppi_b = c->ppi_c = 0; c->ppi_ctl = 0x9B; c->psg_ctl = 0;
     memset(c->kbd, 0xFF, sizeof c->kbd);
@@ -128,8 +137,16 @@ void cpc_reset(CPC *c, bool cold) {
     cpc_update_mapping(c);
 }
 
-uint8_t cpc_mem_read(void *ctx, uint16_t a) { CPC *c = ctx; return c->rd_map[a >> 14][a & 0x3FFF]; }
-void cpc_mem_write(void *ctx, uint16_t a, uint8_t v) { CPC *c = ctx; c->wr_map[a >> 14][a & 0x3FFF] = v; }
+uint8_t cpc_mem_read(void *ctx, uint16_t a) {
+    CPC *c = ctx;
+    if (__builtin_expect(c->asic.page_visible, 0) && (a & 0xC000) == 0x4000) return asic_read(c, a & 0x3FFF);
+    return c->rd_map[a >> 14][a & 0x3FFF];
+}
+void cpc_mem_write(void *ctx, uint16_t a, uint8_t v) {
+    CPC *c = ctx;
+    if (__builtin_expect(c->asic.page_visible, 0) && (a & 0xC000) == 0x4000) { asic_write(c, a & 0x3FFF, v); return; }
+    c->wr_map[a >> 14][a & 0x3FFF] = v;
+}
 uint8_t cpc_peek(CPC *c, uint16_t a) { return cpc_mem_read(c, a); }
 void cpc_poke(CPC *c, uint16_t a, uint8_t v) { cpc_mem_write(c, a, v); }
 
@@ -157,7 +174,7 @@ static uint8_t crtc_read(CPC *c, int func) {
 
 static void crtc_write(CPC *c, int func, uint8_t v) {
     CPCCrtc *k = &c->crtc;
-    if (func == 0) k->sel = v & 31;
+    if (func == 0) { k->sel = v & 31; asic_unlock_feed(c, v); }
     else if (func == 1) {
         static const uint8_t mask[18] = {255, 255, 255, 255, 127, 31, 127, 127, 255, 31, 127, 31, 63, 255, 63, 255, 63, 255};
         int r = k->sel;
@@ -169,8 +186,9 @@ static void crtc_write(CPC *c, int func, uint8_t v) {
 static void ga_write(CPC *c, uint8_t v) {
     switch (v >> 6) {
     case 0: c->ga_pen = (v & 0x10) ? 16 : (v & 0x0F); break;
-    case 1: c->ga_palette[c->ga_pen] = v & 0x1F; break;
+    case 1: c->ga_palette[c->ga_pen] = v & 0x1F; if (c->cfg.plus) asic_ga_palette(c, c->ga_pen, v & 0x1F); break;
     case 2:
+        if ((v & 0xE0) == 0xA0 && c->cfg.plus && c->asic.unlocked) { asic_rmr2(c, v); break; }
         c->ga_mode = v & 3;
         c->lower_rom_en = !(v & 4); c->upper_rom_en = !(v & 8);
         if (v & 0x10) { c->ga_irq_counter = 0; c->irq_line = false; }
@@ -233,8 +251,10 @@ static void ppi_write(CPC *c, int func, uint8_t v) {
 }
 
 /* ---------------- I/O decode ---------------- */
+int cpc_trace_io;
 void cpc_io_write(void *ctx, uint16_t port, uint8_t v) {
     CPC *c = ctx;
+    if (cpc_trace_io) fprintf(stderr, "OUT %04X,%02X  pc=%04X\n", port, v, c->z80.pc);
     if ((port & 0xC000) == 0x4000) ga_write(c, v);
     if (!(port & 0x8000) && (v & 0xC0) == 0xC0 && (port & 0xC000) != 0x4000) { c->ga_ram = v; cpc_update_mapping(c); }
     else if (!(port & 0x8000) && (v & 0xC0) == 0xC0) { c->ga_ram = v; cpc_update_mapping(c); }
@@ -273,25 +293,38 @@ void cpc_joystick(CPC *c, int bit, bool down) {
 }
 
 /* ---------------- Video ---------------- */
-static inline void put_px(CPC *c, int n, uint32_t rgb) {
-    int x = c->beam_x, y = c->beam_y;
-    if (y < 0 || y >= CPC_SCREEN_H) return;
-    uint32_t *row = c->frame + (size_t)y * CPC_SCREEN_W;
-    for (int i = 0; i < n; i++, x++) if ((unsigned)x < CPC_SCREEN_W) row[x] = rgb;
+static inline void put_row16(CPC *c, const uint32_t *px) {
+    int y = c->beam_y, x = c->beam_x;
+    if (y >= 0 && y < CPC_SCREEN_H) {
+        uint32_t *row = c->frame + (size_t)y * CPC_SCREEN_W;
+        for (int i = 0; i < 16; i++, x++) if ((unsigned)x < CPC_SCREEN_W) row[x] = px[i];
+    }
+    c->beam_x += 16;
 }
 
+static inline uint32_t pen_rgb(CPC *c, int pen) { return c->cfg.plus ? c->asic.pal_rgb[pen] : c->hw_rgb[c->ga_palette[pen] & 31]; }
+
 static void emit_char(CPC *c, bool de, uint16_t ma, uint16_t ra) {
-    int y = c->beam_y;
-    if (y < 0 || y >= CPC_SCREEN_H || c->beam_x >= CPC_SCREEN_W) { c->beam_x += 16; return; }
+    uint32_t px[16];
+    CPCAsic *a = &c->asic;
+    bool plus = c->cfg.plus && a->unlocked;
+    if (c->crtc.hcc == 0) c->disp_x0 = c->beam_x;
+    if (c->beam_x >= CPC_SCREEN_W + 16 || c->beam_y < 0 || c->beam_y >= CPC_SCREEN_H) { c->beam_x += 16; if (!de) c->scroll_valid = false; return; }
     if (!de) {
-        uint32_t rgb = c->hw_rgb[c->ga_palette[16] & 31];
-        put_px(c, 16, rgb);
-        c->beam_x += 16;
+        uint32_t rgb = pen_rgb(c, 16);
+        for (int i = 0; i < 16; i++) px[i] = rgb;
+        c->scroll_valid = false;
+        put_row16(c, px);
         return;
     }
-    uint32_t addr = ((ma & 0x3000) << 2) | ((ra & 7) << 11) | ((ma & 0x3FF) << 1);
-    uint8_t b0 = c->ram[addr], b1 = c->ram[addr + 1];
-    uint8_t bytes[2] = {b0, b1};
+    int ra_eff = ra; uint16_t ma_eff = ma;
+    if (plus && (a->sscr & 0x70)) {
+        ra_eff += (a->sscr >> 4) & 7;
+        if (ra_eff >= 8) { ra_eff -= 8; ma_eff = (uint16_t)(ma + c->crtc.r[1]); }
+    }
+    uint32_t addr = ((ma_eff & 0x3000) << 2) | ((ra_eff & 7) << 11) | ((ma_eff & 0x3FF) << 1);
+    uint8_t bytes[2] = {c->ram[addr], c->ram[addr + 1]};
+    int o = 0;
     for (int k = 0; k < 2; k++) {
         uint8_t b = bytes[k];
         switch (c->ga_mode) {
@@ -299,20 +332,49 @@ static void emit_char(CPC *c, bool de, uint16_t ma, uint16_t ra) {
             for (int p = 0; p < 2; p++) {
                 int pen = p == 0 ? (((b >> 7) & 1) | (((b >> 5) & 1) << 1) | (((b >> 3) & 1) << 2) | (((b >> 1) & 1) << 3))
                                  : (((b >> 6) & 1) | (((b >> 4) & 1) << 1) | (((b >> 2) & 1) << 2) | (((b >> 0) & 1) << 3));
-                put_px(c, 4, c->hw_rgb[c->ga_palette[pen] & 31]); c->beam_x += 4;
+                uint32_t rgb = pen_rgb(c, pen); for (int i = 0; i < 4; i++) px[o++] = rgb;
             }
             break;
         case 1:
             for (int p = 0; p < 4; p++) {
                 int pen = ((b >> (7 - p)) & 1) | (((b >> (3 - p)) & 1) << 1);
-                put_px(c, 2, c->hw_rgb[c->ga_palette[pen] & 31]); c->beam_x += 2;
+                uint32_t rgb = pen_rgb(c, pen); px[o++] = rgb; px[o++] = rgb;
             }
             break;
         default:
-            for (int p = 0; p < 8; p++) {
-                int pen = (b >> (7 - p)) & 1;
-                put_px(c, 1, c->hw_rgb[c->ga_palette[pen] & 31]); c->beam_x += 1;
-            }
+            for (int p = 0; p < 8; p++) px[o++] = pen_rgb(c, (b >> (7 - p)) & 1);
+        }
+    }
+    int hs = plus ? (a->sscr & 15) : 0;
+    if (hs) {
+        uint32_t out[16];
+        for (int i = 0; i < hs; i++) out[i] = c->scroll_valid ? c->scroll_carry[16 - hs + i] : pen_rgb(c, 16);
+        for (int i = hs; i < 16; i++) out[i] = px[i - hs];
+        for (int i = 0; i < hs; i++) c->scroll_carry[16 - hs + i] = px[16 - hs + i];
+        c->scroll_valid = true;
+        put_row16(c, out);
+    } else put_row16(c, px);
+}
+
+/* Hardware sprites, composited over the finished scanline `line` (CRTC line since frame start) into buffer row y. */
+static void draw_sprites_line(CPC *c, int line, int y) {
+    CPCAsic *a = &c->asic;
+    if (y < 0 || y >= CPC_SCREEN_H) return;
+    uint32_t *row = c->frame + (size_t)y * CPC_SCREEN_W;
+    for (int n = 15; n >= 0; n--) {
+        const uint8_t *at = a->ram + 0x2000 + n * 8;
+        int magx = at[4] & 3, magy = (at[4] >> 2) & 3;
+        if (!magx || !magy) continue;
+        int sx = (int16_t)(at[0] | (at[1] << 8)), sy = (int16_t)(at[2] | (at[3] << 8));
+        int mx = magx == 3 ? 4 : magx, my = magy == 3 ? 4 : magy;
+        int dy = line - sy;
+        if (dy < 0 || dy >= 16 * my) continue;
+        const uint8_t *pix = a->ram + n * 256 + (dy / my) * 16;
+        for (int px = 0; px < 16; px++) {
+            int pen = pix[px] & 15;
+            if (!pen) continue;
+            int x0 = c->disp_x0 + (sx + px * mx) * SPRITE_PIXEL_W;
+            for (int k = 0; k < mx * SPRITE_PIXEL_W; k++) { int x = x0 + k; if ((unsigned)x < CPC_SCREEN_W) row[x] = a->spal_rgb[pen]; }
         }
     }
 }
@@ -327,8 +389,11 @@ static void ga_hsync_end(CPC *c) {
     } else if (c->ga_irq_counter >= 52) {
         c->ga_irq_counter = 0; c->irq_line = true;
     }
+    if (c->irq_line && c->cfg.plus) c->z80.int_vector = c->asic.unlocked ? ((c->asic.ivr & 0xF8) | 6) : 0xFF;
+    if (c->cfg.plus && c->asic.unlocked) draw_sprites_line(c, c->frame_line, c->beam_y);
     c->beam_x = 0;
     c->beam_y++;
+    asic_line(c);
 }
 
 static void frame_flyback(CPC *c) {
@@ -363,6 +428,9 @@ void cpc_video_tick(CPC *c) {
             k->vcc = 0; k->vlc = 0; k->in_adjust = false;
             k->ma_start = ((k->r[12] << 8) | k->r[13]) & 0x3FFF; k->ma_row = k->ma_start;
         }
+        c->frame_line = new_frame ? 0 : c->frame_line + 1;
+        if (c->cfg.plus && c->asic.unlocked && c->asic.splt && !k->in_adjust && (k->vlc & 7) == 0 && k->vcc * (k->r[9] + 1) + k->vlc == c->asic.splt)
+            k->ma_row = c->asic.ssa & 0x3FFF;
         k->vde = !k->in_adjust && k->vcc < k->r[6];
         if (k->vsync) {
             uint8_t vw = k->r[3] >> 4; if (!vw) vw = 16;

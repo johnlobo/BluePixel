@@ -116,22 +116,68 @@ static int run_snaptest(const char *roms, const char *dir) {
     cpc_destroy(c); return 0;
 }
 
+static uint8_t dis_peek(void *ctx, uint16_t a) { return ((uint8_t *)ctx)[a]; }
+static int run_dis(const char *file, uint32_t off, uint32_t base, int count) {
+    size_t n; uint8_t *b = slurp(file, &n); if (!b) return 1;
+    uint8_t *buf = calloc(1, 65536 + 4); memcpy(buf + base, b + off, n - off > 65536 - base ? 65536 - base : n - off);
+    uint16_t pc = (uint16_t)base;
+    for (int i = 0; i < count; i++) { char t[64]; int l = z80_disassemble(pc, dis_peek, buf, t, sizeof t); printf("%04X  ", pc); for (int k = 0; k < 4; k++) if (k < l) printf("%02X ", buf[(uint16_t)(pc + k)]); else printf("   "); printf(" %s\n", t); pc += l; }
+    return 0;
+}
+
 static int run_boot(int argc, char **argv) {
-    CPCModel m = CPC_MODEL_6128; const char *roms = "roms", *out = "frame.bmp"; int frames = 150, wait = 100; const char *disc = NULL, *typed = NULL;
+    CPCModel m = CPC_MODEL_6128; const char *roms = "roms", *out = "frame.bmp"; int frames = 150, wait = 100; const char *disc = NULL, *typed = NULL, *cart = NULL; int fkey = -1;
     for (int i = 0; i < argc; i++) {
         if (!strcmp(argv[i], "--model") && i + 1 < argc) { const char *v = argv[++i]; m = !strcmp(v, "464") ? CPC_MODEL_464 : !strcmp(v, "664") ? CPC_MODEL_664 : CPC_MODEL_6128; }
         else if (!strcmp(argv[i], "--roms") && i + 1 < argc) roms = argv[++i];
         else if (!strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
+        else if (!strcmp(argv[i], "--fkey") && i + 1 < argc) fkey = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--cart") && i + 1 < argc) cart = argv[++i];
         else if (!strcmp(argv[i], "--disc") && i + 1 < argc) disc = argv[++i];
         else if (!strcmp(argv[i], "--type") && i + 1 < argc) typed = argv[++i];
         else if (!strcmp(argv[i], "--wait") && i + 1 < argc) wait = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
     }
-    CPC *c = cpc_create(m); load_roms(c, roms, m); cpc_reset(c, true);
+    CPC *c = cpc_create(cart ? CPC_MODEL_6128PLUS : m);
+    if (cart) { CPCConfig cfg; cpc_default_config(&cfg, CPC_MODEL_6128PLUS); cfg.ram_kb = 128; cpc_configure(c, &cfg); size_t n; uint8_t *b = slurp(cart, &n); if (!b || !cpc_load_cartridge(c, b, n)) { fprintf(stderr, "bad cartridge\n"); return 1; } free(b); }
+    else load_roms(c, roms, m);
+    cpc_reset(c, true);
     if (disc) { CPCDisc *d = dsk_load_file(disc); if (!d) fprintf(stderr, "cannot load %s\n", disc); else { fdc_insert(c->fdc, 0, d); } }
     for (int i = 0; i < frames; i++) {
         if (typed && i == wait) { char *t = strdup(typed); for (char *p = t; *p; p++) if (*p == '~') *p = '\n'; cpc_autotype(c, t); free(t); }
+        if (i == wait - 1 && getenv("IOLOG")) { extern int cpc_trace_io; cpc_trace_io = 1; }
+        if (fkey >= 0) { static const int fk[10] = {CPCK_F0, CPCK_F1, CPCK_F2, CPCK_F3, CPCK_F4, CPCK_F5, CPCK_F6, CPCK_F7, CPCK_F8, CPCK_F9};
+            if (i == wait) cpc_key(c, fk[fkey], true); if (i == wait + 8) cpc_key(c, fk[fkey], false); }
+        if (getenv("TRACEAT") && i >= wait) {
+            unsigned at = strtoul(getenv("TRACEAT"), 0, 16); int n = getenv("TRACEN") ? atoi(getenv("TRACEN")) : 200; uint64_t start = c->cycles; bool on = false;
+            while (c->cycles - start < 19968 * 60) {
+                if (!on && c->z80.pc == at) on = true;
+                if (on) { char t[64]; z80_disassemble(c->z80.pc, (uint8_t (*)(void *, uint16_t))cpc_mem_read, c, t, sizeof t); printf("%04X  %-24s AF=%04X BC=%04X DE=%04X HL=%04X SP=%04X U=%d/%02X L=%d unl=%d\n", c->z80.pc, t, c->z80.af.w, c->z80.bc.w, c->z80.de.w, c->z80.hl.w, c->z80.sp.w, c->upper_rom_en, c->upper_rom_sel, c->lower_rom_en, c->asic.unlocked); if (--n <= 0) return 0; }
+                cpc_step(c);
+            }
+            printf("never reached\n"); return 0;
+        }
+        if (getenv("TRACE0") && i >= wait) {
+            static uint16_t ring[16384]; int rp = 0; uint64_t start = c->cycles;
+            while (c->cycles - start < 19968 * 40) {
+                ring[rp++ & 16383] = c->z80.pc;
+                cpc_step(c);
+                if (c->z80.pc == 0 && c->lower_rom_en) {
+                    for (int k = 0; k < 16384; k++) { uint16_t pc = ring[(rp + k) & 16383]; char t[64]; z80_disassemble(pc, (uint8_t (*)(void *, uint16_t))cpc_mem_read, c, t, sizeof t); printf("%04X  %s\n", pc, t); }
+                    printf("RESET at cycle %llu\n", (unsigned long long)(c->cycles - start)); return 0;
+                }
+            }
+            printf("no reset\n"); return 0;
+        }
         cpc_run_frame(c);
+    }
+    if (getenv("DUMP")) {
+        printf("mode=%d ram=%02X lower=%d upper=%d sel=%02X unl=%d vis=%d rmr2=%02X\n", c->ga_mode, c->ga_ram, c->lower_rom_en, c->upper_rom_en, c->upper_rom_sel, c->asic.unlocked, c->asic.page_visible, c->asic.rmr2);
+        printf("crtc:"); for (int k = 0; k < 18; k++) printf(" %02X", c->crtc.r[k]); printf("\n");
+        printf("pal12:"); for (int k = 0; k < 17; k++) printf(" %03X", c->asic.pal12[k]); printf("\n");
+        printf("ga_pal:"); for (int k = 0; k < 17; k++) printf(" %02X", c->ga_palette[k]); printf("\n");
+        printf("pri=%d splt=%d ssa=%04X sscr=%02X ivr=%02X dcsr=%02X\n", c->asic.pri, c->asic.splt, c->asic.ssa, c->asic.sscr, c->asic.ivr, c->asic.dcsr);
+        printf("asic ram 6400:"); for (int k = 0; k < 40; k++) printf(" %02X", c->asic.ram[0x2400 + k]); printf("\n");
     }
     write_bmp(out, cpc_frame(c), CPC_SCREEN_W, CPC_SCREEN_H);
     printf("frames=%llu pc=%04x cycles=%llu\n", (unsigned long long)c->frames, c->z80.pc, (unsigned long long)c->cycles);
@@ -142,6 +188,7 @@ int main(int argc, char **argv) {
     if (argc >= 3 && !strcmp(argv[1], "newdisc")) { CPCDisc *d = dsk_new(); dsk_format(d, DSK_FORMAT_DATA, 40, 1); d->extended = false; bool ok = dsk_save_file(d, argv[2]); dsk_free(d); return ok ? 0 : 1; }
     if (argc >= 4 && !strcmp(argv[1], "tapetest")) return run_tapetest(argv[2], argv[3]);
     if (argc >= 4 && !strcmp(argv[1], "snaptest")) return run_snaptest(argv[2], argv[3]);
+    if (argc >= 6 && !strcmp(argv[1], "dis")) return run_dis(argv[2], strtoul(argv[3], 0, 0), strtoul(argv[4], 0, 0), atoi(argv[5]));
     if (argc >= 2 && !strcmp(argv[1], "boot")) return run_boot(argc - 2, argv + 2);
     if (argc >= 3 && !strcmp(argv[1], "zex")) return run_zex(argv[2]);
     fprintf(stderr, "usage: cpcrun zex <file.com>\n");

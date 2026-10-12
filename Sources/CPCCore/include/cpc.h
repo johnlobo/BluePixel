@@ -44,7 +44,20 @@ typedef struct {
     float level[3];
 } CPCPsg;
 
-typedef struct { bool lines_active; } CPCDummy;
+typedef struct {
+    bool unlocked; int unlock_pos;
+    bool page_visible;            /* ASIC registers mapped at 0x4000-0x7FFF */
+    uint8_t ram[16384];
+    uint8_t rmr2;                 /* last RMR2 write */
+    uint8_t lower_base;           /* 0: 0000, 1: 4000, 2: 8000 */
+    uint8_t cart_bank;            /* cartridge bank mapped as lower ROM */
+    uint8_t pri, splt, ivr, sscr, dcsr, icsr;
+    uint16_t ssa;
+    struct { uint16_t addr, loop_addr; uint8_t prescale; uint16_t pause, loop_cnt; int tick; bool stopped; } dma[3];
+    uint32_t pal_rgb[17];         /* current display colours for pens 0..15 and border */
+    uint32_t spal_rgb[16];
+    uint16_t pal12[17];
+} CPCAsic;
 
 typedef struct CPC CPC;
 
@@ -86,6 +99,7 @@ struct CPC {
     uint8_t upper_rom_sel, ram_config;
     uint8_t dummy_rom[16384];
 
+    CPCAsic asic;
     /* Gate array */
     uint8_t ga_pen, ga_mode, ga_ram;
     uint8_t ga_palette[17];        /* hardware colour 0..31 */
@@ -97,6 +111,8 @@ struct CPC {
     /* CRTC / beam */
     CPCCrtc crtc;
     int beam_x, beam_y;            /* pixel / line within visible area */
+    int frame_line, disp_x0;       /* CRTC line since frame start; beam x of display char 0 */
+    uint32_t scroll_carry[16]; bool scroll_valid;
     int beam_line;                 /* signed line counter since vsync */
     bool beam_vsync;
     int vsync_lines;
@@ -176,6 +192,17 @@ void psg_reset(CPCPsg *p);
 void psg_write_reg(CPCPsg *p, uint8_t reg, uint8_t v);
 void psg_tick(CPCPsg *p);
 void psg_mix(const CPCPsg *p, float *l, float *r, bool stereo);
+
+/* ASIC (Amstrad Plus) */
+void asic_reset(CPC *c);
+void asic_unlock_feed(CPC *c, uint8_t v);
+void asic_rmr2(CPC *c, uint8_t v);
+uint8_t asic_read(CPC *c, uint16_t off);
+void asic_write(CPC *c, uint16_t off, uint8_t v);
+void asic_ga_palette(CPC *c, int pen, uint8_t hw);
+void asic_line(CPC *c);        /* once per scanline (hsync end) */
+
+void cpc_remove_cartridge(CPC *c);
 
 /* internal */
 void cpc_update_mapping(CPC *c);
