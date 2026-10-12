@@ -63,7 +63,7 @@ void cpc_destroy(CPC *c) {
     if (!c) return;
     for (int i = 0; i < 32; i++) free(c->rom_upper[i]);
     free(c->rom_lower); free(c->rom_multiface); free(c->cartridge);
-    free(c->ram); free(c->frame); free(c->frame_done); free(c->audio);
+    free(c->rec_buf); tape_free(c->tape); free(c->ram); free(c->frame); free(c->frame_done); free(c->audio);
     fdc_destroy(c->fdc);
     free(c);
 }
@@ -417,6 +417,33 @@ int cpc_audio_read(CPC *c, float *out, int frames) {
     return n;
 }
 
+/* ---------------- Tape recording ---------------- */
+void cpc_tape_record_start(CPC *c) { free(c->rec_buf); c->rec_buf = NULL; c->rec_len = c->rec_cap = 0; c->rec_phase = 0; c->rec_active = true; }
+
+static void rec_tick(CPC *c) {
+    if (!c->rec_active || !c->tape_motor) return;
+    c->rec_phase += 44100;
+    if (c->rec_phase < 1000000) return;
+    c->rec_phase -= 1000000;
+    if (c->rec_len == c->rec_cap) { c->rec_cap = c->rec_cap ? c->rec_cap * 2 : 1 << 20; c->rec_buf = realloc(c->rec_buf, c->rec_cap); }
+    c->rec_buf[c->rec_len++] = c->tape_write_bit ? 0xC0 : 0x40;
+}
+
+uint8_t *cpc_tape_record_stop(CPC *c, size_t *size) {
+    c->rec_active = false;
+    size_t n = c->rec_len, total = 44 + n;
+    uint8_t *o = malloc(total);
+    memcpy(o, "RIFF", 4); uint32_t v = (uint32_t)(total - 8); memcpy(o + 4, &v, 4);
+    memcpy(o + 8, "WAVEfmt ", 8); v = 16; memcpy(o + 16, &v, 4);
+    uint16_t h = 1; memcpy(o + 20, &h, 2); memcpy(o + 22, &h, 2);
+    v = 44100; memcpy(o + 24, &v, 4); memcpy(o + 28, &v, 4);
+    h = 1; memcpy(o + 32, &h, 2); h = 8; memcpy(o + 34, &h, 2);
+    memcpy(o + 36, "data", 4); v = (uint32_t)n; memcpy(o + 40, &v, 4);
+    memcpy(o + 44, c->rec_buf, n);
+    free(c->rec_buf); c->rec_buf = NULL; c->rec_len = c->rec_cap = 0;
+    *size = total; return o;
+}
+
 /* ---------------- Main loop ---------------- */
 static void advance(CPC *c, int nops) {
     for (int i = 0; i < nops; i++) {
@@ -424,6 +451,7 @@ static void advance(CPC *c, int nops) {
         audio_tick(c);
         fdc_tick(c->fdc, 1);
         tape_tick(c->tape, 1);
+        rec_tick(c);
         c->cycles++;
     }
     c->t_counter += nops;

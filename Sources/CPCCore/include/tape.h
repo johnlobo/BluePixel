@@ -18,4 +18,8 @@ int tape_block_count(const CPCTape *t);
 void tape_seek_block(CPCTape *t, int block);
 bool tape_playing(const CPCTape *t);
 double tape_position_seconds(const CPCTape *t);
+const char *tape_block_info(const CPCTape *t, int i);
+const char *tape_name(const CPCTape *t);
+bool tape_is_audio(const CPCTape *t);
+double tape_length_seconds(const CPCTape *t);
 #endif

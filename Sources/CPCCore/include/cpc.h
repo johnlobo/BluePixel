@@ -127,6 +127,7 @@ struct CPC {
     /* tape */
     CPCTape *tape;
     uint8_t tape_in;
+    bool rec_active; uint8_t *rec_buf; size_t rec_len, rec_cap; int rec_phase;
 
     uint64_t cycles;               /* elapsed microseconds */
     uint64_t t_counter;            /* debugger T counter */
@@ -154,6 +155,10 @@ void cpc_joystick(CPC *c, int bit, bool down);
 const uint32_t *cpc_frame(const CPC *c);
 /* Post-process a frame to 768x540 (or 384x270). `dst` must hold the full output. */
 void cpc_render(const uint32_t *src, uint32_t *dst, bool pal, bool render_both, bool half_size, int brightness);
+
+/* Tape recording (cassette output to WAV bytes) */
+void cpc_tape_record_start(CPC *c);
+uint8_t *cpc_tape_record_stop(CPC *c, size_t *size);   /* caller frees */
 
 /* Audio: returns frames written (stereo interleaved floats) */
 int cpc_audio_read(CPC *c, float *out, int frames);
