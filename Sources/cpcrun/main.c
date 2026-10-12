@@ -8,6 +8,7 @@
 #include "dsk.h"
 #include "fdc.h"
 #include "tape.h"
+#include "snapshot.h"
 
 static uint8_t mem[65536];
 static int done;
@@ -97,6 +98,24 @@ static int run_tapetest(const char *roms, const char *dir) {
     cpc_destroy(c); return 0;
 }
 
+static int run_snaptest(const char *roms, const char *dir) {
+    CPC *c = cpc_create(CPC_MODEL_6128); load_roms(c, roms, CPC_MODEL_6128); cpc_reset(c, true);
+    for (int i = 0; i < 120; i++) cpc_run_frame(c);
+    cpc_autotype(c, "mode 0:for i=0 to 15:pen i,i+1:print i;:next:a$=\"snap ok\"\n");
+    for (int i = 0; i < 600; i++) cpc_run_frame(c);
+    size_t n; uint8_t *snap = cpc_snapshot_save(c, 3, 128, true, &n);
+    printf("snapshot %zu bytes\n", n);
+    cpc_destroy(c);
+    c = cpc_create(CPC_MODEL_6128); load_roms(c, roms, CPC_MODEL_6128); cpc_reset(c, true);
+    if (!cpc_snapshot_load(c, snap, n)) { printf("load failed\n"); return 1; }
+    free(snap);
+    cpc_autotype(c, "print a$\n");
+    for (int i = 0; i < 200; i++) cpc_run_frame(c);
+    char out[1024]; snprintf(out, sizeof out, "%s/snap.bmp", dir);
+    write_bmp(out, cpc_frame(c), CPC_SCREEN_W, CPC_SCREEN_H);
+    cpc_destroy(c); return 0;
+}
+
 static int run_boot(int argc, char **argv) {
     CPCModel m = CPC_MODEL_6128; const char *roms = "roms", *out = "frame.bmp"; int frames = 150, wait = 100; const char *disc = NULL, *typed = NULL;
     for (int i = 0; i < argc; i++) {
@@ -122,6 +141,7 @@ static int run_boot(int argc, char **argv) {
 int main(int argc, char **argv) {
     if (argc >= 3 && !strcmp(argv[1], "newdisc")) { CPCDisc *d = dsk_new(); dsk_format(d, DSK_FORMAT_DATA, 40, 1); d->extended = false; bool ok = dsk_save_file(d, argv[2]); dsk_free(d); return ok ? 0 : 1; }
     if (argc >= 4 && !strcmp(argv[1], "tapetest")) return run_tapetest(argv[2], argv[3]);
+    if (argc >= 4 && !strcmp(argv[1], "snaptest")) return run_snaptest(argv[2], argv[3]);
     if (argc >= 2 && !strcmp(argv[1], "boot")) return run_boot(argc - 2, argv + 2);
     if (argc >= 3 && !strcmp(argv[1], "zex")) return run_zex(argv[2]);
     fprintf(stderr, "usage: cpcrun zex <file.com>\n");

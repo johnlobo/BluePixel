@@ -66,7 +66,7 @@ void cpc_autotype_tick(CPC *c) {
         if (k == CPCK_NONE) continue;
         a->key = k;
         if (a->shift) cpc_key(c, CPCK_SHIFT, true);
-        cpc_key(c, k, true); a->hold = 2; return;
+        cpc_key(c, k, true); a->hold = 3; return;
     }
     a->active = false;
 }
