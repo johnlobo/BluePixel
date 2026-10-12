@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "z80.h"
+#include "cpc.h"
 
 static uint8_t mem[65536];
 static int done;
@@ -36,7 +37,54 @@ static int run_zex(const char *path) {
     return 0;
 }
 
+
+static uint8_t *slurp(const char *path, size_t *n) {
+    FILE *f = fopen(path, "rb"); if (!f) return NULL;
+    fseek(f, 0, SEEK_END); *n = ftell(f); fseek(f, 0, SEEK_SET);
+    uint8_t *b = malloc(*n); if (fread(b, 1, *n, f) != *n) { fclose(f); free(b); return NULL; }
+    fclose(f); return b;
+}
+
+static void write_bmp(const char *path, const uint32_t *px, int w, int h) {
+    FILE *f = fopen(path, "wb"); if (!f) return;
+    int row = w * 3, pad = (4 - row % 4) % 4, size = 54 + (row + pad) * h * 2;
+    uint8_t hdr[54] = {'B', 'M'};
+    *(uint32_t *)(hdr + 2) = size; *(uint32_t *)(hdr + 10) = 54; *(uint32_t *)(hdr + 14) = 40;
+    *(int32_t *)(hdr + 18) = w; *(int32_t *)(hdr + 22) = h * 2; *(uint16_t *)(hdr + 26) = 1; *(uint16_t *)(hdr + 28) = 24;
+    fwrite(hdr, 1, 54, f);
+    for (int y = h * 2 - 1; y >= 0; y--) {
+        for (int x = 0; x < w; x++) { uint32_t p = px[(y / 2) * w + x]; uint8_t bgr[3] = {p & 255, (p >> 8) & 255, (p >> 16) & 255}; fwrite(bgr, 1, 3, f); }
+        for (int i = 0; i < pad; i++) fputc(0, f);
+    }
+    fclose(f);
+}
+
+static void load_roms(CPC *c, const char *dir, CPCModel m) {
+    char p[1024]; size_t n; uint8_t *b;
+    const char *os = m == CPC_MODEL_464 ? "OS464.ROM" : m == CPC_MODEL_664 ? "OS664.ROM" : "OS6128.ROM";
+    const char *basic = m == CPC_MODEL_464 ? "BASIC1-0.ROM" : m == CPC_MODEL_664 ? "BASIC664.ROM" : "BASIC1-1.ROM";
+    snprintf(p, sizeof p, "%s/%s", dir, os); if ((b = slurp(p, &n))) { cpc_load_rom(c, -1, b, n); free(b); } else fprintf(stderr, "missing %s\n", p);
+    snprintf(p, sizeof p, "%s/%s", dir, basic); if ((b = slurp(p, &n))) { cpc_load_rom(c, 0, b, n); free(b); } else fprintf(stderr, "missing %s\n", p);
+    if (m != CPC_MODEL_464) { snprintf(p, sizeof p, "%s/AMSDOS.ROM", dir); if ((b = slurp(p, &n))) { cpc_load_rom(c, 7, b, n); free(b); } }
+}
+
+static int run_boot(int argc, char **argv) {
+    CPCModel m = CPC_MODEL_6128; const char *roms = "roms", *out = "frame.bmp"; int frames = 150;
+    for (int i = 0; i < argc; i++) {
+        if (!strcmp(argv[i], "--model") && i + 1 < argc) { const char *v = argv[++i]; m = !strcmp(v, "464") ? CPC_MODEL_464 : !strcmp(v, "664") ? CPC_MODEL_664 : CPC_MODEL_6128; }
+        else if (!strcmp(argv[i], "--roms") && i + 1 < argc) roms = argv[++i];
+        else if (!strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
+        else if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
+    }
+    CPC *c = cpc_create(m); load_roms(c, roms, m); cpc_reset(c, true);
+    for (int i = 0; i < frames; i++) cpc_run_frame(c);
+    write_bmp(out, cpc_frame(c), CPC_SCREEN_W, CPC_SCREEN_H);
+    printf("frames=%llu pc=%04x cycles=%llu\n", (unsigned long long)c->frames, c->z80.pc, (unsigned long long)c->cycles);
+    cpc_destroy(c); return 0;
+}
+
 int main(int argc, char **argv) {
+    if (argc >= 2 && !strcmp(argv[1], "boot")) return run_boot(argc - 2, argv + 2);
     if (argc >= 3 && !strcmp(argv[1], "zex")) return run_zex(argv[2]);
     fprintf(stderr, "usage: cpcrun zex <file.com>\n");
     return 1;
