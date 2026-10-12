@@ -1,0 +1,263 @@
+import AppKit
+import CPCCore
+import UniformTypeIdentifiers
+
+@main
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
+    static func main() {
+        let app = NSApplication.shared
+        let d = AppDelegate()
+        app.delegate = d
+        app.setActivationPolicy(.regular)
+        app.run()
+    }
+
+    var settings = Settings()
+    var emu: Emulator!
+    var main: MainWindowController!
+    var currentProfile = "CPC6128"
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        Profiles.installDefaults()
+        if let s = Settings.load(AppPaths.ini) { settings = s }
+        else {
+            settings = Settings()
+            if let p = Profiles.load(currentProfile) { settings.merge(p) }
+        }
+        if let p = settings["MacAPE", "Profile"] { currentProfile = p }
+        emu = Emulator(settings: settings)
+        main = MainWindowController(emulator: emu)
+        main.view.onFileDrop = { [weak self] in self?.openFile($0) }
+        buildMenus()
+        main.showWindow(nil)
+        main.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        if !FileManager.default.fileExists(atPath: emu.romFolder.appendingPathComponent("OS6128.ROM").path) { askForROMFolder() }
+        emu.start()
+        let args = Array(CommandLine.arguments.dropFirst())
+        var i = 0
+        var shot: String?, after = 4.0, typed: String?
+        while i < args.count {
+            let a = args[i]
+            if a == "--shot", i + 1 < args.count { shot = args[i + 1]; i += 2; continue }
+            if a == "--after", i + 1 < args.count { after = Double(args[i + 1]) ?? 4; i += 2; continue }
+            if a == "--type", i + 1 < args.count { typed = args[i + 1]; i += 2; continue }
+            if !a.hasPrefix("-") { openFile(URL(fileURLWithPath: a)) }
+            i += 1
+        }
+        if let t = typed { DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.emu.type(t.replacingOccurrences(of: "~", with: "\n")) } }
+        if let path = shot {
+            DispatchQueue.main.asyncAfter(deadline: .now() + after) { self.writePNG(URL(fileURLWithPath: path)); NSApp.terminate(nil) }
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) { emu.stop(); settings["MacAPE", "Profile"] = currentProfile; emu.saveSettings() }
+    func application(_ sender: NSApplication, openFile filename: String) -> Bool { if emu != nil { openFile(URL(fileURLWithPath: filename)); return true }; return false }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    // MARK: Helpers
+    func alert(_ title: String, _ info: String = "") {
+        let a = NSAlert(); a.messageText = title; a.informativeText = info; a.runModal()
+    }
+
+    func chooseFile(title: String, types: [String], save: Bool = false, name: String = "") -> URL? {
+        let p: NSSavePanel = save ? NSSavePanel() : { let o = NSOpenPanel(); o.canChooseFiles = true; o.canChooseDirectories = false; return o }()
+        p.title = title
+        let ut = types.compactMap { UTType(filenameExtension: $0) }
+        if !ut.isEmpty { p.allowedContentTypes = ut }
+        if save { p.nameFieldStringValue = name }
+        return p.runModal() == .OK ? p.url : nil
+    }
+
+    func askForROMFolder() {
+        alert("ROM images not found", "MacAPE needs the Amstrad ROM images (OS6128.ROM, BASIC1-1.ROM, AMSDOS.ROM, …). Select the folder that contains them (for example the ROM folder of a WinAPE installation).")
+        let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = false; p.title = "Select ROM folder"
+        if p.runModal() == .OK, let u = p.url {
+            emu.romFolder = u; settings["MacAPE", "ROM Folder"] = u.path
+            // Copy to app support so access survives
+            try? FileManager.default.createDirectory(at: AppPaths.roms, withIntermediateDirectories: true)
+            emu.applySettings()
+        }
+    }
+
+    func openFile(_ url: URL) {
+        switch url.pathExtension.lowercased() {
+        case "dsk", "dsc", "hdr": if !emu.insertDisc(drive: 0, url: url) { alert("Cannot open disc image", url.path) } else { emu.reset(cold: false) }
+        case "wpf": if let p = Settings.load(url) { settings.merge(p); emu.applySettings() }
+        case "ini": if let p = Settings.load(url) { settings.merge(p); emu.applySettings() }
+        default: alert("Unsupported file type", url.lastPathComponent)
+        }
+    }
+
+    @objc func todo(_ sender: Any?) { alert("Not available yet", "This feature is planned but not implemented in this build.") }
+
+    // MARK: File menu
+    @objc func insertDiscA(_ s: Any?) { insertDisc(0) }
+    @objc func insertDiscB(_ s: Any?) { insertDisc(1) }
+    func insertDisc(_ drive: Int) {
+        guard let u = chooseFile(title: "Insert Disc Image in Drive \(drive == 0 ? "A" : "B"):", types: ["dsk", "dsc", "hdr"]) else { return }
+        if !emu.insertDisc(drive: drive, url: u) { alert("Cannot open disc image", u.path) }
+    }
+    @objc func removeDiscA(_ s: Any?) { emu.removeDisc(drive: 0) }
+    @objc func removeDiscB(_ s: Any?) { emu.removeDisc(drive: 1) }
+    @objc func swapDiscs(_ s: Any?) { emu.swapDiscs() }
+    @objc func newBlankDiscA(_ s: Any?) { newBlank(0) }
+    @objc func newBlankDiscB(_ s: Any?) { newBlank(1) }
+    func newBlank(_ drive: Int) {
+        guard let u = chooseFile(title: "New Blank Disc", types: ["dsk"], save: true, name: "blank.dsk") else { return }
+        let d = dsk_new()!
+        dsk_format(d, DSK_FORMAT_DATA, 40, 1)
+        _ = dsk_save_file(d, u.path); dsk_free(d)
+        _ = emu.insertDisc(drive: drive, url: u)
+    }
+    @objc func driveSetup(_ s: Any?) { insertDisc(0) }
+    @objc func loadCartridge(_ s: Any?) { todo(s) }
+    @objc func showTape(_ s: Any?) { todo(s) }
+    @objc func loadSnapshot(_ s: Any?) { todo(s) }
+    @objc func saveSnapshot(_ s: Any?) { todo(s) }
+    @objc func saveScreenshot(_ s: Any?) {
+        guard let u = chooseFile(title: "Save Screenshot", types: ["png"], save: true, name: "screenshot.png") else { return }
+        writePNG(u)
+    }
+    func writePNG(_ u: URL) {
+        emu.withFrame { px, w, h in
+            let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: w * 4, bitsPerPixel: 32)!
+            let d = rep.bitmapData!
+            for i in 0..<(w * h) { let p = px[i]; d[i * 4] = UInt8((p >> 16) & 255); d[i * 4 + 1] = UInt8((p >> 8) & 255); d[i * 4 + 2] = UInt8(p & 255); d[i * 4 + 3] = 255 }
+            try? rep.representation(using: .png, properties: [:])?.write(to: u)
+        }
+    }
+    @objc func autoType(_ s: Any?) {
+        let a = NSAlert(); a.messageText = "Auto Type"; a.informativeText = "Text to type into the emulated CPC:"
+        let f = NSTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24)); a.accessoryView = f
+        a.addButton(withTitle: "Type"); a.addButton(withTitle: "Cancel")
+        if a.runModal() == .alertFirstButtonReturn { emu.type(f.stringValue + "\n") }
+    }
+    @objc func pasteText(_ s: Any?) { if let t = NSPasteboard.general.string(forType: .string) { emu.type(t) } }
+
+    // MARK: Settings menu
+    @objc func showGeneral(_ s: Any?) { todo(s) }
+    @objc func showDisplay(_ s: Any?) { todo(s) }
+    @objc func showSound(_ s: Any?) { todo(s) }
+    @objc func showMemory(_ s: Any?) { todo(s) }
+    @objc func showInput(_ s: Any?) { todo(s) }
+    @objc func showOther(_ s: Any?) { todo(s) }
+    @objc func normalSpeed(_ s: Any?) { emu.speed = 1.0 }
+    @objc func highSpeed(_ s: Any?) { emu.speed = 10.0 }
+    @objc func toggleFullScreenAction(_ s: Any?) { main.window?.toggleFullScreen(nil) }
+    @objc func resetEmu(_ s: Any?) { emu.reset(cold: false) }
+    @objc func coldReset(_ s: Any?) { emu.reset(cold: true) }
+    @objc func amxMouse(_ s: Any?) { todo(s) }
+    @objc func multifaceStop(_ s: Any?) { todo(s) }
+    @objc func scale1x(_ s: Any?) { main.setContentScale(1) }
+    @objc func scale15x(_ s: Any?) { main.setContentScale(1.5) }
+    @objc func scale2x(_ s: Any?) { main.setContentScale(2) }
+    @objc func selectProfile(_ s: NSMenuItem) {
+        guard let p = Profiles.load(s.title) else { return }
+        currentProfile = s.title; settings.merge(p); emu.applySettings()
+    }
+
+    // MARK: Debug / assembler / help
+    @objc func debugRun(_ s: Any?) { emu.paused = false }
+    @objc func debugPause(_ s: Any?) { emu.paused = true }
+    @objc func debugStep(_ s: Any?) { todo(s) }
+    @objc func debugStepOver(_ s: Any?) { todo(s) }
+    @objc func showRegisters(_ s: Any?) { todo(s) }
+    @objc func showBreakpoints(_ s: Any?) { todo(s) }
+    @objc func showDataAreas(_ s: Any?) { todo(s) }
+    @objc func showTimers(_ s: Any?) { todo(s) }
+    @objc func showGraphics(_ s: Any?) { todo(s) }
+    @objc func showAssembler(_ s: Any?) { todo(s) }
+    @objc func showPokes(_ s: Any?) { todo(s) }
+    @objc func showHelp(_ s: Any?) { todo(s) }
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool { true }
+
+    // MARK: Menu construction
+    private func fkey(_ n: Int) -> String { String(UnicodeScalar(UInt32(NSF1FunctionKey) + UInt32(n - 1))!) }
+
+    private func item(_ title: String, _ sel: Selector?, _ key: String = "", _ mods: NSEvent.ModifierFlags = []) -> NSMenuItem {
+        let i = NSMenuItem(title: title, action: sel, keyEquivalent: key)
+        i.keyEquivalentModifierMask = mods
+        return i
+    }
+
+    private func submenu(_ title: String, _ items: [NSMenuItem]) -> NSMenuItem {
+        let m = NSMenu(title: title); items.forEach { m.addItem($0) }
+        let i = NSMenuItem(title: title, action: nil, keyEquivalent: ""); i.submenu = m; return i
+    }
+
+    func buildMenus() {
+        let bar = NSMenu()
+        let ctrl: NSEvent.ModifierFlags = .control, shift: NSEvent.ModifierFlags = .shift
+        let appMenu = submenu("MacAPE", [
+            item("About MacAPE", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+            .separator(),
+            item("Hide MacAPE", #selector(NSApplication.hide(_:)), "h"),
+            .separator(),
+            item("Quit MacAPE", #selector(NSApplication.terminate(_:)), "q"),
+        ])
+        func drive(_ n: String, _ f: Int, ins: Selector, new: Selector, rm: Selector) -> NSMenuItem {
+            submenu("Drive \(n):", [
+                item("Insert Disc Image…", ins, fkey(f), ctrl),
+                item("New Blank Disc…", new),
+                item("Format Disc Image…", #selector(todo(_:))),
+                item("Edit Disc…", #selector(todo(_:)), fkey(f), [ctrl, shift]),
+                item("Flip Disc", #selector(todo(_:)), fkey(f), shift),
+                item("Remove Disc", rm),
+            ])
+        }
+        let file = submenu("File", [
+            drive("A", 1, ins: #selector(insertDiscA(_:)), new: #selector(newBlankDiscA(_:)), rm: #selector(removeDiscA(_:))),
+            drive("B", 2, ins: #selector(insertDiscB(_:)), new: #selector(newBlankDiscB(_:)), rm: #selector(removeDiscB(_:))),
+            item("Swap Discs A: and B:", #selector(swapDiscs(_:)), fkey(3), [ctrl, shift]),
+            item("Drive Setup…", #selector(driveSetup(_:)), fkey(2)),
+            item("Load Cartridge…", #selector(loadCartridge(_:)), fkey(3), ctrl),
+            submenu("Tape", [
+                item("Show Tape Control", #selector(showTape(_:))),
+                item("Insert Tape Image…", #selector(todo(_:)), fkey(4), ctrl),
+                item("Rewind Tape", #selector(todo(_:))), item("Remove Tape", #selector(todo(_:))),
+                item("Press Play", #selector(todo(_:))), item("Press Record", #selector(todo(_:))),
+            ]),
+            .separator(),
+            item("Load Snapshot…", #selector(loadSnapshot(_:)), fkey(5)),
+            item("Save Snapshot…", #selector(saveSnapshot(_:)), fkey(6)),
+            item("Update Snapshot", #selector(todo(_:)), fkey(6), ctrl),
+            .separator(),
+            item("Playback Session…", #selector(todo(_:))), item("Record Session…", #selector(todo(_:))),
+            .separator(),
+            item("Save Screenshot…", #selector(saveScreenshot(_:)), fkey(7), ctrl),
+            item("Record AVI…", #selector(todo(_:))), item("Record WAV…", #selector(todo(_:))), item("Record YM…", #selector(todo(_:))),
+            .separator(),
+            item("Pokes…", #selector(showPokes(_:)), fkey(8), ctrl),
+            .separator(),
+            item("Auto Type…", #selector(autoType(_:)), fkey(5), ctrl),
+            item("Paste", #selector(pasteText(_:)), fkey(11), ctrl),
+        ])
+        let profiles = submenu("Profile", Profiles.list().map { item($0, #selector(selectProfile(_:))) })
+        let settingsMenu = submenu("Settings", [
+            item("General…", #selector(showGeneral(_:)), fkey(12)), item("Display…", #selector(showDisplay(_:))), item("Sound…", #selector(showSound(_:))),
+            item("Memory…", #selector(showMemory(_:))), item("Input…", #selector(showInput(_:))), item("Other…", #selector(showOther(_:))),
+            profiles,
+            .separator(),
+            item("Normal Speed (100%)", #selector(normalSpeed(_:)), fkey(3), shift), item("High Speed (1000%)", #selector(highSpeed(_:)), fkey(4), shift),
+            .separator(),
+            item("Full Screen", #selector(toggleFullScreenAction(_:)), fkey(10)),
+            item("Window Size 1×", #selector(scale1x(_:)), "1", .command), item("Window Size 1.5×", #selector(scale15x(_:)), "2", .command), item("Window Size 2×", #selector(scale2x(_:)), "3", .command),
+            .separator(),
+            item("Reset", #selector(resetEmu(_:)), fkey(9), ctrl), item("Cold Reset", #selector(coldReset(_:)), fkey(9), [ctrl, shift]),
+            item("AMX Mouse", #selector(amxMouse(_:)), fkey(12), ctrl), item("Multiface Stop", #selector(multifaceStop(_:)), fkey(11)),
+        ])
+        let debug = submenu("Debug", [
+            item("Run", #selector(debugRun(_:)), fkey(9)), item("Pause", #selector(debugPause(_:)), fkey(7)),
+            item("Registers", #selector(showRegisters(_:))), item("Breakpoints", #selector(showBreakpoints(_:))),
+            item("Data Areas", #selector(showDataAreas(_:))), item("Timers", #selector(showTimers(_:))), item("Find Graphics", #selector(showGraphics(_:))),
+        ])
+        let asm = submenu("Assembler", [item("Show Assembler", #selector(showAssembler(_:)), fkey(3))])
+        let window = submenu("Window", [item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m", .command)])
+        let help = submenu("Help", [item("Contents", #selector(showHelp(_:)), fkey(1))])
+        [appMenu, file, settingsMenu, debug, asm, window, help].forEach { bar.addItem($0) }
+        NSApp.mainMenu = bar
+        NSApp.windowsMenu = window.submenu
+    }
+}

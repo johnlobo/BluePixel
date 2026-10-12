@@ -1,0 +1,192 @@
+import Foundation
+import CPCCore
+import Darwin
+
+/// Owns the CPC core, its thread, ROM set-up and media.
+final class Emulator {
+    let cpc: UnsafeMutablePointer<CPC>
+    let lock = NSRecursiveLock()
+    let settings: Settings
+    var audio: AudioOutput?
+    private var thread: Thread?
+    private(set) var running = false
+    var paused = false { didSet { if !paused { resume.signal() } } }
+    private let resume = DispatchSemaphore(value: 0)
+    var speed: Double = 1.0
+    var frameSkip = 0
+    var onFrame: (() -> Void)?
+    var onBreak: (() -> Void)?
+
+    // Rendered output (768x540 or half), guarded by frameLock
+    private let frameLock = NSLock()
+    private(set) var rendered = [UInt32](repeating: 0, count: 768 * 540)
+    private(set) var renderedSize = (w: 768, h: 540)
+    var renderPAL = true, renderBoth = true, halfSize = false, brightness = 0
+
+    var romFolder: URL
+    var discs: [UnsafeMutablePointer<CPCDisc>?] = [nil, nil, nil, nil]
+    var discPaths: [String] = ["", "", "", ""]
+    var lastCartridge = ""
+
+    init(settings: Settings) {
+        self.settings = settings
+        cpc = cpc_create(CPC_MODEL_6128)
+        romFolder = Emulator.findRomFolder(settings)
+        applySettings()
+    }
+
+    static func findRomFolder(_ s: Settings) -> URL {
+        if let p = s["MacAPE", "ROM Folder"], !p.isEmpty { return URL(fileURLWithPath: p) }
+        let candidates = [AppPaths.roms.path, NSHomeDirectory() + "/Documents/WinAPE20B2/ROM"]
+        for c in candidates where FileManager.default.fileExists(atPath: c + "/OS6128.ROM") { return URL(fileURLWithPath: c) }
+        return AppPaths.roms
+    }
+
+    // MARK: ROM handling
+    func resolveROM(_ name: String, exts: [String] = ["ROM", "rom"]) -> URL? {
+        if name.isEmpty { return nil }
+        if name.contains("/") { return URL(fileURLWithPath: name) }
+        let fm = FileManager.default
+        if let items = try? fm.contentsOfDirectory(atPath: romFolder.path) {
+            let low = name.lowercased()
+            if let hit = items.first(where: { $0.lowercased() == low }) { return romFolder.appendingPathComponent(hit) }
+            for e in exts { if let hit = items.first(where: { $0.lowercased() == low + "." + e.lowercased() }) { return romFolder.appendingPathComponent(hit) } }
+        }
+        return nil
+    }
+
+    func applySettings() {
+        lock.lock(); defer { lock.unlock() }
+        var cfg = CPCConfig()
+        let plus = settings.bool("Configuration", "Enable Plus", false)
+        cpc_default_config(&cfg, plus ? CPC_MODEL_6128PLUS : CPC_MODEL_6128)
+        cfg.type = UInt8(settings.int("Configuration", "CRTC Type", plus ? 3 : 0))
+        cfg.plus = plus
+        cfg.plus_ppi = settings.bool("Configuration", "Plus PPI", plus)
+        switch settings.int("Configuration", "Extended RAM", 1) {
+        case 0: cfg.ram_kb = 64
+        case 1: cfg.ram_kb = 128
+        case 2: cfg.ram_kb = 320
+        default: cfg.ram_kb = 576
+        }
+        if settings.bool("Configuration", "Silicon Disc", false) { cfg.silicon_disc = true; cfg.ram_kb = 576 }
+        cfg.fast_disc = settings.bool("Configuration", "Fast Disc", true)
+        cfg.turbo = settings.bool("Configuration", "Turbo Mode", false)
+        cfg.four_drives = settings.bool("Configuration", "Enable Four Drives", false)
+        cfg.amdrum = settings.bool("Configuration", "AmDrum Enabled", true)
+        cfg.joystick_enabled = settings.bool("Configuration", "Joystick Enabled", true)
+        cfg.monitor = CPCMonitor(UInt32(settings.int("Configuration", "Monitor Type", 0)))
+        cfg.linear_palette = settings.bool("Configuration", "Linear Palette", true)
+        cfg.sample_rate = settings.int("Configuration", "Sound Mode", 2) == 2 ? 44100 : 22050
+        cfg.stereo = settings.bool("Configuration", "Sound Stereo", true)
+        cfg.volume = Float(settings.int("Configuration", "Sound Volume", 15)) / 15.0
+        cfg.disc_sound = settings.bool("Configuration", "Disc Sound", true)
+        cfg.tape_sound = settings.bool("Configuration", "Tape Sound", true)
+        cfg.enable_32_roms = settings.bool("Configuration", "Enable 32 ROMs", true)
+        cpc_configure(cpc, &cfg)
+
+        // ROMs
+        cpc_clear_roms(cpc)
+        if let u = resolveROM(settings.string("ROMS", "Lower")), let d = try? Data(contentsOf: u) { d.withUnsafeBytes { _ = cpc_load_rom(cpc, -1, $0.bindMemory(to: UInt8.self).baseAddress, d.count) } }
+        let uppers = settings.bool("ROMS", "Disable All", false) ? 0 : 32
+        for i in 0..<uppers {
+            if let u = resolveROM(settings.string("ROMS", "Upper(\(i))")), let d = try? Data(contentsOf: u) {
+                d.withUnsafeBytes { _ = cpc_load_rom(cpc, Int32(i), $0.bindMemory(to: UInt8.self).baseAddress, d.count) }
+            }
+        }
+        renderPAL = settings.bool("Configuration", "PAL Emulation", true)
+        renderBoth = settings.bool("Configuration", "Render Both", true)
+        halfSize = settings.bool("Configuration", "Half Size", false)
+        brightness = settings.int("Configuration", "Monitor Brightness", 0)
+        cpc_reset(cpc, true)
+    }
+
+    // MARK: Thread
+    func start() {
+        guard !running else { return }
+        running = true
+        audio = AudioOutput(cpc: cpc, sampleRate: Double(cpc.pointee.cfg.sample_rate))
+        audio?.start()
+        let t = Thread { [weak self] in self?.loop() }
+        t.name = "MacAPE emulation"; t.qualityOfService = .userInteractive
+        thread = t; t.start()
+    }
+
+    func stop() { running = false; paused = false; audio?.stop() }
+
+    private func nowUS() -> UInt64 { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) / 1000 }
+
+    private func loop() {
+        let framePeriod = 19968.0
+        var next = Double(nowUS())
+        var shown = 0
+        while running {
+            if paused { resume.wait(); next = Double(nowUS()); continue }
+            lock.lock()
+            let n = speed > 1.0 ? Int(speed.rounded()) : 1
+            for _ in 0..<n { cpc_run_frame(cpc) }
+            let hit = cpc.pointee.z80.brk_hit
+            lock.unlock()
+            audio?.muted = speed != 1.0
+            shown += 1
+            if frameSkip <= 1 || shown % frameSkip == 0 { publish() }
+            if hit { paused = true; DispatchQueue.main.async { self.onBreak?() } }
+            next += framePeriod / min(speed, 1.0)
+            let wait = next - Double(nowUS())
+            if wait > 0 { usleep(UInt32(wait)) } else if wait < -100000 { next = Double(nowUS()) }
+        }
+    }
+
+    func publish() {
+        frameLock.lock()
+        let half = halfSize
+        rendered.withUnsafeMutableBufferPointer { dst in
+            cpc_render(cpc_frame(cpc), dst.baseAddress, renderPAL, renderBoth, half, Int32(brightness))
+        }
+        renderedSize = half ? (384, 270) : (768, 540)
+        frameLock.unlock()
+        DispatchQueue.main.async { self.onFrame?() }
+    }
+
+    func withFrame<T>(_ body: (UnsafePointer<UInt32>, Int, Int) -> T) -> T {
+        frameLock.lock(); defer { frameLock.unlock() }
+        return rendered.withUnsafeBufferPointer { body($0.baseAddress!, renderedSize.w, renderedSize.h) }
+    }
+
+    // MARK: Media
+    func insertDisc(drive: Int, url: URL) -> Bool {
+        guard let d = dsk_load_file(url.path) else { return false }
+        lock.lock(); defer { lock.unlock() }
+        let wp = settings.bool("Drives", "Allow Write \(drive)", true) == false
+        d.pointee.write_protect = wp
+        d.pointee.temp_writes = false
+        if let old = discs[drive] { dsk_free(old) }
+        discs[drive] = d; discPaths[drive] = url.path
+        fdc_insert(cpc.pointee.fdc, Int32(drive), d)
+        settings.set("Drives", "Drive(\(drive))", url.path)
+        return true
+    }
+
+    func removeDisc(drive: Int) {
+        lock.lock(); defer { lock.unlock() }
+        fdc_insert(cpc.pointee.fdc, Int32(drive), nil)
+        if let old = discs[drive] { dsk_free(old) }
+        discs[drive] = nil; discPaths[drive] = ""
+        settings.set("Drives", "Drive(\(drive))", "")
+    }
+
+    func swapDiscs() {
+        lock.lock(); defer { lock.unlock() }
+        discs.swapAt(0, 1); discPaths.swapAt(0, 1)
+        fdc_insert(cpc.pointee.fdc, 0, discs[0]); fdc_insert(cpc.pointee.fdc, 1, discs[1])
+    }
+
+    func reset(cold: Bool) { lock.lock(); cpc_reset(cpc, cold); lock.unlock() }
+
+    func type(_ text: String) { lock.lock(); cpc_autotype(cpc, text); lock.unlock() }
+
+    func key(_ k: Int, down: Bool) { lock.lock(); cpc_key(cpc, Int32(k), down); lock.unlock() }
+    func joystick(_ bit: Int, down: Bool) { lock.lock(); cpc_joystick(cpc, Int32(bit), down); lock.unlock() }
+
+    func saveSettings() { settings.save(AppPaths.ini) }
+}

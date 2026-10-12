@@ -17,6 +17,7 @@ typedef enum { CPC_MONITOR_COLOUR, CPC_MONITOR_GREEN, CPC_MONITOR_GREY } CPCMoni
 
 typedef struct CPCDisc CPCDisc;
 typedef struct CPCTape CPCTape;
+typedef struct FDC FDC;
 
 typedef struct {
     uint8_t r[32];
@@ -115,11 +116,11 @@ struct CPC {
     uint8_t amdrum;
 
     /* audio ring buffer (interleaved L/R float) */
-    float *audio; int audio_cap; volatile int audio_w, audio_r;
+    float *audio; int audio_cap; int audio_w, audio_r;
     float audio_acc[2]; int audio_acc_n; int audio_phase;
 
     /* FDC + discs */
-    void *fdc;
+    FDC *fdc;
     CPCDisc *disc[4];
     bool motor;
 
@@ -151,6 +152,8 @@ void cpc_run_frame(CPC *c);                 /* run until the next frame flyback 
 void cpc_key(CPC *c, int key, bool down);
 void cpc_joystick(CPC *c, int bit, bool down);
 const uint32_t *cpc_frame(const CPC *c);
+/* Post-process a frame to 768x540 (or 384x270). `dst` must hold the full output. */
+void cpc_render(const uint32_t *src, uint32_t *dst, bool pal, bool render_both, bool half_size, int brightness);
 
 /* Audio: returns frames written (stereo interleaved floats) */
 int cpc_audio_read(CPC *c, float *out, int frames);

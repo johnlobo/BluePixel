@@ -390,25 +390,30 @@ static void audio_tick(CPC *c) {
     if (c->audio_phase >= 1000000) {
         c->audio_phase -= 1000000;
         int n = c->audio_acc_n ? c->audio_acc_n : 1;
-        int w = c->audio_w;
+        int w = __atomic_load_n(&c->audio_w, __ATOMIC_RELAXED);
         int next = (w + 1) % AUDIO_CAP;
-        if (next != c->audio_r) {
+        if (next != __atomic_load_n(&c->audio_r, __ATOMIC_ACQUIRE)) {
             c->audio[w * 2] = c->audio_acc[0] / n * c->cfg.volume;
             c->audio[w * 2 + 1] = c->audio_acc[1] / n * c->cfg.volume;
-            c->audio_w = next;
+            __atomic_store_n(&c->audio_w, next, __ATOMIC_RELEASE);
         }
         c->audio_acc[0] = c->audio_acc[1] = 0; c->audio_acc_n = 0;
     }
 }
 
-int cpc_audio_available(const CPC *c) { return (c->audio_w - c->audio_r + AUDIO_CAP) % AUDIO_CAP; }
+int cpc_audio_available(const CPC *c) {
+    int w = __atomic_load_n(&c->audio_w, __ATOMIC_ACQUIRE), r = __atomic_load_n(&c->audio_r, __ATOMIC_ACQUIRE);
+    return (w - r + AUDIO_CAP) % AUDIO_CAP;
+}
 
 int cpc_audio_read(CPC *c, float *out, int frames) {
     int n = 0;
-    while (n < frames && c->audio_r != c->audio_w) {
-        out[n * 2] = c->audio[c->audio_r * 2]; out[n * 2 + 1] = c->audio[c->audio_r * 2 + 1];
-        c->audio_r = (c->audio_r + 1) % AUDIO_CAP; n++;
+    int r = __atomic_load_n(&c->audio_r, __ATOMIC_RELAXED);
+    while (n < frames && r != __atomic_load_n(&c->audio_w, __ATOMIC_ACQUIRE)) {
+        out[n * 2] = c->audio[r * 2]; out[n * 2 + 1] = c->audio[r * 2 + 1];
+        r = (r + 1) % AUDIO_CAP; n++;
     }
+    __atomic_store_n(&c->audio_r, r, __ATOMIC_RELEASE);
     return n;
 }
 
