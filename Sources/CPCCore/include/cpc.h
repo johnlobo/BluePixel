@@ -106,6 +106,7 @@ struct CPC {
     uint64_t frames;
 
     /* PPI */
+    bool single_sided_read[4];
     uint8_t ppi_a, ppi_b, ppi_c, ppi_ctl;
     uint8_t kbd[16];               /* active-low rows */
     bool tape_motor, tape_write_bit;

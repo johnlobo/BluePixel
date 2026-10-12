@@ -16,6 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var emu: Emulator!
     var main: MainWindowController!
     var currentProfile = "CPC6128"
+    var driveSetup: DriveSetupController!
+    var tapeControl: TapeController!
+    var lastSnapshot: URL?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Profiles.installDefaults()
@@ -28,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         emu = Emulator(settings: settings)
         main = MainWindowController(emulator: emu)
         main.view.onFileDrop = { [weak self] in self?.openFile($0) }
+        driveSetup = DriveSetupController(emu: emu); tapeControl = TapeController(emu: emu)
         buildMenus()
         main.showWindow(nil)
         main.window?.makeKeyAndOrderFront(nil)
@@ -36,18 +40,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         emu.start()
         let args = Array(CommandLine.arguments.dropFirst())
         var i = 0
-        var shot: String?, after = 4.0, typed: String?
+        var shot: String?, after = 4.0, typed: String?, panel: String?, shotWin: String?
         while i < args.count {
             let a = args[i]
             if a == "--shot", i + 1 < args.count { shot = args[i + 1]; i += 2; continue }
             if a == "--after", i + 1 < args.count { after = Double(args[i + 1]) ?? 4; i += 2; continue }
+            if a == "--panel", i + 1 < args.count { panel = args[i + 1]; i += 2; continue }
+            if a == "--shotwin", i + 1 < args.count { shotWin = args[i + 1]; i += 2; continue }
             if a == "--type", i + 1 < args.count { typed = args[i + 1]; i += 2; continue }
             if !a.hasPrefix("-") { openFile(URL(fileURLWithPath: a)) }
             i += 1
         }
         if let t = typed { DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.emu.type(t.replacingOccurrences(of: "~", with: "\n")) } }
+        if let pn = panel { DispatchQueue.main.asyncAfter(deadline: .now() + 1) { _ = self.perform(Selector(pn), with: nil) } }
         if let path = shot {
-            DispatchQueue.main.asyncAfter(deadline: .now() + after) { self.writePNG(URL(fileURLWithPath: path)); NSApp.terminate(nil) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + after) {
+                if let title = shotWin, let w = NSApp.windows.first(where: { $0.title.contains(title) }), let v = w.contentView?.superview ?? w.contentView {
+                    let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds)!
+                    v.cacheDisplay(in: v.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                } else { self.writePNG(URL(fileURLWithPath: path)) }
+                NSApp.terminate(nil)
+            }
         }
     }
 
@@ -83,6 +97,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     func openFile(_ url: URL) {
         switch url.pathExtension.lowercased() {
         case "dsk", "dsc", "hdr": if !emu.insertDisc(drive: 0, url: url) { alert("Cannot open disc image", url.path) } else { emu.reset(cold: false) }
+        case "sna": if !emu.loadSnapshot(url: url) { alert("Cannot load snapshot", url.path) } else { lastSnapshot = url }
+        case "cdt", "tzx", "voc", "wav": if !emu.insertTape(url: url) { alert("Unsupported or damaged tape image", url.path) }
         case "wpf": if let p = Settings.load(url) { settings.merge(p); emu.applySettings() }
         case "ini": if let p = Settings.load(url) { settings.merge(p); emu.applySettings() }
         default: alert("Unsupported file type", url.lastPathComponent)
@@ -110,11 +126,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         _ = dsk_save_file(d, u.path); dsk_free(d)
         _ = emu.insertDisc(drive: drive, url: u)
     }
-    @objc func driveSetup(_ s: Any?) { insertDisc(0) }
+    @objc func driveSetup(_ s: Any?) { driveSetup.show() }
     @objc func loadCartridge(_ s: Any?) { todo(s) }
-    @objc func showTape(_ s: Any?) { todo(s) }
-    @objc func loadSnapshot(_ s: Any?) { todo(s) }
-    @objc func saveSnapshot(_ s: Any?) { todo(s) }
+    @objc func showTape(_ s: Any?) { tapeControl.show() }
+    @objc func insertTape(_ s: Any?) {
+        guard let u = chooseFile(title: "Insert Tape Image", types: ["cdt", "tzx", "voc", "wav"]) else { return }
+        if !emu.insertTape(url: u) { alert("Unsupported or damaged tape image", u.path) }
+        tapeControl.reload()
+    }
+    @objc func rewindTape(_ s: Any?) { emu.rewindTape() }
+    @objc func removeTape(_ s: Any?) { emu.removeTape(); tapeControl.reload() }
+    @objc func pressPlay(_ s: Any?) { emu.playTape(true) }
+    @objc func pressRecord(_ s: Any?) { emu.startTapeRecording() }
+    @objc func loadSnapshot(_ s: Any?) {
+        guard let u = chooseFile(title: "Load Snapshot", types: ["sna"]) else { return }
+        if emu.loadSnapshot(url: u) { lastSnapshot = u } else { alert("Cannot load snapshot", u.path) }
+    }
+    @objc func saveSnapshot(_ s: Any?) {
+        guard let opt = SnapshotDialog.ask(), let u = chooseFile(title: "Save Snapshot", types: ["sna"], save: true, name: "snapshot.sna") else { return }
+        if emu.saveSnapshot(url: u, version: opt.version, memoryKB: opt.memoryKB, compressed: opt.compressed) { lastSnapshot = u } else { alert("Cannot save snapshot", u.path) }
+    }
+    @objc func updateSnapshot(_ s: Any?) {
+        guard let u = lastSnapshot else { saveSnapshot(s); return }
+        _ = emu.saveSnapshot(url: u, version: 3, memoryKB: 0, compressed: true)
+    }
     @objc func saveScreenshot(_ s: Any?) {
         guard let u = chooseFile(title: "Save Screenshot", types: ["png"], save: true, name: "screenshot.png") else { return }
         writePNG(u)
@@ -215,14 +250,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item("Load Cartridge…", #selector(loadCartridge(_:)), fkey(3), ctrl),
             submenu("Tape", [
                 item("Show Tape Control", #selector(showTape(_:))),
-                item("Insert Tape Image…", #selector(todo(_:)), fkey(4), ctrl),
-                item("Rewind Tape", #selector(todo(_:))), item("Remove Tape", #selector(todo(_:))),
-                item("Press Play", #selector(todo(_:))), item("Press Record", #selector(todo(_:))),
+                item("Insert Tape Image…", #selector(insertTape(_:)), fkey(4), ctrl),
+                item("Rewind Tape", #selector(rewindTape(_:))), item("Remove Tape", #selector(removeTape(_:))),
+                item("Press Play", #selector(pressPlay(_:))), item("Press Record", #selector(pressRecord(_:))),
             ]),
             .separator(),
             item("Load Snapshot…", #selector(loadSnapshot(_:)), fkey(5)),
             item("Save Snapshot…", #selector(saveSnapshot(_:)), fkey(6)),
-            item("Update Snapshot", #selector(todo(_:)), fkey(6), ctrl),
+            item("Update Snapshot", #selector(updateSnapshot(_:)), fkey(6), ctrl),
             .separator(),
             item("Playback Session…", #selector(todo(_:))), item("Record Session…", #selector(todo(_:))),
             .separator(),

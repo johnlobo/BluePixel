@@ -71,7 +71,8 @@ static int cmd_length(uint8_t c) {
 static CPCTrack *cur_track(FDC *f, int unit, int head) {
     CPCDisc *d = f->disc[unit]; if (!d) return NULL;
     int t = f->pcn[unit]; if (t >= DSK_MAX_TRACKS) return NULL;
-    if (head >= d->sides) { head = 0; if (d->sides < 1) return NULL; }
+    if (d->sides < 1) return NULL;
+    if (head >= d->sides) { if (!f->cpc->single_sided_read[unit]) return NULL; head = 0; }
     return &d->trk[t][head];
 }
 

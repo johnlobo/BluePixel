@@ -112,7 +112,7 @@ final class Emulator {
         thread = t; t.start()
     }
 
-    func stop() { running = false; paused = false; audio?.stop() }
+    func stop() { running = false; paused = false; audio?.stop(); commitAllDiscs() }
 
     private func nowUS() -> UInt64 { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) / 1000 }
 
@@ -157,9 +157,11 @@ final class Emulator {
     func insertDisc(drive: Int, url: URL) -> Bool {
         guard let d = dsk_load_file(url.path) else { return false }
         lock.lock(); defer { lock.unlock() }
-        let wp = settings.bool("Drives", "Allow Write \(drive)", true) == false
-        d.pointee.write_protect = wp
-        d.pointee.temp_writes = false
+        d.pointee.write_protect = !FileManager.default.isWritableFile(atPath: url.path)
+        d.pointee.temp_writes = settings.bool("Drives", "Allow Write \(drive)", false)
+        cpc.pointee.single_sided_read.0 = false
+        withUnsafeMutablePointer(to: &cpc.pointee.single_sided_read) { $0.withMemoryRebound(to: Bool.self, capacity: 4) { $0[drive] = settings.bool("Drives", "Single Sided \(drive)", false) } }
+        commitDisc(drive: drive)
         if let old = discs[drive] { dsk_free(old) }
         discs[drive] = d; discPaths[drive] = url.path
         fdc_insert(cpc.pointee.fdc, Int32(drive), d)
@@ -168,6 +170,7 @@ final class Emulator {
     }
 
     func removeDisc(drive: Int) {
+        commitDisc(drive: drive)
         lock.lock(); defer { lock.unlock() }
         fdc_insert(cpc.pointee.fdc, Int32(drive), nil)
         if let old = discs[drive] { dsk_free(old) }
@@ -189,4 +192,69 @@ final class Emulator {
     func joystick(_ bit: Int, down: Bool) { lock.lock(); cpc_joystick(cpc, Int32(bit), down); lock.unlock() }
 
     func saveSettings() { settings.save(AppPaths.ini) }
+}
+
+// MARK: - Tape, snapshots, discs (extended)
+extension Emulator {
+    var tape: OpaquePointer? { cpc.pointee.tape }
+
+    @discardableResult
+    func insertTape(url: URL) -> Bool {
+        guard let d = try? Data(contentsOf: url) else { return false }
+        let t: OpaquePointer? = d.withUnsafeBytes { raw in
+            url.lastPathComponent.withCString { tape_load(raw.bindMemory(to: UInt8.self).baseAddress, d.count, $0) }
+        }
+        guard let nt = t else { return false }
+        lock.lock(); defer { lock.unlock() }
+        tape_free(cpc.pointee.tape)
+        cpc.pointee.tape = nt
+        tape_set_motor(nt, cpc.pointee.tape_motor)
+        return true
+    }
+
+    func removeTape() { lock.lock(); tape_free(cpc.pointee.tape); cpc.pointee.tape = nil; lock.unlock() }
+    func rewindTape() { lock.lock(); tape_rewind(cpc.pointee.tape); lock.unlock() }
+    func playTape(_ on: Bool) { lock.lock(); tape_play(cpc.pointee.tape, on); lock.unlock() }
+
+    func loadSnapshot(url: URL) -> Bool {
+        guard let d = try? Data(contentsOf: url) else { return false }
+        lock.lock(); defer { lock.unlock() }
+        let ok = d.withUnsafeBytes { cpc_snapshot_load(cpc, $0.bindMemory(to: UInt8.self).baseAddress, d.count) }
+        return ok
+    }
+
+    func saveSnapshot(url: URL, version: Int, memoryKB: Int, compressed: Bool) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        var n = 0
+        guard let p = cpc_snapshot_save(cpc, Int32(version), Int32(memoryKB), compressed, &n) else { return false }
+        defer { free(p) }
+        do { try Data(bytes: p, count: n).write(to: url); return true } catch { return false }
+    }
+
+    /// Writes a modified disc image back to its file.
+    func commitDisc(drive: Int) {
+        guard let d = discs[drive], d.pointee.dirty, !d.pointee.temp_writes, !discPaths[drive].isEmpty else { return }
+        _ = dsk_save_file(d, discPaths[drive])
+    }
+    func commitAllDiscs() { for i in 0..<4 { commitDisc(drive: i) } }
+}
+
+extension Emulator {
+    func applyDriveOptions() {
+        lock.lock(); defer { lock.unlock() }
+        for i in 0..<4 {
+            discs[i]?.pointee.temp_writes = settings.bool("Drives", "Allow Write \(i)", false)
+            withUnsafeMutablePointer(to: &cpc.pointee.single_sided_read) { $0.withMemoryRebound(to: Bool.self, capacity: 4) { $0[i] = settings.bool("Drives", "Single Sided \(i)", false) } }
+        }
+    }
+
+    func startTapeRecording() { lock.lock(); cpc_tape_record_start(cpc); lock.unlock() }
+    func stopTapeRecording(to url: URL) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        var n = 0
+        guard let p = cpc_tape_record_stop(cpc, &n) else { return false }
+        defer { free(p) }
+        return (try? Data(bytes: p, count: n).write(to: url)) != nil
+    }
+    var isRecordingTape: Bool { cpc.pointee.rec_active }
 }
