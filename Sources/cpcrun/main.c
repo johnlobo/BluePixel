@@ -9,6 +9,7 @@
 #include "fdc.h"
 #include "tape.h"
 #include "snapshot.h"
+#include "debug.h"
 
 static uint8_t mem[65536];
 static int done;
@@ -125,6 +126,52 @@ static int run_dis(const char *file, uint32_t off, uint32_t base, int count) {
     return 0;
 }
 
+static int run_dbgtest(const char *roms) {
+    int fails = 0;
+    #define CHECK(cond, msg) do { if (!(cond)) { printf("FAIL: %s\n", msg); fails++; } else printf("ok: %s\n", msg); } while (0)
+    CPC *c = cpc_create(CPC_MODEL_6128); load_roms(c, roms, CPC_MODEL_6128); cpc_reset(c, true);
+    Debugger *d = dbg_attach(c);
+    int32_t v; char err[128];
+    c->z80.hl.w = 0x1234; c->z80.bc.w = 0x00FF; c->z80.af.h = 0x80;
+    CHECK(dbg_eval(c, "hl+1", &v, err, sizeof err) && v == 0x1235, "hl+1");
+    CHECK(dbg_eval(c, "(b and #f) = 0 and c = 255", &v, err, sizeof err) && v == -1, "bitwise/compare");
+    CHECK(dbg_eval(c, "#FF + &10 + %101 + 10", &v, err, sizeof err) && v == 255 + 16 + 5 + 10, "number formats");
+    CHECK(dbg_eval(c, "hibyte(hl) = #12 and byte(hl)=#34", &v, err, sizeof err) && v == -1, "functions");
+    CHECK(!dbg_eval(c, "foo + 1", &v, err, sizeof err), "unknown name rejected");
+    dbg_symbol_set(c, "start", 0x4000);
+    CHECK(dbg_eval(c, "start + 2", &v, err, sizeof err) && v == 0x4002, "symbols");
+    /* code breakpoint on the interrupt handler */
+    int bp = dbg_add_code_bp(c, 0x0038);
+    CHECK(dbg_set_condition(c, bp, "hl >= 0", 0), "condition accepted");
+    for (int i = 0; i < 300 && !d->hit; i++) cpc_run_frame(c);
+    CHECK(d->hit && c->z80.pc == 0x0038, "code breakpoint at 0038 hit");
+    d->hit = false; d->skip_once = true;
+    dbg_step_into(c);
+    CHECK(c->z80.pc == 0xB941 || c->z80.pc != 0x0038, "step into moves");
+    /* IO breakpoint on gate array writes */
+    dbg_clear_bps(c);
+    dbg_add_io_bp(c, 0x7F00, 0xC000, false, true);
+    d->hit = false; d->skip_once = true;
+    for (int i = 0; i < 300 && !d->hit; i++) cpc_run_frame(c);
+    CHECK(d->hit, "io breakpoint hit");
+    /* memory write breakpoint */
+    dbg_clear_bps(c);
+    dbg_add_mem_bp(c, 0xB8B4, 0xB8B4, false, true);
+    d->hit = false; d->skip_once = true;
+    for (int i = 0; i < 300 && !d->hit; i++) cpc_run_frame(c);
+    CHECK(d->hit && d->ev_addr == 0xB8B4, "memory write breakpoint hit");
+    /* step over a CALL */
+    dbg_clear_bps(c); d->hit = false;
+    c->z80.pc = 0x0100; cpc_poke(c, 0x4000, 0xCD); cpc_poke(c, 0x4001, 0x00); cpc_poke(c, 0x4002, 0x50); cpc_poke(c, 0x5000, 0xC9);
+    c->z80.pc = 0x4000; c->z80.sp.w = 0x9000;
+    CHECK(dbg_step_over(c), "step over CALL requests run");
+    for (int i = 0; i < 100000 && !d->hit; i++) cpc_step(c);
+    CHECK(d->hit && c->z80.pc == 0x4003, "returned after CALL");
+    cpc_destroy(c);
+    printf("%d failure(s)\n", fails);
+    return fails ? 1 : 0;
+}
+
 static int run_boot(int argc, char **argv) {
     CPCModel m = CPC_MODEL_6128; const char *roms = "roms", *out = "frame.bmp"; int frames = 150, wait = 100; const char *disc = NULL, *typed = NULL, *cart = NULL; int fkey = -1;
     for (int i = 0; i < argc; i++) {
@@ -189,6 +236,7 @@ int main(int argc, char **argv) {
     if (argc >= 4 && !strcmp(argv[1], "tapetest")) return run_tapetest(argv[2], argv[3]);
     if (argc >= 4 && !strcmp(argv[1], "snaptest")) return run_snaptest(argv[2], argv[3]);
     if (argc >= 6 && !strcmp(argv[1], "dis")) return run_dis(argv[2], strtoul(argv[3], 0, 0), strtoul(argv[4], 0, 0), atoi(argv[5]));
+    if (argc >= 3 && !strcmp(argv[1], "dbgtest")) return run_dbgtest(argv[2]);
     if (argc >= 2 && !strcmp(argv[1], "boot")) return run_boot(argc - 2, argv + 2);
     if (argc >= 3 && !strcmp(argv[1], "zex")) return run_zex(argv[2]);
     fprintf(stderr, "usage: cpcrun zex <file.com>\n");

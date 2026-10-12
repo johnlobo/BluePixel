@@ -2,6 +2,7 @@
 #include "fdc.h"
 #include "tape.h"
 #include "cpc_keys.h"
+#include "debug.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,7 +19,7 @@ static const uint32_t hw_colours[32] = {
     0x800080, 0x80FF80, 0x80FF00, 0x80FFFF, 0x800000, 0x8000FF, 0x808000, 0x8080FF,
 };
 
-static const uint8_t ram_cfg[8][4] = {{0, 1, 2, 3}, {0, 1, 2, 7}, {4, 5, 6, 7}, {0, 3, 2, 7},
+static const uint8_t ram_cfg_table[8][4] = {{0, 1, 2, 3}, {0, 1, 2, 7}, {4, 5, 6, 7}, {0, 3, 2, 7},
                                       {0, 4, 2, 3}, {0, 5, 2, 3}, {0, 6, 2, 3}, {0, 7, 2, 3}};
 
 void cpc_default_config(CPCConfig *cfg, CPCModel model) {
@@ -93,35 +94,39 @@ void cpc_clear_roms(CPC *c) {
     for (int i = -1; i < 32; i++) cpc_load_rom(c, i, NULL, 0);
 }
 
-void cpc_update_mapping(CPC *c) {
-    uint8_t cfgbits = c->ga_ram & 7;
-    int bank = (c->ga_ram >> 3) & 7;
+void cpc_compute_mapping(CPC *c, uint8_t ram_cfg, bool lower_en, bool upper_en, uint8_t upper_sel, uint8_t lower_base, uint8_t cart_bank, uint8_t **rd, uint8_t **wr) {
+    uint8_t cfgbits = ram_cfg & 7;
+    int bank = (ram_cfg >> 3) & 7;
     if (c->cfg.ram_kb <= 64) { cfgbits = 0; bank = 0; }
     for (int i = 0; i < 4; i++) {
-        int blk = ram_cfg[cfgbits][i];
+        int blk = ram_cfg_table[cfgbits][i];
         size_t phys = blk < 4 ? (size_t)blk * 16384 : 65536 + (size_t)bank * 65536 + (size_t)(blk - 4) * 16384;
         if (phys + 16384 > c->ram_size) phys %= c->ram_size;
-        c->wr_map[i] = c->rd_map[i] = c->ram + phys;
+        wr[i] = rd[i] = c->ram + phys;
     }
     bool cart = c->cfg.plus && c->cartridge;
-    if (c->lower_rom_en) {
-        if (cart) { int b = c->asic.cart_bank; if (b < 32) c->rd_map[c->asic.lower_base] = c->cartridge + (size_t)b * 16384; }
-        else if (c->rom_lower) c->rd_map[0] = c->rom_lower;
+    if (lower_en) {
+        if (cart) { if (cart_bank < 32) rd[lower_base] = c->cartridge + (size_t)cart_bank * 16384; }
+        else if (c->rom_lower) rd[0] = c->rom_lower;
     }
-    if (c->upper_rom_en) {
-        uint8_t sel = c->upper_rom_sel;
+    if (upper_en) {
+        uint8_t sel = upper_sel;
         uint8_t *u = sel < 32 ? c->rom_upper[sel] : NULL;
         if (!u && cart) { int b = sel >= 0x80 ? (sel & 0x1F) : (sel == 7 ? 3 : 1); u = c->cartridge + (size_t)b * 16384; }
         if (!u) u = c->rom_upper[0];
-        if (u) c->rd_map[3] = u;
+        if (u) rd[3] = u;
     }
+}
+
+void cpc_update_mapping(CPC *c) {
+    cpc_compute_mapping(c, c->ga_ram, c->lower_rom_en, c->upper_rom_en, c->upper_rom_sel, c->asic.lower_base, c->asic.cart_bank, c->rd_map, c->wr_map);
 }
 
 void cpc_reset(CPC *c, bool cold) {
     if (cold) memset(c->ram, 0, c->ram_size);
     z80_reset(&c->z80);
     c->z80.turbo = c->cfg.turbo;
-    c->z80.brk_enabled = c->dbg != NULL;
+    c->z80.brk_enabled = c->dbg && c->dbg->break_instructions;
     c->lower_rom_en = c->upper_rom_en = true;
     c->upper_rom_sel = 0; c->ga_ram = 0; c->ga_mode = 1; c->ga_pen = 0;
     for (int i = 0; i < 17; i++) c->ga_palette[i] = 20;
@@ -140,10 +145,13 @@ void cpc_reset(CPC *c, bool cold) {
 uint8_t cpc_mem_read(void *ctx, uint16_t a) {
     CPC *c = ctx;
     if (__builtin_expect(c->asic.page_visible, 0) && (a & 0xC000) == 0x4000) return asic_read(c, a & 0x3FFF);
-    return c->rd_map[a >> 14][a & 0x3FFF];
+    uint8_t v = c->rd_map[a >> 14][a & 0x3FFF];
+    if (__builtin_expect(c->dbg != NULL, 0) && (c->dbg->watch[a] & 1)) dbg_mem_event(c, a, v, false);
+    return v;
 }
 void cpc_mem_write(void *ctx, uint16_t a, uint8_t v) {
     CPC *c = ctx;
+    if (__builtin_expect(c->dbg != NULL, 0) && (c->dbg->watch[a] & 2)) dbg_mem_event(c, a, v, true);
     if (__builtin_expect(c->asic.page_visible, 0) && (a & 0xC000) == 0x4000) { asic_write(c, a & 0x3FFF, v); return; }
     c->wr_map[a >> 14][a & 0x3FFF] = v;
 }
@@ -255,6 +263,7 @@ int cpc_trace_io;
 void cpc_io_write(void *ctx, uint16_t port, uint8_t v) {
     CPC *c = ctx;
     if (cpc_trace_io) fprintf(stderr, "OUT %04X,%02X  pc=%04X\n", port, v, c->z80.pc);
+    if (c->dbg && c->dbg->io_bps) dbg_io_event(c, port, v, true);
     if ((port & 0xC000) == 0x4000) ga_write(c, v);
     if (!(port & 0x8000) && (v & 0xC0) == 0xC0 && (port & 0xC000) != 0x4000) { c->ga_ram = v; cpc_update_mapping(c); }
     else if (!(port & 0x8000) && (v & 0xC0) == 0xC0) { c->ga_ram = v; cpc_update_mapping(c); }
@@ -274,6 +283,7 @@ void cpc_io_write(void *ctx, uint16_t port, uint8_t v) {
 uint8_t cpc_io_read(void *ctx, uint16_t port) {
     CPC *c = ctx;
     uint8_t v = 0xFF;
+    if (c->dbg && c->dbg->io_bps) dbg_io_event(c, port, 0xFF, false);
     if (!(port & 0x4000)) { int f = (port >> 8) & 3; if (f >= 2) v = crtc_read(c, f); }
     if (!(port & 0x0800)) v = ppi_read(c, (port >> 8) & 3);
     if (!(port & 0x0400) && !(port & 0x0080) && (port & 0x0100)) v = (port & 1) ? fdc_read_data(c->fdc) : fdc_read_status(c->fdc);
@@ -526,9 +536,11 @@ static void advance(CPC *c, int nops) {
 }
 
 int cpc_step(CPC *c) {
+    if (c->dbg) { c->z80.brk_enabled = c->dbg->break_instructions; if (dbg_check_code(c)) return 0; }
     int n = z80_step(&c->z80, c->irq_line);
     if (c->z80.int_ack) { c->irq_line = false; c->ga_irq_counter &= 0x1F; }
-    if (!c->z80.brk_hit) advance(c, n);
+    if (c->z80.brk_hit) { if (c->dbg) { c->dbg->hit = true; c->dbg->hit_index = -2; } return n; }
+    advance(c, n);
     return n;
 }
 
@@ -538,7 +550,7 @@ void cpc_run_frame(CPC *c) {
     cpc_autotype_tick(c);
     while (!c->frame_ready && c->cycles - start < 40000) {
         cpc_step(c);
-        if (c->z80.brk_hit) return;
+        if (c->z80.brk_hit || (c->dbg && c->dbg->hit)) return;
     }
 }
 

@@ -18,6 +18,7 @@ typedef enum { CPC_MONITOR_COLOUR, CPC_MONITOR_GREEN, CPC_MONITOR_GREY } CPCMoni
 typedef struct CPCDisc CPCDisc;
 typedef struct CPCTape CPCTape;
 typedef struct FDC FDC;
+struct Debugger;
 
 typedef struct {
     uint8_t r[32];
@@ -150,7 +151,7 @@ struct CPC {
     uint64_t t_counter;            /* debugger T counter */
 
     /* debugger hooks */
-    void *dbg;
+    struct Debugger *dbg;
 };
 
 CPC *cpc_create(CPCModel model);
@@ -206,6 +207,9 @@ void cpc_remove_cartridge(CPC *c);
 
 /* internal */
 void cpc_update_mapping(CPC *c);
+void cpc_compute_mapping(CPC *c, uint8_t ram_cfg, bool lower_en, bool upper_en, uint8_t upper_sel, uint8_t lower_base, uint8_t cart_bank, uint8_t **rd, uint8_t **wr);
+extern int cpc_trace_io;
+bool cpc_dbg_break(const CPC *c);
 void cpc_video_tick(CPC *c);
 void cpc_io_write(void *ctx, uint16_t port, uint8_t v);
 uint8_t cpc_io_read(void *ctx, uint16_t port);
