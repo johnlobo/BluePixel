@@ -24,6 +24,36 @@ enum KeyMap {
         86: CPCK_JOY_LEFT, 88: CPCK_JOY_RIGHT, 91: CPCK_JOY_UP, 84: CPCK_JOY_DOWN, 87: CPCK_JOY_FIRE1, 82: CPCK_JOY_FIRE1,
         92: CPCK_JOY_FIRE2, 89: CPCK_JOY_FIRE3,
     ]
+    /// Names of the CPC keys shown in the mapping editor (key value = matrix position).
+    static let cpcKeyNames: [String: Int] = [
+        "0": CPCK_0, "1": CPCK_1, "2": CPCK_2, "3": CPCK_3, "4": CPCK_4, "5": CPCK_5, "6": CPCK_6, "7": CPCK_7, "8": CPCK_8, "9": CPCK_9,
+        "A": CPCK_A, "B": CPCK_B, "C": CPCK_C, "D": CPCK_D, "E": CPCK_E, "F": CPCK_F, "G": CPCK_G, "H": CPCK_H, "I": CPCK_I, "J": CPCK_J, "K": CPCK_K, "L": CPCK_L, "M": CPCK_M,
+        "N": CPCK_N, "O": CPCK_O, "P": CPCK_P, "Q": CPCK_Q, "R": CPCK_R, "S": CPCK_S, "T": CPCK_T, "U": CPCK_U, "V": CPCK_V, "W": CPCK_W, "X": CPCK_X, "Y": CPCK_Y, "Z": CPCK_Z,
+        "SPACE": CPCK_SPACE, "RETURN": CPCK_RETURN, "ENTER": CPCK_ENTER, "ESC": CPCK_ESC, "TAB": CPCK_TAB, "CAPS LOCK": CPCK_CAPS, "DEL": CPCK_DEL, "CLR": CPCK_CLR, "COPY": CPCK_COPY,
+        "UP": CPCK_UP, "DOWN": CPCK_DOWN, "LEFT": CPCK_LEFT, "RIGHT": CPCK_RIGHT, "F0": CPCK_F0, "F1": CPCK_F1, "F2": CPCK_F2, "F3": CPCK_F3, "F4": CPCK_F4, "F5": CPCK_F5,
+        "F6": CPCK_F6, "F7": CPCK_F7, "F8": CPCK_F8, "F9": CPCK_F9, "F.": CPCK_FDOT, "-": CPCK_MINUS, "^": CPCK_CARET, "@": CPCK_AT, "[": CPCK_LBRACKET, "]": CPCK_RBRACKET,
+        "\\": CPCK_BACKSLASH, ";": CPCK_SEMICOLON, ":": CPCK_COLON, ",": CPCK_COMMA, ".": CPCK_DOT, "/": CPCK_SLASH, "SHIFT": CPCK_SHIFT, "CONTROL": CPCK_CTRL,
+        "JOY UP": CPCK_JOY_UP, "JOY DOWN": CPCK_JOY_DOWN, "JOY LEFT": CPCK_JOY_LEFT, "JOY RIGHT": CPCK_JOY_RIGHT, "FIRE 1": CPCK_JOY_FIRE1, "FIRE 2": CPCK_JOY_FIRE2, "FIRE 3": CPCK_JOY_FIRE3,
+    ]
+    static let macKeyNames: [UInt16: String] = [
+        0: "A", 1: "S", 2: "D", 3: "F", 4: "H", 5: "G", 6: "Z", 7: "X", 8: "C", 9: "V", 11: "B", 12: "Q", 13: "W", 14: "E", 15: "R", 16: "Y", 17: "T", 18: "1", 19: "2", 20: "3", 21: "4", 22: "6", 23: "5",
+        24: "=", 25: "9", 26: "7", 27: "-", 28: "8", 29: "0", 30: "]", 31: "O", 32: "U", 33: "[", 34: "I", 35: "P", 36: "Return", 37: "L", 38: "J", 39: "'", 40: "K", 41: ";", 42: "\\", 43: ",", 44: "/",
+        45: "N", 46: "M", 47: ".", 48: "Tab", 49: "Space", 50: "`", 51: "Delete", 53: "Esc", 57: "Caps Lock", 58: "Option", 61: "Right Option", 117: "Fwd Delete", 119: "End", 115: "Home", 116: "Page Up", 121: "Page Down",
+        123: "Left", 124: "Right", 125: "Down", 126: "Up", 76: "Keypad Enter", 82: "Keypad 0", 83: "Keypad 1", 84: "Keypad 2", 85: "Keypad 3", 86: "Keypad 4", 87: "Keypad 5", 88: "Keypad 6", 89: "Keypad 7",
+        91: "Keypad 8", 92: "Keypad 9", 65: "Keypad .", 56: "Shift", 60: "Right Shift", 59: "Control", 62: "Right Control",
+    ]
+    static func keyName(_ codes: [UInt16]) -> String { codes.isEmpty ? "—" : codes.map { macKeyNames[$0] ?? "#\($0)" }.joined(separator: ", ") }
+    /// Mac key codes currently mapped to a CPC key (custom overrides replace the defaults for that key).
+    static func codes(for cpcKey: Int, settings: Settings) -> [UInt16] {
+        if let v = settings["Keyboard", "\(cpcKey)"], let c = UInt16(v) { return [c] }
+        return defaultMap.filter { $0.value == cpcKey }.map { $0.key }.sorted() + (cpcKey == Int(CPCK_SHIFT) ? [56, 60] : cpcKey == Int(CPCK_CTRL) ? [59, 62] : [])
+    }
+    /// Complete code → CPC key table with overrides applied.
+    static func effectiveMap(settings: Settings) -> [UInt16: Int] {
+        var m = defaultMap
+        for k in settings.keys("Keyboard") { if let cpc = Int(k), let code = UInt16(settings["Keyboard", k] ?? "") { for (c, v) in m where v == cpc { m[c] = nil }; m[code] = cpc } }
+        return m
+    }
     /// Modifier keys, reported through flagsChanged.
     static let shiftCodes: Set<UInt16> = [56, 60]
     static let ctrlCodes: Set<UInt16> = [59, 62]

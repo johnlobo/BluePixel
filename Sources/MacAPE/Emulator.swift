@@ -57,6 +57,13 @@ final class Emulator {
 
     func applySettings() {
         lock.lock(); defer { lock.unlock() }
+        applyConfig()
+        applyROMs()
+        cpc_reset(cpc, true)
+    }
+
+    /// Applies everything that does not require a reset (display, sound, timing, devices).
+    func applyConfig() {
         var cfg = CPCConfig()
         let plus = settings.bool("Configuration", "Enable Plus", false)
         cpc_default_config(&cfg, plus ? CPC_MODEL_6128PLUS : CPC_MODEL_6128)
@@ -74,31 +81,43 @@ final class Emulator {
         cfg.turbo = settings.bool("Configuration", "Turbo Mode", false)
         cfg.four_drives = settings.bool("Configuration", "Enable Four Drives", false)
         cfg.amdrum = settings.bool("Configuration", "AmDrum Enabled", true)
+        cfg.digiblaster = settings.string("Configuration", "Printer Mode", "0") == "3"
         cfg.joystick_enabled = settings.bool("Configuration", "Joystick Enabled", true)
         cfg.monitor = CPCMonitor(UInt32(settings.int("Configuration", "Monitor Type", 0)))
         cfg.linear_palette = settings.bool("Configuration", "Linear Palette", true)
         cfg.sample_rate = settings.int("Configuration", "Sound Mode", 2) == 2 ? 44100 : 22050
         cfg.stereo = settings.bool("Configuration", "Sound Stereo", true)
-        cfg.volume = Float(settings.int("Configuration", "Sound Volume", 15)) / 15.0
+        cfg.volume = settings.int("Configuration", "Sound Mode", 2) == 0 ? 0 : Float(settings.int("Configuration", "Sound Volume", 15)) / 15.0
         cfg.disc_sound = settings.bool("Configuration", "Disc Sound", true)
         cfg.tape_sound = settings.bool("Configuration", "Tape Sound", true)
         cfg.enable_32_roms = settings.bool("Configuration", "Enable 32 ROMs", true)
         cpc_configure(cpc, &cfg)
+        renderPAL = settings.bool("Configuration", "PAL Emulation", true)
+        renderBoth = settings.bool("Configuration", "Render Both", true)
+        halfSize = settings.bool("Configuration", "Half Size", false)
+        brightness = settings.int("Configuration", "Monitor Brightness", 0)
+        let skip = settings.int("Configuration", "Refresh Rate", 0)
+        frameSkip = skip > 0 ? skip : 0
+        speed = max(0.05, min(10.0, Double(settings.int("Configuration", "Emulation Speed", 100)) / 100.0))
+        applyDriveOptions()
+    }
 
-        // ROMs
+    func applyROMs() {
         cpc_clear_roms(cpc)
-        if let u = resolveROM(settings.string("ROMS", "Lower")), let d = try? Data(contentsOf: u) { d.withUnsafeBytes { _ = cpc_load_rom(cpc, -1, $0.bindMemory(to: UInt8.self).baseAddress, d.count) } }
-        let uppers = settings.bool("ROMS", "Disable All", false) ? 0 : 32
+        if !settings.bool("ROMS", "Disable All", false), let u = resolveROM(settings.string("ROMS", "Lower")), let d = try? Data(contentsOf: u) {
+            d.withUnsafeBytes { _ = cpc_load_rom(cpc, -1, $0.bindMemory(to: UInt8.self).baseAddress, d.count) }
+        }
+        let uppers = settings.bool("ROMS", "Disable All", false) ? 0 : (settings.bool("Configuration", "Enable 32 ROMs", true) ? 32 : 16)
         for i in 0..<uppers {
             if let u = resolveROM(settings.string("ROMS", "Upper(\(i))")), let d = try? Data(contentsOf: u) {
                 d.withUnsafeBytes { _ = cpc_load_rom(cpc, Int32(i), $0.bindMemory(to: UInt8.self).baseAddress, d.count) }
             }
         }
-        renderPAL = settings.bool("Configuration", "PAL Emulation", true)
-        renderBoth = settings.bool("Configuration", "Render Both", true)
-        halfSize = settings.bool("Configuration", "Half Size", false)
-        brightness = settings.int("Configuration", "Monitor Brightness", 0)
-        cpc_reset(cpc, true)
+        cpc_remove_cartridge(cpc)
+        if settings.bool("ROMS", "Cartridge Enabled", false), let u = resolveROM(settings.string("ROMS", "Cartridge"), exts: ["CPR", "cpr", "CRT", "crt"]), let d = try? Data(contentsOf: u) {
+            _ = d.withUnsafeBytes { cpc_load_cartridge(cpc, $0.bindMemory(to: UInt8.self).baseAddress, d.count) }
+        }
+        cpc_update_mapping(cpc)
     }
 
     // MARK: Thread

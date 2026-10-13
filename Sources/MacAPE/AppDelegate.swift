@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var tapeControl: TapeController!
     var lastSnapshot: URL?
     var debugger: DebuggerController?
+    var settingsWindow: SettingsController!
     func ensureDebugger() -> DebuggerController { if debugger == nil { debugger = DebuggerController(emulator: emu) }; return debugger! }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -34,6 +35,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         main = MainWindowController(emulator: emu)
         main.view.onFileDrop = { [weak self] in self?.openFile($0) }
         driveSetup = DriveSetupController(emu: emu); tapeControl = TapeController(emu: emu)
+        settingsWindow = SettingsController(emu: emu); settingsWindow.currentProfile = currentProfile
+        settingsWindow.onApply = { [weak self] in guard let self = self else { return }; self.currentProfile = self.settingsWindow.currentProfile; self.emu.applySettings(); self.main.view.keyTable = KeyMap.effectiveMap(settings: self.settings); self.applyDisplayOptions() }
+        main.view.keyTable = KeyMap.effectiveMap(settings: settings)
         emu.onBreak = { [weak self] in guard let self = self else { return }; self.ensureDebugger().show() }
         buildMenus()
         main.showWindow(nil)
@@ -175,15 +179,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc func pasteText(_ s: Any?) { if let t = NSPasteboard.general.string(forType: .string) { emu.type(t) } }
 
     // MARK: Settings menu
-    @objc func showGeneral(_ s: Any?) { todo(s) }
-    @objc func showDisplay(_ s: Any?) { todo(s) }
-    @objc func showSound(_ s: Any?) { todo(s) }
-    @objc func showMemory(_ s: Any?) { todo(s) }
-    @objc func showInput(_ s: Any?) { todo(s) }
-    @objc func showOther(_ s: Any?) { todo(s) }
+    @objc func showGeneral(_ s: Any?) { settingsWindow.show(tab: "General") }
+    @objc func showDisplay(_ s: Any?) { settingsWindow.show(tab: "Display") }
+    @objc func showSound(_ s: Any?) { settingsWindow.show(tab: "Sound") }
+    @objc func showMemory(_ s: Any?) { settingsWindow.show(tab: "Memory") }
+    @objc func showInput(_ s: Any?) { settingsWindow.show(tab: "Input") }
+    @objc func showOther(_ s: Any?) { settingsWindow.show(tab: "Other") }
+    func applyDisplayOptions() {
+        let fs = main.window?.styleMask.contains(.fullScreen) ?? false
+        let sfx = fs ? " FS" : ""
+        main.panelHidden = settings.bool("Configuration", "Hide Panel" + sfx, false)
+        main.view.hideMouse = settings.bool("Configuration", "Hide Mouse" + sfx, true)
+        if fs { NSApp.presentationOptions = settings.bool("Configuration", "Hide Menus FS", true) ? [.autoHideMenuBar, .autoHideDock] : [] }
+    }
     @objc func normalSpeed(_ s: Any?) { emu.speed = 1.0 }
     @objc func highSpeed(_ s: Any?) { emu.speed = 10.0 }
-    @objc func toggleFullScreenAction(_ s: Any?) { main.window?.toggleFullScreen(nil) }
+    @objc func toggleFullScreenAction(_ s: Any?) { main.window?.toggleFullScreen(nil); DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.applyDisplayOptions() } }
     @objc func resetEmu(_ s: Any?) { emu.reset(cold: false) }
     @objc func coldReset(_ s: Any?) { emu.reset(cold: true) }
     @objc func amxMouse(_ s: Any?) { todo(s) }
@@ -193,7 +204,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc func scale2x(_ s: Any?) { main.setContentScale(2) }
     @objc func selectProfile(_ s: NSMenuItem) {
         guard let p = Profiles.load(s.title) else { return }
-        currentProfile = s.title; settings.merge(p); emu.applySettings()
+        currentProfile = s.title; settings.merge(p); emu.applySettings(); settingsWindow.currentProfile = s.title
     }
 
     // MARK: Debug / assembler / help

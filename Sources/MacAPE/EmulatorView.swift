@@ -6,10 +6,14 @@ final class EmulatorView: NSView {
     weak var emu: Emulator?
     private var pressed: [UInt16: Int] = [:]
     var numLock = true
+    var keyTable: [UInt16: Int] = KeyMap.defaultMap
     var onFileDrop: ((URL) -> Void)?
     var aspect: CGFloat { 768.0 / 540.0 }
 
+    var hideMouse = false
     override var acceptsFirstResponder: Bool { true }
+    override func mouseMoved(with event: NSEvent) { if hideMouse { NSCursor.setHiddenUntilMouseMoves(true) } }
+    override func updateTrackingAreas() { super.updateTrackingAreas(); trackingAreas.forEach(removeTrackingArea); addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)) }
     override var isOpaque: Bool { true }
 
     override init(frame: NSRect) {
@@ -42,7 +46,7 @@ final class EmulatorView: NSView {
     private func cpcKey(for code: UInt16) -> (key: Int, joystick: Bool)? {
         if let k = KeyMap.keypadFunction[code], numLock { return (k, false) }
         if !numLock, let j = KeyMap.keypadJoystick[code] { return (j, true) }
-        if let k = KeyMap.defaultMap[code] { return (k, false) }
+        if let k = keyTable[code] { return (k, false) }
         return nil
     }
 
