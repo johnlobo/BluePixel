@@ -20,6 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var tapeControl: TapeController!
     var lastSnapshot: URL?
     var debugger: DebuggerController?
+    var pokes: PokesController?
+    var help: HelpController?
     var settingsWindow: SettingsController!
     func ensureDebugger() -> DebuggerController { if debugger == nil { debugger = DebuggerController(emulator: emu) }; return debugger! }
 
@@ -107,6 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case "dsk", "dsc", "hdr": if !emu.insertDisc(drive: 0, url: url) { alert("Cannot open disc image", url.path) } else { emu.reset(cold: false) }
         case "sna": if !emu.loadSnapshot(url: url) { alert("Cannot load snapshot", url.path) } else { lastSnapshot = url }
         case "cdt", "tzx", "voc", "wav": if !emu.insertTape(url: url) { alert("Unsupported or damaged tape image", url.path) }
+        case "cpr", "crt": insertCartridge(url)
         case "wpf": if let p = Settings.load(url) { settings.merge(p); emu.applySettings() }
         case "ini": if let p = Settings.load(url) { settings.merge(p); emu.applySettings() }
         default: alert("Unsupported file type", url.lastPathComponent)
@@ -135,7 +138,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         _ = emu.insertDisc(drive: drive, url: u)
     }
     @objc func driveSetup(_ s: Any?) { driveSetup.show() }
-    @objc func loadCartridge(_ s: Any?) { todo(s) }
+    @objc func loadCartridge(_ s: Any?) {
+        guard let u = chooseFile(title: "Load Cartridge", types: ["cpr", "crt"]) else { return }
+        insertCartridge(u)
+    }
+    /// Cartridges need the Plus ASIC, so a classic machine is switched to Plus mode first.
+    func insertCartridge(_ u: URL) {
+        if !settings.bool("Configuration", "Enable Plus", false) {
+            settings.set("Configuration", "Enable Plus", true); settings.set("Configuration", "Plus PPI", true); settings.set("Configuration", "CRTC Type", 3)
+        }
+        settings.set("ROMS", "Cartridge", u.path); settings.set("ROMS", "Cartridge Enabled", true)
+        emu.applySettings()
+    }
     @objc func showTape(_ s: Any?) { tapeControl.show() }
     @objc func insertTape(_ s: Any?) {
         guard let u = chooseFile(title: "Insert Tape Image", types: ["cdt", "tzx", "voc", "wav"]) else { return }
@@ -227,8 +241,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc func showTimers(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showTimers(s) }
     @objc func showGraphics(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showGraphics(s) }
     @objc func showAssembler(_ s: Any?) { todo(s) }
-    @objc func showPokes(_ s: Any?) { todo(s) }
-    @objc func showHelp(_ s: Any?) { todo(s) }
+    @objc func showPokes(_ s: Any?) { if pokes == nil { pokes = PokesController(emu: emu) }; pokes?.show() }
+    @objc func showHelp(_ s: Any?) { if help == nil { help = HelpController.make(winapeFolder: emu.romFolder.deletingLastPathComponent()) }; help?.show() }
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool { true }
 

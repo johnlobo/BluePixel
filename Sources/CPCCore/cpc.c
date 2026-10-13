@@ -158,6 +158,15 @@ void cpc_mem_write(void *ctx, uint16_t a, uint8_t v) {
 uint8_t cpc_peek(CPC *c, uint16_t a) { return cpc_mem_read(c, a); }
 void cpc_poke(CPC *c, uint16_t a, uint8_t v) { cpc_mem_write(c, a, v); }
 
+/* RAM access through an arbitrary gate array RAM configuration (0xC0-0xFF), ignoring ROMs. */
+static uint8_t *cpc_bank_ptr(CPC *c, uint8_t ram_cfg, uint16_t a) {
+    uint8_t *rd[4], *wr[4];
+    cpc_compute_mapping(c, ram_cfg, false, false, 0, 0, 0xff, rd, wr);
+    return wr[a >> 14] + (a & 0x3fff);
+}
+uint8_t cpc_bank_peek(CPC *c, uint8_t ram_cfg, uint16_t a) { return *cpc_bank_ptr(c, ram_cfg, a); }
+void cpc_bank_poke(CPC *c, uint8_t ram_cfg, uint16_t a, uint8_t v) { *cpc_bank_ptr(c, ram_cfg, a) = v; }
+
 /* ---------------- CRTC ---------------- */
 void crtc_reset(CPCCrtc *k, uint8_t type) {
     memset(k, 0, sizeof *k);
