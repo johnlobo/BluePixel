@@ -14,6 +14,7 @@ typedef struct {
     uint16_t port, mask;
     bool on_in, on_out;
     char cond[160];
+    char log[160];                 /* logpoint: when set, the message is logged and the machine keeps running */
     int pass_count, hits, count;   /* hits = times valid, count = times condition true */
 } DbgBreakpoint;
 
@@ -21,6 +22,7 @@ typedef struct { uint16_t start, end; bool words, labels, used; } DbgDataArea;
 typedef struct { char name[48]; int32_t value; } DbgSymbol;
 typedef struct { uint16_t pc, af, bc, de, hl, ix, iy, sp; } DbgHistory;
 #define DBG_HISTORY 4096
+#define DBG_LOG_LINES 512
 typedef struct { int id; uint64_t started; bool running; uint32_t count, last, min, max; uint64_t total; bool used; } DbgTimer;
 
 #define DBG_MAX_BP 256
@@ -38,7 +40,8 @@ typedef struct Debugger {
     int temp_bp;                   /* run-to address, -1 when unused */
     bool step_out; uint16_t step_out_sp;
     bool hist_on; int hist_pos, hist_count;  /* execution history ring (last DBG_HISTORY instructions) */
-    DbgHistory hist[DBG_HISTORY];   /* stop after a RET that leaves the frame entered at step_out_sp */
+    DbgHistory hist[DBG_HISTORY];
+    char log_lines[DBG_LOG_LINES][192]; uint32_t log_total;   /* logpoint output ring */   /* stop after a RET that leaves the frame entered at step_out_sp */
     uint8_t watch[65536];          /* bit0 = read watch, bit1 = write watch */
     int io_bps;
     bool hit; int hit_index;       /* last breakpoint that stopped the machine */
@@ -59,6 +62,12 @@ void dbg_remove_bp(CPC *c, int index);
 void dbg_clear_bps(CPC *c);
 void dbg_toggle_code_bp(CPC *c, uint16_t addr);
 bool dbg_set_condition(CPC *c, int index, const char *cond, int pass_count);
+/* Logpoint message: text with {expr} (hex) or {expr:d} (decimal) placeholders; "" makes it a normal breakpoint. */
+void dbg_set_log(CPC *c, int index, const char *message);
+void dbg_log(CPC *c, const char *line);
+uint32_t dbg_log_total(const Debugger *d);                     /* lines logged since start (ring keeps the last DBG_LOG_LINES) */
+const char *dbg_log_line(const Debugger *d, uint32_t n);       /* line number n (0-based), or NULL if no longer kept */
+void dbg_log_clear(Debugger *d);
 
 /* Evaluate a debugger expression (registers, variables, functions, symbols). */
 bool dbg_eval(CPC *c, const char *expr, int32_t *out, char *err, size_t errsize);

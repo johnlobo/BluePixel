@@ -40,8 +40,12 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     var lastFind: FindQuery?
     var symbolsWindow: SymbolsController?
     var historyWindow: HistoryController?
+    var watchWindow: WatchController?
+    var logWindow: LogController?
     private let screenPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let beamLabel = makeLabel("")
+    private let followPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let followRegs: [Reg?] = [nil, .hl, .de, .bc, .ix, .iy, .sp, .pc]
     private var history: [(top: Int, selected: Int)] = []        // disassembler navigation (Enter / Delete)
     private var lastStopRegs: [Reg: Int] = [:], lastStopFlags = -1
     private var changedRegs: Set<Reg> = [], flagsChanged = false
@@ -154,12 +158,18 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
                      symButton("timer", "Show Timers", #selector(showTimers(_:))), symButton("cpu", "Chip Registers", #selector(showChipRegisters(_:))),
                      symButton("photo", "Find Graphics", #selector(showGraphics(_:))), symButton("magnifyingglass", "Search", #selector(findInPane(_:))),
                     ]
-        let fileButtons2 = [symButton("tag", "Symbols", #selector(showSymbols(_:))), symButton("clock.arrow.circlepath", "Execution History", #selector(showHistory(_:)))]
+        let fileButtons2 = [symButton("tag", "Symbols", #selector(showSymbols(_:))), symButton("clock.arrow.circlepath", "Execution History", #selector(showHistory(_:))),
+                            symButton("eye", "Watch", #selector(showWatch(_:)))]
+        let logButton = symButton("text.alignleft", "Log (logpoints)", #selector(showLog(_:)))
         screenPopup.addItems(withTitles: ["Screen: Normal", "Screen: Raster", "Screen: Video RAM"]); screenPopup.controlSize = .small; screenPopup.font = .systemFont(ofSize: 11)
         screenPopup.toolTip = "What the emulator display shows while paused: last frame, frame being drawn with the beam position, or video memory as it is now"
         screenPopup.target = self; screenPopup.action = #selector(screenViewChanged(_:)); root.addSubview(screenPopup)
         beamLabel.font = .monospacedSystemFont(ofSize: 10, weight: .regular); beamLabel.textColor = .secondaryLabelColor; beamLabel.lineBreakMode = .byTruncatingTail
         root.addSubview(beamLabel)
+        followPopup.addItems(withTitles: ["Memory: no follow", "Follow HL", "Follow DE", "Follow BC", "Follow IX", "Follow IY", "Follow SP", "Follow PC"])
+        followPopup.controlSize = .mini; followPopup.font = .systemFont(ofSize: 10); followPopup.target = self; followPopup.action = #selector(followChanged(_:))
+        followPopup.toolTip = "Keep the memory dump at the address held in a register after every step"
+        root.addSubview(followPopup)
         root.addSubview(disasm); root.addSubview(memory)
 
         root.onLayout = { [weak self] in
@@ -182,10 +192,11 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
                 for (i, b) in fileButtons.enumerated() { b.frame = NSRect(x: x + 4, y: by + 4 + CGFloat(i) * 32, width: 32, height: 26) }
             for (i, b) in fileButtons2.enumerated() { b.frame = NSRect(x: x + 40, y: by + 4 + CGFloat(i) * 32, width: 32, height: 26) }
             var cx = gap; let oy = h - 30
-            for b in [self.checkFollow, self.checkHide, self.checkBreaks, self.checkBRK] { let bw = b.fittingSize.width; b.frame = NSRect(x: cx, y: oy, width: bw, height: 22); cx += bw + 14 }
-            for b in tools { b.frame = NSRect(x: cx, y: oy - 2, width: 32, height: 26); cx += 36 }
+            for b in [self.checkFollow, self.checkHide, self.checkBreaks, self.checkBRK] { let bw = b.fittingSize.width; b.frame = NSRect(x: cx, y: oy, width: bw, height: 22); cx += bw + 10 }
+            for b in tools + [logButton] { b.frame = NSRect(x: cx, y: oy - 2, width: 30, height: 26); cx += 33 }
             self.screenPopup.frame = NSRect(x: gx + 406, y: by + 66, width: 148, height: 24)
-            self.beamLabel.frame = NSRect(x: gap, y: self.memory.frame.maxY + 1, width: left, height: 14)
+            self.beamLabel.frame = NSRect(x: gap, y: self.memory.frame.maxY + 1, width: left - 132, height: 14)
+            self.followPopup.frame = NSRect(x: gap + left - 128, y: self.memory.frame.maxY, width: 128, height: 16)
             // right column
             let rx = w - rightW - gap
             flagCaption.frame = NSRect(x: rx + 96, y: gap, width: 110, height: 18)
@@ -216,6 +227,7 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         window?.makeKeyAndOrderFront(nil); window?.makeFirstResponder(disasm)
         noteStop()
         refreshAll()
+        watchWindow?.noteStop()
         focusPC()
     }
     /// Registers that changed since the previous stop are shown in red (WinAPE/RVM style).
@@ -249,6 +261,10 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         memory.reload()
         breakpointsWindow?.reload(); registersWindow?.reload(); timersWindow?.reload(); dataAreasWindow?.reload(); graphicsWindow?.reload()
         if emu.paused { historyWindow?.reload(); if emu.screenView != .normal { emu.publish() } }
+        if emu.paused, let r = followRegs[followPopup.indexOfSelectedItem] {
+            emu.lock.lock(); let z = emu.cpc.pointee.z80; emu.lock.unlock()
+            memory.show(r.get(z)); memory.reload()
+        }
         beamLabel.stringValue = emu.paused ? emu.beamDescription + "   (⌥F8 next scanline, ⌥⇧F8 next frame)" : ""
     }
 
@@ -376,12 +392,26 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         emu.lock.lock(); _ = dbg_attach(emu.cpc); let n = dbg_symbols_load(emu.cpc, u.path); emu.lock.unlock()
         if n < 0 { let a = NSAlert(); a.messageText = "Cannot load symbols"; a.informativeText = u.path; a.runModal(); return }
         window?.title = "MacAPE Debugger — \(n) symbols from \(u.lastPathComponent)"
+        (NSApp.delegate as? AppDelegate)?.symbolsURL = u
         refreshAll(); symbolsWindow?.reload()
     }
+    func symbolsReloaded(_ note: String) { window?.title = "MacAPE Debugger" + note; refreshAll() }
     @objc func clearSymbols(_ s: Any?) {
         emu.lock.lock(); dbg_symbol_clear(emu.cpc); emu.lock.unlock()
         window?.title = "MacAPE Debugger"
         refreshAll(); symbolsWindow?.reload()
+    }
+    @objc func followChanged(_ s: Any?) { refreshAll() }
+    @objc func showWatch(_ s: Any?) { if watchWindow == nil { watchWindow = WatchController(debugger: self) }; watchWindow?.show() }
+    @objc func showLog(_ s: Any?) { if logWindow == nil { logWindow = LogController(debugger: self) }; logWindow?.show() }
+    @objc func addLogpoint(_ s: Any?) {
+        let a = disasm.selected >= 0 ? disasm.selected : model.pc
+        guard let msg = promptText("Add Logpoint", String(format: "Message logged each time #%04X runs (the machine keeps running). {expr} hex, {expr:d} decimal:", a), "A={A} HL={HL}"), !msg.isEmpty else { return }
+        emu.lock.lock()
+        let i = dbg_add_code_bp(emu.cpc, UInt16(a))
+        if i >= 0 { dbg_set_log(emu.cpc, i, msg) }
+        emu.lock.unlock()
+        refreshAll(); showLog(nil)
     }
     @objc func showHistory(_ s: Any?) {
         if historyWindow == nil { historyWindow = HistoryController(debugger: self) }
@@ -446,7 +476,8 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         let m = NSMenu()
         menuItem(m, "Find…", #selector(findInPane(_:)), "f", .control); menuItem(m, "Find Again", #selector(findAgain(_:)), fkey(3)); m.addItem(.separator())
         menuItem(m, "Goto…", #selector(gotoAddress(_:)), "g", .control); m.addItem(.separator())
-        menuItem(m, "Run to Cursor", #selector(runToCursor(_:)), fkey(4)); menuItem(m, "Toggle Breakpoint", #selector(toggleBP(_:)), fkey(5)); m.addItem(.separator())
+        menuItem(m, "Run to Cursor", #selector(runToCursor(_:)), fkey(4)); menuItem(m, "Toggle Breakpoint", #selector(toggleBP(_:)), fkey(5))
+        menuItem(m, "Add Logpoint…", #selector(addLogpoint(_:))); m.addItem(.separator())
         menuItem(m, "Disassemble…", #selector(disassembleRange(_:))); m.addItem(.separator())
         menuItem(m, "Mark as Data", #selector(markData(_:))); menuItem(m, "Clear Data Area", #selector(clearData(_:)))
         return m

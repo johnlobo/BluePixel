@@ -60,7 +60,7 @@ final class BreakpointsController: TableWindowController {
 
     init(emu: Emulator, debugger: DebuggerController) {
         self.emu = emu; self.debugger = debugger
-        super.init(title: "Breakpoints", width: 640, height: 360)
+        super.init(title: "Breakpoints", width: 780, height: 360)
         segment.selectedSegment = 0; segment.target = self; segment.action = #selector(tabChanged(_:))
         contentStack.insertArrangedSubview(segment, at: 0)
         configureColumns()
@@ -69,7 +69,7 @@ final class BreakpointsController: TableWindowController {
     }
 
     private func configureColumns() {
-        setColumns([("addr", "Address", 150, false), ("type", "Type", 90, false), ("count", "Count", 80, false), ("cond", "Condition", 220, true), ("pass", "Pass", 60, true)])
+        setColumns([("addr", "Address", 150, false), ("type", "Type", 70, false), ("count", "Count", 60, false), ("cond", "Condition", 170, true), ("pass", "Pass", 44, true), ("log", "Log message (logpoint: don't stop)", 220, true)])
     }
     @objc func tabChanged(_ s: Any?) { reload() }
 
@@ -95,7 +95,8 @@ final class BreakpointsController: TableWindowController {
             }
             let type = b.type == BP_CODE ? "Code" : b.type == BP_MEM_READ ? "Read" : b.type == BP_MEM_WRITE ? "Write" : (b.on_in && b.on_out ? "In/Out" : b.on_in ? "In" : "Out")
             let cond = withUnsafePointer(to: b.cond) { $0.withMemoryRebound(to: CChar.self, capacity: 160) { String(cString: $0) } }
-            out.append([addr, type, b.pass_count > 0 ? "\(b.hits)/\(b.pass_count)" : "\(b.count)", cond, b.pass_count > 0 ? String(b.pass_count) : ""])
+            let log = withUnsafePointer(to: b.log) { $0.withMemoryRebound(to: CChar.self, capacity: 160) { String(cString: $0) } }
+            out.append([addr, log.isEmpty ? type : type + " (log)", b.pass_count > 0 ? "\(b.hits)/\(b.pass_count)" : "\(b.count)", cond, b.pass_count > 0 ? String(b.pass_count) : "", log])
         }
         return out
     }
@@ -103,6 +104,7 @@ final class BreakpointsController: TableWindowController {
     private func edited(_ row: Int, _ col: String, _ text: String) {
         guard row < indices.count else { return }
         let i = indices[row]
+        if col == "log" { emu.lock.lock(); dbg_set_log(emu.cpc, Int32(i), text); emu.lock.unlock(); reload(); return }
         let cur: (String, Int) = withBP { arr in (withUnsafePointer(to: arr[i].cond) { $0.withMemoryRebound(to: CChar.self, capacity: 160) { String(cString: $0) } }, Int(arr[i].pass_count)) }
         var cond = cur.0, pass = cur.1
         if col == "cond" { cond = text } else if col == "pass" { pass = Int(text) ?? 0 }
@@ -167,7 +169,10 @@ final class BreakpointsController: TableWindowController {
             var idx: Int32 = -1
             switch t { case "code": idx = dbg_add_code_bp(emu.cpc, a); case "read": idx = dbg_add_mem_bp(emu.cpc, a, b, true, false); case "write": idx = dbg_add_mem_bp(emu.cpc, a, b, false, true)
             default: idx = dbg_add_io_bp(emu.cpc, UInt16(f[3], radix: 16) ?? 0, UInt16(f[4], radix: 16) ?? 0xFFFF, f[5] == "1", f[6] == "1") }
-            if idx >= 0 { _ = dbg_set_condition(emu.cpc, idx, f.count > 9 ? f[9] : "", Int32(f[8]) ?? 0) }
+            if idx >= 0 {
+                _ = dbg_set_condition(emu.cpc, idx, f.count > 9 ? f[9] : "", Int32(f[8]) ?? 0)
+                if f.count > 10 { dbg_set_log(emu.cpc, idx, f[10...].joined(separator: ";")) }   // logpoint message (older files have none)
+            }
         }
         emu.lock.unlock(); reload(); debugger?.refreshAll()
     }
@@ -178,7 +183,8 @@ final class BreakpointsController: TableWindowController {
         for b in list {
             let t = b.type == BP_CODE ? "code" : b.type == BP_MEM_READ ? "read" : b.type == BP_MEM_WRITE ? "write" : "io"
             let cond = withUnsafePointer(to: b.cond) { $0.withMemoryRebound(to: CChar.self, capacity: 160) { String(cString: $0) } }
-            out += "\(t);\(String(b.start, radix: 16));\(String(b.end, radix: 16));\(String(b.port, radix: 16));\(String(b.mask, radix: 16));\(b.on_in ? 1 : 0);\(b.on_out ? 1 : 0);1;\(b.pass_count);\(cond)\n"
+            let log = withUnsafePointer(to: b.log) { $0.withMemoryRebound(to: CChar.self, capacity: 160) { String(cString: $0) } }
+            out += "\(t);\(String(b.start, radix: 16));\(String(b.end, radix: 16));\(String(b.port, radix: 16));\(String(b.mask, radix: 16));\(b.on_in ? 1 : 0);\(b.on_out ? 1 : 0);1;\(b.pass_count);\(cond)" + (log.isEmpty ? "" : ";" + log) + "\n"
         }
         try? out.write(to: u, atomically: true, encoding: .utf8)
     }

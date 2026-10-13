@@ -251,6 +251,43 @@ bool dbg_eval(CPC *c, const char *expr, int32_t *out, char *err, size_t errsize)
 }
 
 /* ---------------- Break checks ---------------- */
+void dbg_log(CPC *c, const char *line) {
+    Debugger *d = dbg_attach(c);
+    snprintf(d->log_lines[d->log_total % DBG_LOG_LINES], sizeof d->log_lines[0], "%s", line);
+    d->log_total++;
+}
+uint32_t dbg_log_total(const Debugger *d) { return d->log_total; }
+const char *dbg_log_line(const Debugger *d, uint32_t n) {
+    if (n >= d->log_total || d->log_total - n > DBG_LOG_LINES) return NULL;
+    return d->log_lines[n % DBG_LOG_LINES];
+}
+void dbg_log_clear(Debugger *d) { d->log_total = 0; }
+void dbg_set_log(CPC *c, int index, const char *message) {
+    Debugger *d = dbg_attach(c);
+    if (index < 0 || index >= DBG_MAX_BP) return;
+    snprintf(d->bp[index].log, sizeof d->bp[index].log, "%s", message ? message : "");
+}
+
+/* Expands {expr} / {expr:d} in a logpoint message and logs it with the frame number and PC. */
+static void logpoint(CPC *c, const char *msg) {
+    char out[192]; int o = snprintf(out, sizeof out, "[%llu] %04X  ", (unsigned long long)c->frames, c->z80.pc);
+    for (const char *p = msg; *p && o < (int)sizeof out - 1; ) {
+        if (*p != '{') { out[o++] = *p++; continue; }
+        const char *e = strchr(p, '}');
+        if (!e) { out[o++] = *p++; continue; }
+        char expr[128]; int n = (int)(e - p - 1); if (n > 127) n = 127;
+        memcpy(expr, p + 1, n); expr[n] = 0;
+        bool dec = n > 2 && !strcmp(expr + n - 2, ":d"); if (dec) expr[n - 2] = 0;
+        int32_t v; char err[64];
+        if (!dbg_eval(c, expr, &v, err, sizeof err)) o += snprintf(out + o, sizeof out - o, "<%s?>", expr);
+        else if (dec) o += snprintf(out + o, sizeof out - o, "%d", v);
+        else o += snprintf(out + o, sizeof out - o, (v & ~0xFF) ? "#%04X" : "#%02X", v & 0xFFFF);
+        p = e + 1;
+    }
+    out[o < (int)sizeof out ? o : (int)sizeof out - 1] = 0;
+    dbg_log(c, out);
+}
+
 static bool bp_fires(CPC *c, Debugger *d, int i) {
     DbgBreakpoint *b = &d->bp[i];
     if (b->cond[0]) {
@@ -259,6 +296,7 @@ static bool bp_fires(CPC *c, Debugger *d, int i) {
     }
     b->count++;
     if (b->pass_count > 0) { if (++b->hits < b->pass_count) return false; b->hits = 0; }
+    if (b->log[0]) { logpoint(c, b->log); return false; }
     d->hit = true; d->hit_index = i;
     return true;
 }
@@ -383,10 +421,24 @@ int dbg_symbols_load(CPC *c, const char *path) {
             snprintf(name, sizeof name, "%s", tok[1]);
         }
         else if (!strcasecmp(tok[0], "al") && nt >= 3) { if (!parse_num(tok[1], &v)) { char *e; v = (int32_t)strtol(tok[1], &e, 16); if (e == tok[1]) continue; } snprintf(name, sizeof name, "%s", tok[2][0] == '.' ? tok[2] + 1 : tok[2]); }
+        else if (strlen(tok[0]) == 8 && strspn(tok[0], "0123456789ABCDEFabcdef") == 8) {   /* SDCC/ASxxxx .map: 0000ADDR name module */
+            if (!strncmp(tok[1], "l__", 3) || !strncmp(tok[1], "s__", 3) || !strncmp(tok[1], ".__.", 4)) continue;
+            v = (int32_t)strtol(tok[0], NULL, 16); snprintf(name, sizeof name, "%s", tok[1]);
+        }
         else {
+            /* "name value", "name: EQU value" (sjasmplus), "name #addr B0" (RASM), "name = value":
+             * the value is the first numeric token after the name */
             snprintf(name, sizeof name, "%s", tok[0]); size_t l = strlen(name); if (l && name[l - 1] == ':') name[l - 1] = 0;
-            const char *vt = tok[nt - 1]; if (nt >= 3 && !strcasecmp(tok[1], "equ")) vt = tok[2];
-            if (!parse_num(vt, &v)) continue;
+            bool found = false, area = false;
+            for (int k = 1; k < nt; k++) if (!strcasecmp(tok[k], "bytes")) area = true;   /* linker area summary line */
+            for (int k = 1; k < nt && !found && !area; k++) {
+                if (!strcasecmp(tok[k], "equ")) continue;
+                const char *t = tok[k]; size_t tl = strlen(t);
+                /* whole token must be a number: #1234 &1234 $1234 0x1234 1234h %1010 or decimal */
+                if (strspn(t + (strchr("#&$%", t[0]) ? 1 : 0), "0123456789ABCDEFabcdefxXhH") != tl - (strchr("#&$%", t[0]) ? 1 : 0)) continue;
+                found = parse_num(t, &v);
+            }
+            if (!found) continue;
         }
         if (name[0] == ';' || !name[0]) continue;
         dbg_symbol_set(c, name, v); count++;

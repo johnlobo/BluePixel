@@ -22,6 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var debugger: DebuggerController?
     var pokes: PokesController?
     var help: HelpController?
+    var symbolsURL: URL?            // last symbols file (from /SYM or Load Symbols), reloaded by ⌘R
+    var autoRunRequest: String?     // /A value from the command line ("" = pick from the catalogue)
     var settingsWindow: SettingsController!
     func ensureDebugger() -> DebuggerController { if debugger == nil { debugger = DebuggerController(emulator: emu) }; return debugger! }
 
@@ -58,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             } else { openFile(f) }
         }
         if let sn = opt.snapshot { openFile(sn) }
+        symbolsURL = opt.symbols; autoRunRequest = opt.autoRun
         if let sym = opt.symbols {
             emu.lock.lock(); _ = dbg_attach(emu.cpc); let n = dbg_symbols_load(emu.cpc, sym.path); emu.lock.unlock()
             if n < 0 { alert("Cannot load symbols", sym.path) } else { FileHandle.standardError.write("MacAPE: \(n) symbols loaded from \(sym.lastPathComponent)\n".data(using: .utf8)!) }
@@ -250,12 +253,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if emu.debugStepOver() { if d.hideOnRun { d.window?.orderOut(nil) } } else { d.show() }
     }
     @objc func debugRunToCursor(_ s: Any?) { ensureDebugger().runToCursor(s) }
+    /// ⌘R: after rebuilding, re-read the disc in drive A and the symbols file, cold reset and run it again.
+    @objc func reloadDiscAndSymbols(_ s: Any?) {
+        let path = emu.discPaths[0]
+        guard !path.isEmpty else { alert("No disc in drive A", "Insert the disc image you are working on first."); return }
+        if !emu.insertDisc(drive: 0, url: URL(fileURLWithPath: path)) { alert("Cannot reload disc image", path); return }
+        var note = ""
+        if let sym = symbolsURL {
+            emu.lock.lock(); dbg_symbol_clear(emu.cpc); let n = dbg_symbols_load(emu.cpc, sym.path); emu.lock.unlock()
+            note = n < 0 ? " (symbols not found)" : " — \(n) symbols from \(sym.lastPathComponent)"
+        }
+        if emu.paused { emu.debugResume() }
+        emu.reset(cold: true)
+        if let cmd = emu.autoRunCommand(autoRunRequest ?? "") { DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.emu.type(cmd) } }
+        debugger?.symbolsReloaded(note); debugger?.symbolsWindow?.reload()
+        main.window?.title = "MacAPE — " + URL(fileURLWithPath: path).lastPathComponent
+    }
     @objc func debugStepScanline(_ s: Any?) { let d = ensureDebugger(); emu.debugStepRaster(frame: false); d.show() }
     @objc func debugStepFrame(_ s: Any?) { let d = ensureDebugger(); emu.debugStepRaster(frame: true); d.show() }
     @objc func debugStepOut(_ s: Any?) { let d = ensureDebugger(); emu.debugStepOut(); if d.hideOnRun { d.window?.orderOut(nil) } }
     @objc func debugLoadSymbols(_ s: Any?) { let d = ensureDebugger(); d.show(); d.loadSymbols(s) }
     @objc func debugClearSymbols(_ s: Any?) { ensureDebugger().clearSymbols(s) }
     @objc func debugShowSymbols(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showSymbols(s) }
+    @objc func debugShowWatch(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showWatch(s) }
+    @objc func debugShowLog(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showLog(s) }
     @objc func debugShowHistory(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showHistory(s) }
     @objc func debugScreenView(_ s: NSMenuItem) { ensureDebugger().setScreenView(Emulator.ScreenView(rawValue: s.tag) ?? .normal) }
     @objc func debugFindAgain(_ s: Any?) { ensureDebugger().findAgain(s) }
@@ -355,7 +376,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item("Registers", #selector(showRegisters(_:))), item("Breakpoints", #selector(showBreakpoints(_:))),
             item("Data Areas", #selector(showDataAreas(_:))), item("Timers", #selector(showTimers(_:))), item("Find Graphics", #selector(showGraphics(_:))),
             .separator(),
+            item("Reload Disc & Symbols", #selector(reloadDiscAndSymbols(_:)), "r", .command),
+            .separator(),
             item("Execution History…", #selector(debugShowHistory(_:))),
+            item("Watch…", #selector(debugShowWatch(_:))), item("Log…", #selector(debugShowLog(_:))),
             { let m = NSMenuItem(title: "Paused Screen", action: nil, keyEquivalent: ""); let sub = NSMenu(title: "Paused Screen")
               for (i, t) in ["Normal (last frame)", "Raster (beam position)", "Video Memory"].enumerated() { let it = NSMenuItem(title: t, action: #selector(debugScreenView(_:)), keyEquivalent: ""); it.tag = i; sub.addItem(it) }
               m.submenu = sub; return m }(),

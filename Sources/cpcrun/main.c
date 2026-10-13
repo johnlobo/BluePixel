@@ -273,6 +273,27 @@ static int run_steptest(const char *roms, const char *disc) {
     return fails ? 1 : 0;
 }
 
+static int run_logtest(const char *roms, const char *disc) {
+    int fails = 0;
+    CPC *c = cpc_create(CPC_MODEL_6128); load_roms(c, roms, CPC_MODEL_6128); cpc_reset(c, true);
+    CPCDisc *dk = dsk_load_file(disc); fdc_insert(c->fdc, 0, dk);
+    for (int i = 0; i < 100; i++) cpc_run_frame(c);
+    cpc_autotype(c, "run\"boop\n"); for (int i = 0; i < 700; i++) cpc_run_frame(c);
+    Debugger *d = dbg_attach(c);
+    int i = dbg_add_code_bp(c, 0x6BB9);
+    dbg_set_log(c, i, "scan A={A} HL={HL} frames={peek(#B8B4):d}");
+    for (int f = 0; f < 50; f++) cpc_run_frame(c);
+    CHECK(!d->hit, "logpoint does not stop the machine");
+    CHECK(dbg_log_total(d) >= 40, "logpoint logged every frame");
+    printf("  %u lines, last: %s\n", dbg_log_total(d), dbg_log_line(d, dbg_log_total(d) - 1));
+    dbg_set_log(c, i, "");
+    for (int f = 0; f < 5 && !d->hit; f++) cpc_run_frame(c);
+    CHECK(d->hit, "clearing the message makes it a normal breakpoint again");
+    cpc_destroy(c);
+    printf("%d failure(s)\n", fails);
+    return fails ? 1 : 0;
+}
+
 static int run_amxtest(const char *roms) {
     int fails = 0;
     CPC *c = cpc_create(CPC_MODEL_6128); load_roms(c, roms, CPC_MODEL_6128); cpc_reset(c, true);
@@ -384,6 +405,7 @@ int main(int argc, char **argv) {
     if (argc >= 3 && !strcmp(argv[1], "dbgtest")) return run_dbgtest(argv[2]);
     if (argc >= 3 && !strcmp(argv[1], "mftest")) return run_mftest(argv[2]);
     if (argc >= 3 && !strcmp(argv[1], "steptest")) return run_steptest(argv[2], argc >= 4 ? argv[3] : NULL);
+    if (argc >= 4 && !strcmp(argv[1], "logtest")) return run_logtest(argv[2], argv[3]);
     if (argc >= 3 && !strcmp(argv[1], "amxtest")) return run_amxtest(argv[2]);
     if (argc >= 4 && !strcmp(argv[1], "symtest")) return run_symtest(argv[2], argv[3]);
     if (argc >= 3 && !strcmp(argv[1], "inttest")) return run_inttest(argv[2]);
