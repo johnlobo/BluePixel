@@ -30,7 +30,7 @@ final class WatchController: NSObject, NSTableViewDataSource, NSTableViewDelegat
         let scroll = NSScrollView(); scroll.documentView = table; scroll.hasVerticalScroller = true
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
-        let help = makeLabel("e.g. (_snd_music_active) as Byte at, HL, IX+3, peek(#B8B4)"); help.textColor = .secondaryLabelColor; help.font = .systemFont(ofSize: 11)
+        let help = makeLabel("e.g. _snd_music_active as Byte at, HL, IX+3, peek(#B8B4)"); help.textColor = .secondaryLabelColor; help.font = .systemFont(ofSize: 11)
         let buttons = stack([makeButton("Add…", self, #selector(add(_:))), makeButton("Remove", self, #selector(remove(_:))), NSView(), help], axis: .horizontal)
         let all = stack([scroll, buttons]); all.alignment = .width
         fill(panel, with: all, inset: 12)
@@ -99,7 +99,7 @@ final class WatchController: NSObject, NSTableViewDataSource, NSTableViewDelegat
         watches[p.tag].format = Format(rawValue: p.indexOfSelectedItem) ?? .hex; watches[p.tag].atStop = ""; save(); refresh()
     }
     @objc func add(_ s: Any?) {
-        guard let t = promptText("Add Watch", "Expression (registers, symbols, (address), peek(x), arithmetic):", ""), !t.isEmpty else { return }
+        guard let t = promptText("Add Watch", "Expression: registers, symbols, peek(addr) for a byte in memory, arithmetic. Parentheses only group.", ""), !t.isEmpty else { return }
         // a bare symbol usually names a variable: show the byte stored there
         let fmt: Format = debugger.model.symbols().contains { $0.0.caseInsensitiveCompare(t) == .orderedSame } ? .byteAt : .hex
         watches.append(Watch(expr: t, format: fmt)); save(); refresh()
@@ -148,7 +148,7 @@ final class LogController: NSObject {
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
         info.font = .systemFont(ofSize: 11); info.textColor = .secondaryLabelColor
-        info.stringValue = "Logpoints: right-click a line ▸ Add Logpoint…, or a message in the Breakpoints window. {expr} = hex, {expr:d} = decimal."
+        info.stringValue = "Logpoints: right-click a line ▸ Add Logpoint…, or a message in the Breakpoints window. {expr} = hex, {expr:d} = decimal, peek(addr) reads memory."
         let row = stack([info, NSView(), makeButton("Clear", self, #selector(clear(_:)))], axis: .horizontal)
         let all = stack([scroll, row]); all.alignment = .width
         fill(panel, with: all, inset: 12)
