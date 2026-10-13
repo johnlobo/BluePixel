@@ -24,7 +24,8 @@ struct LaunchOptions {
       /A:name         run "name" from drive A   (/A:|CPM boots CP/M)
       /T:file         type the contents of an Auto-Type text file
       /SN:file        load and start a snapshot
-      /SYM:file       load assembler/debugger symbols
+      /SYM:file       load assembler/debugger symbols (.noi, .sym, Maxam/WinAPE lists)
+                      (/T, /SN and /SYM also accept the file as the next argument)
       --type text     type text (~ is Return)
       -h, --help      show this help
     """
@@ -54,7 +55,10 @@ struct LaunchOptions {
             }
             if a == "-h" || a == "--help" || a == "/?" { help = true; continue }
             if a.hasPrefix("-psn_") || a.hasPrefix("-NS") || a.hasPrefix("-Apple") { if i < args.count, !args[i].hasPrefix("-") { i += 1 }; continue }
-            if let (name, value) = LaunchOptions.option(a) {
+            if let (name, given) = LaunchOptions.option(a) {
+                var value = given
+                // "/SYM file" (value as the next argument) is accepted as well as "/SYM:file".
+                if value == nil, ["T", "SN", "SYM"].contains(name), i < args.count, LaunchOptions.option(args[i]) == nil, !args[i].hasPrefix("--") { value = args[i]; i += 1 }
                 switch name {
                 case "A": autoRun = value ?? ""
                 case "T": if let v = value { typeFile = url(v) } else { errors.append("/T needs a file name") }

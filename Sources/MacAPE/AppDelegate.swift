@@ -60,7 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if let sn = opt.snapshot { openFile(sn) }
         if let sym = opt.symbols {
             emu.lock.lock(); _ = dbg_attach(emu.cpc); let n = dbg_symbols_load(emu.cpc, sym.path); emu.lock.unlock()
-            if n < 0 { alert("Cannot load symbols", sym.path) }
+            if n < 0 { alert("Cannot load symbols", sym.path) } else { FileHandle.standardError.write("MacAPE: \(n) symbols loaded from \(sym.lastPathComponent)\n".data(using: .utf8)!) }
         }
         var typing = ""
         if let req = opt.autoRun {

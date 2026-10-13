@@ -363,7 +363,11 @@ int dbg_symbols_load(CPC *c, const char *path) {
         for (char *t = strtok_r(line, " \t\r\n=", &sv); t && nt < 6; t = strtok_r(NULL, " \t\r\n=", &sv)) tok[nt++] = t;
         if (nt < 2) continue;
         int32_t v; char name[64];
-        if (!strcasecmp(tok[0], "al") && nt >= 3) { if (!parse_num(tok[1], &v)) { char *e; v = (int32_t)strtol(tok[1], &e, 16); if (e == tok[1]) continue; } snprintf(name, sizeof name, "%s", tok[2][0] == '.' ? tok[2] + 1 : tok[2]); }
+        if (!strcasecmp(tok[0], "DEF") && nt >= 3) {        /* NoICE (.noi, SDCC/CPCtelera): DEF name 0xADDR */
+            if (!strncmp(tok[1], "l__", 3) || !strncmp(tok[1], ".__.", 4) || !parse_num(tok[2], &v)) continue;   /* skip section lengths */
+            snprintf(name, sizeof name, "%s", tok[1]);
+        }
+        else if (!strcasecmp(tok[0], "al") && nt >= 3) { if (!parse_num(tok[1], &v)) { char *e; v = (int32_t)strtol(tok[1], &e, 16); if (e == tok[1]) continue; } snprintf(name, sizeof name, "%s", tok[2][0] == '.' ? tok[2] + 1 : tok[2]); }
         else {
             snprintf(name, sizeof name, "%s", tok[0]); size_t l = strlen(name); if (l && name[l - 1] == ':') name[l - 1] = 0;
             const char *vt = tok[nt - 1]; if (nt >= 3 && !strcasecmp(tok[1], "equ")) vt = tok[2];

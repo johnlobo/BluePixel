@@ -218,6 +218,15 @@ static int run_inttest(const char *roms) {
     cpc_destroy(c); return 0;
 }
 
+static int run_symtest(const char *path, const char *name) {
+    CPC *c = cpc_create(CPC_MODEL_6128); dbg_attach(c);
+    int n = dbg_symbols_load(c, path); int32_t v = -1;
+    bool ok = dbg_symbol_lookup(c->dbg, name, &v);
+    const char *back = ok ? dbg_symbol_for_address(c->dbg, (uint16_t)v) : NULL;
+    printf("%d symbols; %s = %s%04X; address -> %s\n", n, name, ok ? "" : "(missing) ", v & 0xFFFF, back ? back : "(none)");
+    cpc_destroy(c); return ok ? 0 : 1;
+}
+
 static int run_amxtest(const char *roms) {
     int fails = 0;
     CPC *c = cpc_create(CPC_MODEL_6128); load_roms(c, roms, CPC_MODEL_6128); cpc_reset(c, true);
@@ -319,6 +328,7 @@ int main(int argc, char **argv) {
     if (argc >= 3 && !strcmp(argv[1], "dbgtest")) return run_dbgtest(argv[2]);
     if (argc >= 3 && !strcmp(argv[1], "mftest")) return run_mftest(argv[2]);
     if (argc >= 3 && !strcmp(argv[1], "amxtest")) return run_amxtest(argv[2]);
+    if (argc >= 4 && !strcmp(argv[1], "symtest")) return run_symtest(argv[2], argv[3]);
     if (argc >= 3 && !strcmp(argv[1], "inttest")) return run_inttest(argv[2]);
     if (argc >= 2 && !strcmp(argv[1], "boot")) return run_boot(argc - 2, argv + 2);
     if (argc >= 3 && !strcmp(argv[1], "zex")) return run_zex(argv[2]);
