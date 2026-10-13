@@ -42,8 +42,9 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
 
     init(emulator: Emulator) {
         emu = emulator; model = DebugModel(emu: emulator)
-        let win = NSWindow(contentRect: NSRect(x: 120, y: 120, width: 1000, height: 740), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        let win = NSWindow(contentRect: NSRect(x: 120, y: 120, width: 940, height: 740), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         win.title = "MacAPE Debugger"; win.isReleasedWhenClosed = false
+        win.contentMinSize = NSSize(width: 940, height: 600)   // below this the bottom groups would reach the right column
         super.init(window: win)
         win.delegate = self
         disasm.model = model; memory.model = model; stackView.model = model
@@ -149,7 +150,7 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         root.onLayout = { [weak self] in
             guard let self = self else { return }
             let w = self.root.bounds.width, h = self.root.bounds.height
-            let rightW: CGFloat = 230, gap: CGFloat = 8, left = w - rightW - gap * 2
+            let rightW: CGFloat = 210, gap: CGFloat = 8, left = w - rightW - gap * 3
             let bottomH: CGFloat = 132
             // left panes
             let paneH = h - bottomH - gap * 2

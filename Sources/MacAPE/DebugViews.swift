@@ -166,9 +166,14 @@ final class DisasmView: NSView {
             if model.hasBreakpoint(at: l.addr) { NSColor.systemRed.setFill(); NSBezierPath(ovalIn: NSRect(x: 2, y: y + 3, width: 10, height: 10)).fill() }
             let fg: NSColor = isPC ? .alternateSelectedControlTextColor : DebugStyle.address
             NSAttributedString(string: String(format: "%04X", l.addr), attributes: [.font: monoFont, .foregroundColor: fg]).draw(at: NSPoint(x: x0, y: y))
-            DebugStyle.instruction(model.symbolise(l.text), highlighted: isPC).draw(at: NSPoint(x: x0 + cw * 5, y: y))
+            // the operand column (after the 6-character mnemonic) holds 26 characters before the bytes;
+            // longer symbolised operands are cut with an ellipsis
+            var ins = model.symbolise(l.text)
+            let parts = ins.split(separator: " ", maxSplits: 1)
+            if parts.count == 2, parts[1].count > 26 { ins = parts[0] + " " + parts[1].prefix(25) + "…" }
+            DebugStyle.instruction(ins, highlighted: isPC).draw(at: NSPoint(x: x0 + cw * 5, y: y))
             let raw = (0..<min(l.len, 4)).map { model.read(l.addr + $0) }
-            let bytesX = max(x0 + cw * 40, bounds.width * 0.5)
+            let bytesX = x0 + cw * 38          // fixed columns: no gap that grows with the window
             NSAttributedString(string: raw.map { String(format: "%02X", $0) }.joined(separator: " "), attributes: [.font: monoFont, .foregroundColor: isPC ? fg : DebugStyle.bytes]).draw(at: NSPoint(x: bytesX, y: y))
             DebugStyle.drawGlyphs(raw, at: NSPoint(x: bytesX + cw * 14, y: y), cell: cw, color: isPC ? fg : DebugStyle.bytes, in: self)
             // symbols whose value is this address, after the characters (as in WinAPE)
@@ -231,7 +236,10 @@ final class StackListView: NSView {
             let v = Int(model.read(a)) | Int(model.read(a + 1)) << 8
             let current = offset + r == 0
             let text = String(format: "%04X: %04X", a, v) + (v > 0xFF ? model.symbol(for: v).map { " " + $0 } ?? "" : "")
-            NSAttributedString(string: text, attributes: [.font: monoFont, .foregroundColor: current ? NSColor.systemBlue : NSColor.labelColor]).draw(at: NSPoint(x: 4, y: CGFloat(r) * lineHeight))
+            // centre the "ADDR: VALUE" block; a symbol name may extend to the right
+            let base = ("0000: 0000" as NSString).size(withAttributes: [.font: monoFont]).width
+            let x = max(4, (bounds.width - base) / 2 - (text.count > 10 ? min(CGFloat(text.count - 10) * 3.6, (bounds.width - base) / 2 - 4) : 0))
+            NSAttributedString(string: text, attributes: [.font: monoFont, .foregroundColor: current ? NSColor.systemBlue : NSColor.labelColor]).draw(at: NSPoint(x: x, y: CGFloat(r) * lineHeight))
         }
     }
     override func scrollWheel(with event: NSEvent) { offset += event.scrollingDeltaY > 0 ? -2 : 2 }
@@ -257,7 +265,8 @@ final class MemoryView: NSView {
     override var acceptsFirstResponder: Bool { true }
     var rows: Int { max(1, Int(bounds.height / lineHeight)) }
     private let hexX: CGFloat = 52, charW: CGFloat = 7.25
-    private var asciiX: CGFloat { hexX + charW * 49 }
+    private var asciiX: CGFloat { hexX + charW * 52 }     // three character gap after the hex column
+    private var asciiW: CGFloat { charW * 1.3 }            // a little air between characters
     var selection: ClosedRange<Int> { let a = anchor ?? cursor; return min(a, cursor)...max(a, cursor) }
 
     func reload() { needsDisplay = true }
@@ -282,7 +291,7 @@ final class MemoryView: NSView {
                 let addr = (a + i) & 0xFFFF
                 let x = hexX + CGFloat(i) * charW * 3 + (i >= 8 ? charW : 0)
                 let cell = NSRect(x: x - 2, y: y, width: charW * 2 + 4, height: lineHeight)
-                let ax = NSRect(x: asciiX + CGFloat(i) * charW, y: y, width: charW, height: lineHeight)
+                let ax = NSRect(x: asciiX + CGFloat(i) * asciiW, y: y, width: asciiW, height: lineHeight)
                 // memory breakpoints: green read, red write, yellow both (as in WinAPE)
                 switch model.watchBits(addr) {
                 case 1: NSColor.systemGreen.withAlphaComponent(0.35).setFill(); cell.fill()
@@ -296,7 +305,7 @@ final class MemoryView: NSView {
                     NSColor.systemOrange.withAlphaComponent(asciiMode ? 0.6 : 0.25).setFill(); ax.fill()
                 }
                 String(format: "%02X", bytes[i]).draw(at: NSPoint(x: x, y: y), withAttributes: attrs)
-                DebugStyle.drawGlyphs([bytes[i]], at: NSPoint(x: asciiX + CGFloat(i) * charW, y: y), cell: charW, color: DebugStyle.bytes, in: self)
+                DebugStyle.drawGlyphs([bytes[i]], at: NSPoint(x: asciiX + CGFloat(i) * asciiW + (asciiW - charW) / 2, y: y), cell: asciiW, color: DebugStyle.bytes, in: self)
             }
         }
     }
@@ -306,7 +315,7 @@ final class MemoryView: NSView {
         let r = Int(p.y / lineHeight)
         guard r >= 0, r < rows else { return nil }
         if p.x >= asciiX - 2 {
-            let col = Int((p.x - asciiX) / charW)
+            let col = Int((p.x - asciiX) / asciiW)
             return col >= 0 && col < 16 ? ((topAddr + r * 16 + col) & 0xFFFF, true) : nil
         }
         var col = Int((p.x - hexX + 2) / (charW * 3))
