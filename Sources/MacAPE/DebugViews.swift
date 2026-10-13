@@ -117,7 +117,7 @@ final class DisasmView: NSView {
         let a = anchor ?? selected, lo = min(a, selected), hi = max(a, selected)
         return lo...((hi + max(1, model.disasm(hi).1) - 1) & 0xFFFF)
     }
-    /// One row per instruction; a symbol at an address gets its own "label:" row above it.
+    /// One row per instruction.
     private var lines: [(addr: Int, len: Int, text: String, isLabel: Bool)] = []
     private var charWidth: CGFloat { ("0" as NSString).size(withAttributes: [.font: monoFont]).width }
     private let gutterWidth: CGFloat = 14
@@ -134,7 +134,6 @@ final class DisasmView: NSView {
         }
         var a = topAddr; lines = []
         while lines.count < rows {
-            if let s = model.symbol(for: a) { lines.append((a, 0, s, true)); if lines.count >= rows { break } }
             let (t, n) = model.disasm(a); lines.append((a, n, t, false)); a = (a + max(n, 1)) & 0xFFFF
         }
         needsDisplay = true
@@ -172,6 +171,10 @@ final class DisasmView: NSView {
             let bytesX = max(x0 + cw * 40, bounds.width * 0.5)
             NSAttributedString(string: raw.map { String(format: "%02X", $0) }.joined(separator: " "), attributes: [.font: monoFont, .foregroundColor: isPC ? fg : DebugStyle.bytes]).draw(at: NSPoint(x: bytesX, y: y))
             DebugStyle.drawGlyphs(raw, at: NSPoint(x: bytesX + cw * 14, y: y), cell: cw, color: isPC ? fg : DebugStyle.bytes, in: self)
+            // symbols whose value is this address, after the characters (as in WinAPE)
+            if let sym = model.symbol(for: l.addr) {
+                NSAttributedString(string: sym, attributes: [.font: monoFont, .foregroundColor: isPC ? fg : DebugStyle.symbol]).draw(at: NSPoint(x: bytesX + cw * 20, y: y))
+            }
         }
     }
 

@@ -130,19 +130,19 @@ enum Reg: String, CaseIterable {
 
 // MARK: - Find (WinAPE: Find Text, Find Hex Data, Find Assembler)
 struct FindQuery {
-    enum Mode: Int { case text, hex, assembler }
+    enum Mode: Int { case text, hex, assembler, symbol }
     var mode: Mode
     var input: String
     var caseSensitive: Bool
     var bytes: [UInt8] = [], wild: [Bool] = []
 
-    var length: Int { mode == .assembler ? 1 : bytes.count }
+    var length: Int { mode == .assembler || mode == .symbol ? 1 : bytes.count }
 
     /// Text: "?" is a wildcard. Hex: bytes separated by spaces, "?"/"??" wildcard. Assembler: "?" one character, "*" any run.
     static func ask(previous: FindQuery?) -> FindQuery? {
         let a = NSAlert(); a.messageText = "Find"
-        a.informativeText = "Text (? = any character), hex bytes separated by spaces (?? = any byte), or Z80 instructions (? = one character, * = any)."
-        let kind = NSPopUpButton(frame: NSRect(x: 0, y: 56, width: 320, height: 24)); kind.addItems(withTitles: ["Find Text", "Find Hex Data", "Find Assembler"])
+        a.informativeText = "Text (? = any character), hex bytes separated by spaces (?? = any byte), Z80 instructions or symbol names (? = one character, * = any; a symbol name without wildcards matches any part of it)."
+        let kind = NSPopUpButton(frame: NSRect(x: 0, y: 56, width: 320, height: 24)); kind.addItems(withTitles: ["Find Text", "Find Hex Data", "Find Assembler", "Find Symbol"])
         let f = NSTextField(frame: NSRect(x: 0, y: 28, width: 320, height: 24))
         let cs = NSButton(checkboxWithTitle: "Case sensitive", target: nil, action: nil); cs.frame = NSRect(x: 0, y: 0, width: 320, height: 20)
         if let p = previous { kind.selectItem(at: p.mode.rawValue); f.stringValue = p.input; cs.state = p.caseSensitive ? .on : .off }
@@ -157,7 +157,7 @@ struct FindQuery {
                 if tok.allSatisfy({ $0 == "?" }) { q.bytes.append(0); q.wild.append(true) }
                 else if let b = UInt8(tok, radix: 16) { q.bytes.append(b); q.wild.append(false) } else { NSSound.beep(); return nil }
             }
-        case .assembler: break
+        case .assembler, .symbol: break
         }
         return q
     }
@@ -180,7 +180,22 @@ struct FindQuery {
 
 extension DebugModel {
     /// First match after `from` (wrapping round the 64K view), or nil.
+    /// Loaded symbols as (name, address).
+    func symbols() -> [(String, Int)] {
+        emu.lock.lock(); defer { emu.lock.unlock() }
+        guard let d = cpc.pointee.dbg, let p = d.pointee.syms else { return [] }
+        return (0..<Int(d.pointee.nsyms)).map { i in
+            let name = withUnsafeBytes(of: p[i].name) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) }
+            return (name, Int(p[i].value) & 0xFFFF)
+        }
+    }
+
     func find(_ q: FindQuery, after from: Int) -> Int? {
+        if q.mode == .symbol {
+            let pat = q.input.contains("*") || q.input.contains("?") ? q.input : "*" + q.input + "*"
+            let hits = Set(symbols().filter { FindQuery.asmMatch($0.0, pat) }.map { $0.1 }).sorted()
+            return hits.first { $0 > from } ?? hits.first     // next symbol after the cursor, wrapping
+        }
         if q.mode == .assembler {
             for k in 1...65536 {
                 let a = (from + k) & 0xFFFF
