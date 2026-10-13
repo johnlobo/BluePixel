@@ -242,7 +242,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if d.hideOnRun { d.window?.orderOut(nil) }
         emu.debugResume()
     }
-    @objc func debugPause(_ s: Any?) { let d = ensureDebugger(); emu.debugPause(); d.show() }
+    /// F7 as in WinAPE: pauses a running machine, single-steps a paused one.
+    @objc func debugPause(_ s: Any?) { let d = ensureDebugger(); if emu.paused { emu.debugStepInto() } else { emu.debugPause() }; d.show() }
     @objc func debugStep(_ s: Any?) { let d = ensureDebugger(); emu.debugStepInto(); d.show() }
     @objc func debugStepOver(_ s: Any?) {
         let d = ensureDebugger()
@@ -340,7 +341,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item("AMX Mouse", #selector(amxMouse(_:)), fkey(12), ctrl), item("Multiface Stop", #selector(multifaceStop(_:)), fkey(11)),
         ])
         let debug = submenu("Debug", [
-            item("Run", #selector(debugRun(_:)), fkey(9)), item("Pause", #selector(debugPause(_:)), fkey(7)), item("Step Into", #selector(debugStep(_:)), fkey(7)), item("Step Over", #selector(debugStepOver(_:)), fkey(8)), item("Run to Cursor", #selector(debugRunToCursor(_:)), fkey(4)), item("Find Again", #selector(debugFindAgain(_:)), fkey(3)),
+            item("Run", #selector(debugRun(_:)), fkey(9)), item("Pause", #selector(debugPause(_:)), fkey(7)), item("Step Into", #selector(debugStep(_:)), fkey(7), shift), item("Step Over", #selector(debugStepOver(_:)), fkey(8)), item("Run to Cursor", #selector(debugRunToCursor(_:)), fkey(4)), item("Find Again", #selector(debugFindAgain(_:)), fkey(3)),
             item("Registers", #selector(showRegisters(_:))), item("Breakpoints", #selector(showBreakpoints(_:))),
             item("Data Areas", #selector(showDataAreas(_:))), item("Timers", #selector(showTimers(_:))), item("Find Graphics", #selector(showGraphics(_:))),
         ])
