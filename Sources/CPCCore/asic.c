@@ -4,8 +4,8 @@
 
 static const uint8_t unlock_seq[17] = {0xFF, 0x00, 0xFF, 0x77, 0xB3, 0x51, 0xA8, 0xD4, 0x62, 0x39, 0x9C, 0x46, 0x2B, 0x15, 0x8A, 0xCD, 0xEE};
 
-static uint32_t rgb12(uint16_t w) {      /* word 0x0GRB */
-    uint32_t g = ((w >> 8) & 15) * 17, r = ((w >> 4) & 15) * 17, b = (w & 15) * 17;
+static uint32_t rgb12(const CPC *c, uint16_t w) {      /* word 0x0GRB */
+    uint32_t g = cpc_level8(c, w >> 8), r = cpc_level8(c, w >> 4), b = cpc_level8(c, w);
     return 0xFF000000u | (r << 16) | (g << 8) | b;
 }
 
@@ -14,6 +14,16 @@ static void apply_monitor(CPC *c, uint32_t *rgb) {
     int r = (*rgb >> 16) & 255, g = (*rgb >> 8) & 255, b = *rgb & 255;
     int l = (int)(0.299 * r + 0.587 * g + 0.114 * b);
     *rgb = 0xFF000000u | (c->cfg.monitor == CPC_MONITOR_GREEN ? ((l / 4) << 16 | l << 8 | l / 4) : (l << 16 | l << 8 | l));
+}
+
+/* Recomputes display colours after the monitor or linear palette option changes. */
+void asic_refresh_palette(CPC *c) {
+    CPCAsic *a = &c->asic;
+    for (int i = 0; i < 17; i++) { a->pal_rgb[i] = rgb12(c, a->pal12[i]); apply_monitor(c, &a->pal_rgb[i]); }
+    for (int i = 0; i < 16; i++) {
+        uint16_t w = (uint16_t)(a->ram[0x2420 + i * 2] | ((a->ram[0x2420 + i * 2 + 1] & 15) << 8));
+        a->spal_rgb[i] = rgb12(c, w); apply_monitor(c, &a->spal_rgb[i]);
+    }
 }
 
 void asic_reset(CPC *c) {
@@ -52,7 +62,7 @@ void asic_ga_palette(CPC *c, int pen, uint8_t hw) {
         {0,0,1}, {0,2,1}, {0,2,0}, {0,2,2}, {0,0,0}, {0,0,2}, {0,1,0}, {0,1,2}, {1,0,1}, {1,2,1}, {1,2,0}, {1,2,2}, {1,0,0}, {1,0,2}, {1,1,0}, {1,1,2}};
     const uint8_t *t = rgbtab[hw & 31];
     uint16_t w = (uint16_t)((lvl[t[1]] << 8) | (lvl[t[0]] << 4) | lvl[t[2]]);
-    a->pal12[pen] = w; a->pal_rgb[pen] = rgb12(w); apply_monitor(c, &a->pal_rgb[pen]);
+    a->pal12[pen] = w; a->pal_rgb[pen] = rgb12(c, w); apply_monitor(c, &a->pal_rgb[pen]);
     a->ram[0x2400 + pen * 2] = (uint8_t)w; a->ram[0x2400 + pen * 2 + 1] = (uint8_t)(w >> 8);
 }
 
@@ -69,10 +79,10 @@ void asic_write(CPC *c, uint16_t off, uint8_t v) {
     a->ram[off] = v;
     if (off >= 0x2400 && off < 0x2422) {
         int i = (off - 0x2400) >> 1; uint16_t w = (uint16_t)(a->ram[0x2400 + i * 2] | ((a->ram[0x2400 + i * 2 + 1] & 15) << 8));
-        a->pal12[i] = w; a->pal_rgb[i] = rgb12(w); apply_monitor(c, &a->pal_rgb[i]);
+        a->pal12[i] = w; a->pal_rgb[i] = rgb12(c, w); apply_monitor(c, &a->pal_rgb[i]);
     } else if (off >= 0x2420 && off < 0x2440) {
         int i = (off - 0x2420) >> 1; uint16_t w = (uint16_t)(a->ram[0x2420 + i * 2] | ((a->ram[0x2420 + i * 2 + 1] & 15) << 8));
-        a->spal_rgb[i] = rgb12(w); apply_monitor(c, &a->spal_rgb[i]);
+        a->spal_rgb[i] = rgb12(c, w); apply_monitor(c, &a->spal_rgb[i]);
     } else switch (off) {
     case 0x2800: a->pri = v; break;
     case 0x2801: a->splt = v; break;

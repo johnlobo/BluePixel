@@ -84,7 +84,7 @@ final class Emulator {
         cfg.digiblaster = settings.string("Configuration", "Printer Mode", "0") == "3"
         cfg.joystick_enabled = settings.bool("Configuration", "Joystick Enabled", true)
         cfg.monitor = CPCMonitor(UInt32(settings.int("Configuration", "Monitor Type", 0)))
-        cfg.linear_palette = settings.bool("Configuration", "Linear Palette", true)
+        cfg.linear_palette = settings.bool("Configuration", "Linear Palette", false)
         cfg.sample_rate = settings.int("Configuration", "Sound Mode", 2) == 2 ? 44100 : 22050
         cfg.stereo = settings.bool("Configuration", "Sound Stereo", true)
         cfg.volume = settings.int("Configuration", "Sound Mode", 2) == 0 ? 0 : Float(settings.int("Configuration", "Sound Volume", 15)) / 15.0
@@ -168,6 +168,14 @@ final class Emulator {
             shown += 1
             if frameSkip <= 1 || shown % frameSkip == 0 { publish() }
             if hit { paused = true; DispatchQueue.main.async { self.onBreak?() } }
+            if speed == 1.0, let a = audio, a.isRunning {
+                // Audio is the master clock: keep about three frames of sound queued.
+                let target = Int32(cpc.pointee.cfg.sample_rate) * 3 / 50
+                let deadline = nowUS() + 100_000
+                while running && !paused && cpc_audio_available(cpc) > target && nowUS() < deadline { usleep(1000) }
+                next = Double(nowUS())
+                continue
+            }
             next += framePeriod / min(speed, 1.0)
             let wait = next - Double(nowUS())
             if wait > 0 { usleep(UInt32(wait)) } else if wait < -100000 { next = Double(nowUS()) }

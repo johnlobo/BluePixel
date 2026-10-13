@@ -222,6 +222,7 @@ static int run_amxtest(const char *roms) {
 }
 
 static int run_boot(int argc, char **argv) {
+    const char *wav = NULL;
     CPCModel m = CPC_MODEL_6128; const char *roms = "roms", *out = "frame.bmp"; int frames = 150, wait = 100; const char *disc = NULL, *typed = NULL, *cart = NULL; int fkey = -1;
     for (int i = 0; i < argc; i++) {
         if (!strcmp(argv[i], "--model") && i + 1 < argc) { const char *v = argv[++i]; m = !strcmp(v, "464") ? CPC_MODEL_464 : !strcmp(v, "664") ? CPC_MODEL_664 : CPC_MODEL_6128; }
@@ -233,7 +234,10 @@ static int run_boot(int argc, char **argv) {
         else if (!strcmp(argv[i], "--type") && i + 1 < argc) typed = argv[++i];
         else if (!strcmp(argv[i], "--wait") && i + 1 < argc) wait = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--wav") && i + 1 < argc) wav = argv[++i];
     }
+    FILE *wf = wav ? fopen(wav, "wb") : NULL; uint32_t wav_frames = 0;
+    if (wf) fseek(wf, 44, SEEK_SET);
     CPC *c = cpc_create(cart ? CPC_MODEL_6128PLUS : m);
     if (cart) { CPCConfig cfg; cpc_default_config(&cfg, CPC_MODEL_6128PLUS); cfg.ram_kb = 128; cpc_configure(c, &cfg); size_t n; uint8_t *b = slurp(cart, &n); if (!b || !cpc_load_cartridge(c, b, n)) { fprintf(stderr, "bad cartridge\n"); return 1; } free(b); }
     else load_roms(c, roms, m);
@@ -266,6 +270,16 @@ static int run_boot(int argc, char **argv) {
             printf("no reset\n"); return 0;
         }
         cpc_run_frame(c);
+        if (wf) { float buf[4096 * 2]; int n; while ((n = cpc_audio_read(c, buf, 4096)) > 0) {
+            for (int k = 0; k < n * 2; k++) { int v = (int)(buf[k] * 32767); int16_t s16 = v > 32767 ? 32767 : v < -32768 ? -32768 : v; fwrite(&s16, 2, 1, wf); }
+            wav_frames += n; } }
+    }
+    if (wf) {
+        uint32_t rate = c->cfg.sample_rate, bytes = wav_frames * 4, v; uint16_t h;
+        fseek(wf, 0, SEEK_SET); fwrite("RIFF", 1, 4, wf); v = 36 + bytes; fwrite(&v, 4, 1, wf); fwrite("WAVEfmt ", 1, 8, wf);
+        v = 16; fwrite(&v, 4, 1, wf); h = 1; fwrite(&h, 2, 1, wf); h = 2; fwrite(&h, 2, 1, wf); fwrite(&rate, 4, 1, wf);
+        v = rate * 4; fwrite(&v, 4, 1, wf); h = 4; fwrite(&h, 2, 1, wf); h = 16; fwrite(&h, 2, 1, wf); fwrite("data", 1, 4, wf); fwrite(&bytes, 4, 1, wf);
+        fclose(wf);
     }
     if (getenv("DUMP")) {
         printf("mode=%d ram=%02X lower=%d upper=%d sel=%02X unl=%d vis=%d rmr2=%02X\n", c->ga_mode, c->ga_ram, c->lower_rom_en, c->upper_rom_en, c->upper_rom_sel, c->asic.unlocked, c->asic.page_visible, c->asic.rmr2);

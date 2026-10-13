@@ -105,7 +105,7 @@ final class SettingsController: NSObject, NSWindowDelegate {
                           check("Hide Menus", "Configuration", "Hide Menus" + suffix, false), check("No Right-Click Menu", "Configuration", "No Right Click" + suffix, false)])
         }
         let displayCol1 = column([group("Monitor", [row([makeLabel("Type"), monitor]), row([makeLabel("V Hold"), vhold]), row([makeLabel("Brightness"), bright])]),
-                                  group("Rendering", [check("PAL Emulation", "Configuration", "PAL Emulation", true), check("Linear Palette", "Configuration", "Linear Palette", true),
+                                  group("Rendering", [check("PAL Emulation", "Configuration", "PAL Emulation", true), check("Linear Palette", "Configuration", "Linear Palette", false),
                                                       check("On-Screen Drive LED", "Configuration", "On Screen Drive LED", false), check("Show Drive Cylinders", "Configuration", "Show Track", false)])])
         let displayRow = row([displayCol1, winOpts("", "Windowed"), winOpts(" FS", "Full Screen")]); displayRow.alignment = .top
         tab("Display", displayRow)

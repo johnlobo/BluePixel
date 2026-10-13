@@ -214,6 +214,9 @@ void asic_ga_palette(CPC *c, int pen, uint8_t hw);
 void asic_line(CPC *c);        /* once per scanline (hsync end) */
 
 void cpc_remove_cartridge(CPC *c);
+/* Palette intensity (0..15) to 8-bit, honouring the linear palette option. */
+uint8_t cpc_level8(const CPC *c, int intensity);
+void asic_refresh_palette(CPC *c);
 /* AMX mouse: report relative movement (x right, y down) and button state. */
 void cpc_amx_mouse(CPC *c, int dx, int dy, uint8_t buttons);
 /* Multiface II: load its 8K ROM (NULL removes it) and press the Stop button. */

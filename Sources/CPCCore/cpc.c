@@ -28,14 +28,24 @@ void cpc_default_config(CPCConfig *cfg, CPCModel model) {
     if (cfg->plus) cfg->type = 3;
     cfg->ram_kb = (model == CPC_MODEL_6128 || model == CPC_MODEL_6128PLUS) ? 128 : 64;
     cfg->fast_disc = true; cfg->joystick_enabled = true; cfg->monitor = CPC_MONITOR_COLOUR;
-    cfg->linear_palette = true; cfg->sample_rate = 44100; cfg->stereo = true; cfg->volume = 0.75f;
+    cfg->linear_palette = false; cfg->sample_rate = 44100; cfg->stereo = true; cfg->volume = 0.75f;
     cfg->disc_sound = false; cfg->tape_sound = true; cfg->refresh_50hz = true;
 }
+
+/* 4-bit intensity to 8-bit, from WinApe.exe (0x5CCA14 linear, 0x5CCA44 non-linear). The gate array's
+ * three levels are intensities 0, 6 and 15, so half-tones are #66 (linear, like the Plus) or #80. */
+static const uint8_t level8[2][16] = {
+    {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF},
+    {0x00, 0x18, 0x30, 0x47, 0x5F, 0x72, 0x80, 0x8E, 0x9C, 0xAA, 0xB9, 0xC7, 0xD5, 0xE3, 0xF1, 0xFF},
+};
+uint8_t cpc_level8(const CPC *c, int intensity) { return level8[c->cfg.linear_palette ? 0 : 1][intensity & 15]; }
 
 static void build_palette(CPC *c) {
     for (int i = 0; i < 32; i++) {
         uint32_t rgb = hw_colours[i];
-        int r = (rgb >> 16) & 255, g = (rgb >> 8) & 255, b = rgb & 255;
+        #define LVL(v) cpc_level8(c, (v) == 0xFF ? 15 : (v) ? 6 : 0)
+        int r = LVL((rgb >> 16) & 255), g = LVL((rgb >> 8) & 255), b = LVL(rgb & 255);
+        #undef LVL
         if (c->cfg.monitor != CPC_MONITOR_COLOUR) {
             int l = (int)(0.299 * r + 0.587 * g + 0.114 * b);
             if (c->cfg.monitor == CPC_MONITOR_GREEN) { r = l / 4; g = l; b = l / 4; } else { r = g = b = l; }
@@ -75,7 +85,7 @@ void cpc_configure(CPC *c, const CPCConfig *cfg) {
     c->cfg = *cfg;
     c->crtc.type = cfg->type;
     c->z80.turbo = cfg->turbo;
-    build_palette(c);
+    build_palette(c); asic_refresh_palette(c);
     cpc_update_mapping(c);
 }
 
