@@ -12,7 +12,19 @@ final class EmulatorView: NSView {
 
     var hideMouse = false
     override var acceptsFirstResponder: Bool { true }
-    override func mouseMoved(with event: NSEvent) { if hideMouse { NSCursor.setHiddenUntilMouseMoves(true) } }
+    override func mouseMoved(with event: NSEvent) { if hideMouse { NSCursor.setHiddenUntilMouseMoves(true) }; amx(event) }
+    // AMX mouse: movement and buttons go to the joystick port when enabled.
+    private var amxButtons: UInt8 = 0
+    private func amx(_ e: NSEvent, set: UInt8 = 0, clear: UInt8 = 0) {
+        amxButtons = (amxButtons | set) & ~clear
+        emu?.amxMouse(dx: e.deltaX, dy: e.deltaY, buttons: amxButtons)
+    }
+    override func mouseDragged(with event: NSEvent) { amx(event) }
+    override func rightMouseDragged(with event: NSEvent) { amx(event) }
+    override func mouseDown(with event: NSEvent) { amx(event, set: 1) }
+    override func mouseUp(with event: NSEvent) { amx(event, clear: 1) }
+    override func rightMouseDown(with event: NSEvent) { if emu?.amxEnabled == true { amx(event, set: 2) } else { super.rightMouseDown(with: event) } }
+    override func rightMouseUp(with event: NSEvent) { if emu?.amxEnabled == true { amx(event, clear: 2) } else { super.rightMouseUp(with: event) } }
     override func updateTrackingAreas() { super.updateTrackingAreas(); trackingAreas.forEach(removeTrackingArea); addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)) }
     override var isOpaque: Bool { true }
 

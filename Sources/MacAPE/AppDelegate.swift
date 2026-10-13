@@ -211,8 +211,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc func toggleFullScreenAction(_ s: Any?) { main.window?.toggleFullScreen(nil); DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.applyDisplayOptions() } }
     @objc func resetEmu(_ s: Any?) { emu.reset(cold: false) }
     @objc func coldReset(_ s: Any?) { emu.reset(cold: true) }
-    @objc func amxMouse(_ s: Any?) { todo(s) }
-    @objc func multifaceStop(_ s: Any?) { todo(s) }
+    @objc func amxMouse(_ s: Any?) { emu.amxEnabled.toggle() }
+    @objc func multifaceStop(_ s: Any?) {
+        if !emu.multifaceStop() && (settings.string("ROMS", "Multiface").isEmpty || !settings.bool("ROMS", "Multiface Enabled", true)) {
+            alert("Multiface not available", "Enable the Multiface and select its ROM in Settings > Memory.")
+        }
+    }
     @objc func scale1x(_ s: Any?) { main.setContentScale(1) }
     @objc func scale15x(_ s: Any?) { main.setContentScale(1.5) }
     @objc func scale2x(_ s: Any?) { main.setContentScale(2) }
@@ -244,7 +248,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc func showPokes(_ s: Any?) { if pokes == nil { pokes = PokesController(emu: emu) }; pokes?.show() }
     @objc func showHelp(_ s: Any?) { if help == nil { help = HelpController.make(winapeFolder: emu.romFolder.deletingLastPathComponent()) }; help?.show() }
 
-    func validateMenuItem(_ item: NSMenuItem) -> Bool { true }
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(amxMouse(_:)) { item.state = emu.amxEnabled ? .on : .off }
+        return true
+    }
 
     // MARK: Menu construction
     private func fkey(_ n: Int) -> String { String(UnicodeScalar(UInt32(NSF1FunctionKey) + UInt32(n - 1))!) }

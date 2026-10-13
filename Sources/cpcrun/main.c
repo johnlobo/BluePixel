@@ -172,6 +172,55 @@ static int run_dbgtest(const char *roms) {
     return fails ? 1 : 0;
 }
 
+static int run_mftest(const char *roms) {
+    int fails = 0;
+    CPC *c = cpc_create(CPC_MODEL_6128); load_roms(c, roms, CPC_MODEL_6128);
+    CPCConfig cfg = c->cfg; cfg.multiface = true; cpc_configure(c, &cfg);
+    uint8_t rom[8192] = {0};
+    /* NMI handler: LD A,42h / LD (2000h),A / RETN */
+    const uint8_t h[] = {0x3E, 0x42, 0x32, 0x00, 0x20, 0xED, 0x45};
+    memcpy(rom + 0x66, h, sizeof h); rom[0] = 0xA5;
+    CHECK(cpc_load_multiface(c, rom, sizeof rom), "load multiface");
+    cpc_reset(c, true);
+    for (int i = 0; i < 100; i++) cpc_run_frame(c);
+    uint8_t lower0 = cpc_mem_read(c, 0);
+    CHECK(c->rom_multiface[0x3FFF] == c->ga_ram || (c->rom_multiface[0x3FFF] & 0xC0) == 0xC0, "RAM config snooped");
+    CHECK(c->rom_multiface[0x3CFF] <= 17, "CRTC select snooped");
+    uint16_t pc = c->z80.pc;
+    CHECK(cpc_multiface_stop(c), "stop accepted");
+    CHECK(!cpc_multiface_stop(c), "second stop ignored while running");
+    CHECK(cpc_mem_read(c, 0) == 0xA5, "MF ROM paged in");
+    cpc_step(c); CHECK(c->z80.pc == 0x66, "NMI vector");
+    for (int i = 0; i < 3; i++) cpc_step(c);
+    CHECK(c->z80.pc == pc, "RETN back to stop address");
+    CHECK(!c->mf_running, "running cleared by RETN");
+    CHECK(cpc_mem_read(c, 0x2000) == 0x42, "MF RAM written");
+    cpc_io_write(c, 0xFEEA, 0); CHECK(cpc_mem_read(c, 0) == lower0, "FEEA pages out");
+    cpc_io_write(c, 0xFEE8, 0); CHECK(cpc_mem_read(c, 0) == 0xA5, "FEE8 pages in");
+    cpc_io_write(c, 0xFEEA, 0);
+    for (int i = 0; i < 50; i++) cpc_run_frame(c);
+    CHECK(cpc_mem_read(c, 0x2000) != 0x42 || lower0 == 0x42, "machine runs after stop");
+    cpc_destroy(c);
+    printf("%d failure(s)\n", fails);
+    return fails ? 1 : 0;
+}
+
+static int run_amxtest(const char *roms) {
+    int fails = 0;
+    CPC *c = cpc_create(CPC_MODEL_6128); load_roms(c, roms, CPC_MODEL_6128); cpc_reset(c, true);
+    cpc_run_frame(c); CHECK(c->amx_row == 0xFF, "idle when disabled");
+    c->amx_enabled = true;
+    cpc_amx_mouse(c, 5, -3, 1); cpc_run_frame(c);
+    CHECK(c->amx_row == (uint8_t)~(0x08 | 0x01 | 0x10), "right+up+left button");
+    cpc_amx_mouse(c, 0, 0, 1); cpc_run_frame(c);
+    CHECK(c->amx_row == (uint8_t)~0x10, "no movement keeps only the button");
+    cpc_amx_mouse(c, -1, 2, 2); cpc_run_frame(c);
+    CHECK(c->amx_row == (uint8_t)~(0x04 | 0x02 | 0x20), "left+down+right button");
+    cpc_destroy(c);
+    printf("%d failure(s)\n", fails);
+    return fails ? 1 : 0;
+}
+
 static int run_boot(int argc, char **argv) {
     CPCModel m = CPC_MODEL_6128; const char *roms = "roms", *out = "frame.bmp"; int frames = 150, wait = 100; const char *disc = NULL, *typed = NULL, *cart = NULL; int fkey = -1;
     for (int i = 0; i < argc; i++) {
@@ -237,6 +286,8 @@ int main(int argc, char **argv) {
     if (argc >= 4 && !strcmp(argv[1], "snaptest")) return run_snaptest(argv[2], argv[3]);
     if (argc >= 6 && !strcmp(argv[1], "dis")) return run_dis(argv[2], strtoul(argv[3], 0, 0), strtoul(argv[4], 0, 0), atoi(argv[5]));
     if (argc >= 3 && !strcmp(argv[1], "dbgtest")) return run_dbgtest(argv[2]);
+    if (argc >= 3 && !strcmp(argv[1], "mftest")) return run_mftest(argv[2]);
+    if (argc >= 3 && !strcmp(argv[1], "amxtest")) return run_amxtest(argv[2]);
     if (argc >= 2 && !strcmp(argv[1], "boot")) return run_boot(argc - 2, argv + 2);
     if (argc >= 3 && !strcmp(argv[1], "zex")) return run_zex(argv[2]);
     fprintf(stderr, "usage: cpcrun zex <file.com>\n");

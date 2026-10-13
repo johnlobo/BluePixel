@@ -120,12 +120,52 @@ void cpc_compute_mapping(CPC *c, uint8_t ram_cfg, bool lower_en, bool upper_en, 
 
 void cpc_update_mapping(CPC *c) {
     cpc_compute_mapping(c, c->ga_ram, c->lower_rom_en, c->upper_rom_en, c->upper_rom_sel, c->asic.lower_base, c->asic.cart_bank, c->rd_map, c->wr_map);
+    /* Pages are 16K, so writes to the ROM half (0000-1FFF) also land in the Multiface buffer. */
+    if (c->mf_active && c->rom_multiface) c->rd_map[0] = c->wr_map[0] = c->rom_multiface;
+}
+
+bool cpc_load_multiface(CPC *c, const uint8_t *data, size_t size) {
+    free(c->rom_multiface); c->rom_multiface = NULL; c->mf_active = c->mf_running = false;
+    if (data && size) {
+        c->rom_multiface = calloc(1, 16384);
+        memcpy(c->rom_multiface, data, size < 8192 ? size : 8192);
+    }
+    cpc_update_mapping(c);
+    return c->rom_multiface != NULL;
+}
+
+bool cpc_multiface_stop(CPC *c) {
+    if (!c->cfg.multiface || !c->rom_multiface || c->mf_running) return false;
+    c->mf_running = c->mf_active = true; cpc_update_mapping(c);
+    c->z80.nmi_pending = true;
+    return true;
+}
+
+/* The Multiface snoops writes to the gate array, CRTC, ROM select and PPI control into its RAM
+ * so that its software can restore the hardware state (same locations as the real interface). */
+static void mf_snoop(CPC *c, uint16_t port, uint8_t v) {
+    uint8_t *m = c->rom_multiface;
+    if ((port & 0xC000) == 0x4000) {
+        switch (v >> 6) {
+        case 0: m[0x3FCF] = v; break;
+        case 1: { uint8_t pen = m[0x3FCF]; m[0x3F90 | ((pen & 0x10) << 2) | (pen & 0x0F)] = v; break; }
+        case 2: m[0x3FEF] = v; break;
+        default: m[0x3FFF] = v; break;
+        }
+    }
+    if (!(port & 0x4000)) {
+        int f = (port >> 8) & 3;
+        if (f == 0) m[0x3CFF] = v; else if (f == 1) m[0x3DB0 | (m[0x3CFF] & 0x0F)] = v;
+    }
+    if (!(port & 0x2000)) m[0x3AAC] = v;
+    if (!(port & 0x0800) && ((port >> 8) & 3) == 3) m[0x37FF] = v;
 }
 
 void cpc_reset(CPC *c, bool cold) {
     if (cold) memset(c->ram, 0, c->ram_size);
     z80_reset(&c->z80);
     c->z80.turbo = c->cfg.turbo;
+    c->mf_active = c->mf_running = false;
     c->z80.brk_enabled = c->dbg && c->dbg->break_instructions;
     c->lower_rom_en = c->upper_rom_en = true;
     c->upper_rom_sel = 0; c->ga_ram = 0; c->ga_mode = 1; c->ga_pen = 0;
@@ -135,7 +175,7 @@ void cpc_reset(CPC *c, bool cold) {
     asic_reset(c);
     c->beam_x = 0; c->beam_y = -37; c->beam_vsync = false;
     c->ppi_a = c->ppi_b = c->ppi_c = 0; c->ppi_ctl = 0x9B; c->psg_ctl = 0;
-    memset(c->kbd, 0xFF, sizeof c->kbd);
+    memset(c->kbd, 0xFF, sizeof c->kbd); c->amx_row = 0xFF; c->amx_dx = c->amx_dy = 0;
     psg_reset(&c->psg);
     c->tape_motor = false; c->motor = false;
     fdc_reset(c->fdc);
@@ -237,7 +277,7 @@ static uint8_t ppi_read(CPC *c, int func) {
     case 0:
         if (c->ppi_ctl & 0x10) {
             if (c->psg_ctl == 1) {
-                if (c->psg.sel == 14) { int row = c->ppi_c & 15; return (!(c->psg.regs[7] & 0x40) && row < 10) ? c->kbd[row] : 0xFF; }
+                if (c->psg.sel == 14) { int row = c->ppi_c & 15; return (!(c->psg.regs[7] & 0x40) && row < 10) ? (row == 9 ? c->kbd[9] & c->amx_row : c->kbd[row]) : 0xFF; }
                 return c->psg.regs[c->psg.sel];
             }
             return 0xFF;
@@ -273,6 +313,11 @@ void cpc_io_write(void *ctx, uint16_t port, uint8_t v) {
     CPC *c = ctx;
     if (cpc_trace_io) fprintf(stderr, "OUT %04X,%02X  pc=%04X\n", port, v, c->z80.pc);
     if (c->dbg && c->dbg->io_bps) dbg_io_event(c, port, v, true);
+    if (c->cfg.multiface && c->rom_multiface) {
+        if (port == 0xFEE8 && !c->mf_active) { c->mf_active = true; cpc_update_mapping(c); }
+        else if (port == 0xFEEA && c->mf_active) { c->mf_active = false; cpc_update_mapping(c); }
+        mf_snoop(c, port, v);
+    }
     if ((port & 0xC000) == 0x4000) ga_write(c, v);
     if (!(port & 0x8000) && (v & 0xC0) == 0xC0 && (port & 0xC000) != 0x4000) { c->ga_ram = v; cpc_update_mapping(c); }
     else if (!(port & 0x8000) && (v & 0xC0) == 0xC0) { c->ga_ram = v; cpc_update_mapping(c); }
@@ -304,6 +349,20 @@ void cpc_key(CPC *c, int key, bool down) {
     int line = key >> 3, bit = key & 7;
     if (line > 9) return;
     if (down) c->kbd[line] &= ~(1 << bit); else c->kbd[line] |= 1 << bit;
+}
+
+void cpc_amx_mouse(CPC *c, int dx, int dy, uint8_t buttons) { c->amx_dx += dx; c->amx_dy += dy; c->amx_buttons = buttons; }
+
+/* Like WinAPE: once per frame a direction line is held low if the mouse moved that way at all. */
+static void amx_frame(CPC *c) {
+    uint8_t r = 0xFF;
+    if (c->amx_enabled) {
+        if (c->amx_dx < 0) r &= ~0x04; else if (c->amx_dx > 0) r &= ~0x08;
+        if (c->amx_dy < 0) r &= ~0x01; else if (c->amx_dy > 0) r &= ~0x02;
+        if (c->amx_buttons & 1) r &= ~0x10;
+        if (c->amx_buttons & 2) r &= ~0x20;
+    }
+    c->amx_dx = c->amx_dy = 0; c->amx_row = r;
 }
 
 void cpc_joystick(CPC *c, int bit, bool down) {
@@ -548,6 +607,7 @@ int cpc_step(CPC *c) {
     if (c->dbg) { c->z80.brk_enabled = c->dbg->break_instructions; if (dbg_check_code(c)) return 0; }
     int n = z80_step(&c->z80, c->irq_line);
     if (c->z80.int_ack) { c->irq_line = false; c->ga_irq_counter &= 0x1F; }
+    if (c->z80.retn_hit && c->mf_running) c->mf_running = false;
     if (c->z80.brk_hit) { if (c->dbg) { c->dbg->hit = true; c->dbg->hit_index = -2; } return n; }
     advance(c, n);
     return n;
@@ -557,6 +617,7 @@ void cpc_run_frame(CPC *c) {
     uint64_t start = c->cycles;
     c->frame_ready = false;
     cpc_autotype_tick(c);
+    amx_frame(c);
     while (!c->frame_ready && c->cycles - start < 40000) {
         cpc_step(c);
         if (c->z80.brk_hit || (c->dbg && c->dbg->hit)) return;

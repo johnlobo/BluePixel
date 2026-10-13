@@ -193,7 +193,7 @@ static int exec_ed(Z80 *z, uint8_t op) {
             if (q) r->w = rd16(z, a); else wr16(z, a, r->w);
             z->wz.w = a + 1; break; }
         case 4: { uint8_t a = A; A = 0; A = alu_sub_f(z, a, 0); break; }
-        case 5: z->iff1 = z->iff2; z->pc = pop16(z); z->wz.w = z->pc; break;
+        case 5: z->iff1 = z->iff2; z->pc = pop16(z); z->wz.w = z->pc; z->retn_hit = true; break;
         case 6: z->im = (y & 3) < 2 ? 0 : (y & 3) - 1; break;
         case 7:
             switch (y) {
@@ -247,7 +247,12 @@ static int exec_ed(Z80 *z, uint8_t op) {
 
 int z80_step(Z80 *z, bool irq) {
     if (!tables_ready) init_tables();
-    z->brk_hit = false; z->int_ack = false;
+    z->brk_hit = false; z->int_ack = false; z->retn_hit = false;
+    if (z->nmi_pending) {
+        z->nmi_pending = false; z->halted = false; z->iff1 = false; z->r = (z->r & 0x80) | ((z->r + 1) & 0x7F);
+        push16(z, z->pc); z->pc = 0x66; z->wz.w = 0x66;
+        return z->turbo ? 1 : 3;
+    }
     if (irq && z->iff1 && z->ei_delay == 0) {
         z->int_ack = true; z->halted = false; z->iff1 = z->iff2 = false; z->r = (z->r & 0x80) | ((z->r + 1) & 0x7F);
         if (z->im < 2) { push16(z, z->pc); z->pc = 0x38; z->wz.w = 0x38; return z->turbo ? 1 : 5; }

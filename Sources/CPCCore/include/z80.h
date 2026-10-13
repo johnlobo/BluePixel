@@ -18,6 +18,8 @@ struct Z80 {
     bool int_ack;          /* set when a maskable interrupt was accepted by the last step */
     uint8_t int_vector;    /* data-bus byte supplied for IM2 (default 0xFF) */
     bool brk_hit;          /* set when BRK executed; core does not advance PC */
+    bool nmi_pending;      /* edge-triggered NMI, accepted before the next instruction */
+    bool retn_hit;         /* set when the last step executed RETN/RETI */
     uint64_t instructions; /* retired instruction counter */
     void *ctx;
     uint8_t (*rd)(void *ctx, uint16_t addr);

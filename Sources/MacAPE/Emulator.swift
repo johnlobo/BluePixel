@@ -91,7 +91,9 @@ final class Emulator {
         cfg.disc_sound = settings.bool("Configuration", "Disc Sound", true)
         cfg.tape_sound = settings.bool("Configuration", "Tape Sound", true)
         cfg.enable_32_roms = settings.bool("Configuration", "Enable 32 ROMs", true)
+        cfg.multiface = settings.bool("ROMS", "Multiface Enabled", true)
         cpc_configure(cpc, &cfg)
+        cpc.pointee.amx_enabled = settings.bool("Configuration", "AMX Mouse Enabled", false)
         renderPAL = settings.bool("Configuration", "PAL Emulation", true)
         renderBoth = settings.bool("Configuration", "Render Both", true)
         halfSize = settings.bool("Configuration", "Half Size", false)
@@ -101,6 +103,19 @@ final class Emulator {
         speed = max(0.05, min(10.0, Double(settings.int("Configuration", "Emulation Speed", 100)) / 100.0))
         applyDriveOptions()
     }
+
+    /// Relative mouse movement (points, y down) and buttons (bit0 left, bit1 right) for the AMX mouse.
+    func amxMouse(dx: CGFloat, dy: CGFloat, buttons: UInt8) {
+        lock.lock(); defer { lock.unlock() }
+        if cpc.pointee.amx_enabled { cpc_amx_mouse(cpc, Int32(dx.rounded()), Int32(dy.rounded()), buttons) }
+    }
+    var amxEnabled: Bool {
+        get { cpc.pointee.amx_enabled }
+        set { lock.lock(); cpc.pointee.amx_enabled = newValue; lock.unlock(); settings.set("Configuration", "AMX Mouse Enabled", newValue) }
+    }
+
+    /// Presses the Multiface Stop button; false when it is disabled, has no ROM or is already running.
+    func multifaceStop() -> Bool { lock.lock(); defer { lock.unlock() }; return cpc_multiface_stop(cpc) }
 
     func applyROMs() {
         cpc_clear_roms(cpc)
@@ -113,6 +128,9 @@ final class Emulator {
                 d.withUnsafeBytes { _ = cpc_load_rom(cpc, Int32(i), $0.bindMemory(to: UInt8.self).baseAddress, d.count) }
             }
         }
+        if let u = resolveROM(settings.string("ROMS", "Multiface")), let d = try? Data(contentsOf: u) {
+            _ = d.withUnsafeBytes { cpc_load_multiface(cpc, $0.bindMemory(to: UInt8.self).baseAddress, d.count) }
+        } else { _ = cpc_load_multiface(cpc, nil, 0) }
         cpc_remove_cartridge(cpc)
         if settings.bool("ROMS", "Cartridge Enabled", false), let u = resolveROM(settings.string("ROMS", "Cartridge"), exts: ["CPR", "cpr", "CRT", "crt"]), let d = try? Data(contentsOf: u) {
             _ = d.withUnsafeBytes { cpc_load_cartridge(cpc, $0.bindMemory(to: UInt8.self).baseAddress, d.count) }

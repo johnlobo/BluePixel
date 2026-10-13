@@ -74,6 +74,7 @@ typedef struct {
     bool turbo;
     bool four_drives;
     bool amdrum, digiblaster;
+    bool multiface;
     bool joystick_enabled;
     CPCMonitor monitor;
     bool linear_palette;
@@ -94,7 +95,8 @@ struct CPC {
     uint8_t *ram; size_t ram_size;
     uint8_t *rom_lower;            /* 16K or NULL */
     uint8_t *rom_upper[32];        /* 16K each or NULL */
-    uint8_t *rom_multiface;
+    uint8_t *rom_multiface;        /* Multiface II: 8K ROM + 8K RAM (16K) or NULL */
+    bool mf_active, mf_running;    /* paged in at 0000-3FFF / stop routine in progress */
     uint8_t *cartridge;            /* Plus cartridge banks (32 x 16K) */
     int cartridge_banks;
     uint8_t *rd_map[4], *wr_map[4];
@@ -128,6 +130,10 @@ struct CPC {
     bool single_sided_read[4];
     uint8_t ppi_a, ppi_b, ppi_c, ppi_ctl;
     uint8_t kbd[16];               /* active-low rows */
+    bool amx_enabled;              /* AMX mouse on the joystick port */
+    int amx_dx, amx_dy;            /* movement accumulated since the last frame */
+    uint8_t amx_buttons;           /* bit0 left, bit1 right */
+    uint8_t amx_row;               /* active-low joystick bits driven by the mouse this frame */
     bool tape_motor, tape_write_bit;
 
     /* PSG */
@@ -208,6 +214,11 @@ void asic_ga_palette(CPC *c, int pen, uint8_t hw);
 void asic_line(CPC *c);        /* once per scanline (hsync end) */
 
 void cpc_remove_cartridge(CPC *c);
+/* AMX mouse: report relative movement (x right, y down) and button state. */
+void cpc_amx_mouse(CPC *c, int dx, int dy, uint8_t buttons);
+/* Multiface II: load its 8K ROM (NULL removes it) and press the Stop button. */
+bool cpc_load_multiface(CPC *c, const uint8_t *data, size_t size);
+bool cpc_multiface_stop(CPC *c);
 
 /* internal */
 void cpc_update_mapping(CPC *c);
