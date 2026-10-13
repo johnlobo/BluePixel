@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import CPCCore
 
 /// Thread-safe accessors to the emulated machine for the debugger UI.
@@ -55,6 +55,12 @@ final class DebugModel {
             rest = rest[rest.index(r.upperBound, offsetBy: hex.count)...]
         }
         return out + rest
+    }
+
+    /// Memory breakpoint bits for an address: 1 read, 2 write, 3 both.
+    func watchBits(_ addr: Int) -> Int {
+        guard let d = cpc.pointee.dbg else { return 0 }
+        return Int(dbg_watch_bits(d, UInt16(truncatingIfNeeded: addr)))
     }
 
     func describe(_ addr: Int) -> String {
@@ -120,4 +126,79 @@ enum Reg: String, CaseIterable {
         }
     }
     var digits: Int { switch self { case .im, .i, .r: return 2; default: return 4 } }
+}
+
+// MARK: - Find (WinAPE: Find Text, Find Hex Data, Find Assembler)
+struct FindQuery {
+    enum Mode: Int { case text, hex, assembler }
+    var mode: Mode
+    var input: String
+    var caseSensitive: Bool
+    var bytes: [UInt8] = [], wild: [Bool] = []
+
+    var length: Int { mode == .assembler ? 1 : bytes.count }
+
+    /// Text: "?" is a wildcard. Hex: bytes separated by spaces, "?"/"??" wildcard. Assembler: "?" one character, "*" any run.
+    static func ask(previous: FindQuery?) -> FindQuery? {
+        let a = NSAlert(); a.messageText = "Find"
+        a.informativeText = "Text (? = any character), hex bytes separated by spaces (?? = any byte), or Z80 instructions (? = one character, * = any)."
+        let kind = NSPopUpButton(frame: NSRect(x: 0, y: 56, width: 320, height: 24)); kind.addItems(withTitles: ["Find Text", "Find Hex Data", "Find Assembler"])
+        let f = NSTextField(frame: NSRect(x: 0, y: 28, width: 320, height: 24))
+        let cs = NSButton(checkboxWithTitle: "Case sensitive", target: nil, action: nil); cs.frame = NSRect(x: 0, y: 0, width: 320, height: 20)
+        if let p = previous { kind.selectItem(at: p.mode.rawValue); f.stringValue = p.input; cs.state = p.caseSensitive ? .on : .off }
+        let v = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 84)); [kind, f, cs].forEach(v.addSubview)
+        a.accessoryView = v; a.addButton(withTitle: "Find"); a.addButton(withTitle: "Cancel"); a.window.initialFirstResponder = f
+        guard a.runModal() == .alertFirstButtonReturn, !f.stringValue.isEmpty else { return nil }
+        var q = FindQuery(mode: Mode(rawValue: kind.indexOfSelectedItem) ?? .text, input: f.stringValue, caseSensitive: cs.state == .on)
+        switch q.mode {
+        case .text: for ch in f.stringValue.utf8 { q.bytes.append(ch == 63 ? 0 : ch); q.wild.append(ch == 63) }
+        case .hex:
+            for tok in f.stringValue.split(separator: " ") {
+                if tok.allSatisfy({ $0 == "?" }) { q.bytes.append(0); q.wild.append(true) }
+                else if let b = UInt8(tok, radix: 16) { q.bytes.append(b); q.wild.append(false) } else { NSSound.beep(); return nil }
+            }
+        case .assembler: break
+        }
+        return q
+    }
+
+    /// Wildcard match for instructions, ignoring case and spacing differences.
+    static func asmMatch(_ text: String, _ pattern: String) -> Bool {
+        func norm(_ s: String) -> [Character] { Array(s.uppercased().split(whereSeparator: { $0 == " " || $0 == "\t" }).joined(separator: " ")) }
+        let t = norm(text), p = norm(pattern)
+        var ti = 0, pi = 0, star = -1, mark = 0
+        while ti < t.count {
+            if pi < p.count && (p[pi] == "?" || p[pi] == t[ti]) { ti += 1; pi += 1 }
+            else if pi < p.count && p[pi] == "*" { star = pi; mark = ti; pi += 1 }
+            else if star >= 0 { pi = star + 1; mark += 1; ti = mark }
+            else { return false }
+        }
+        while pi < p.count && p[pi] == "*" { pi += 1 }
+        return pi == p.count
+    }
+}
+
+extension DebugModel {
+    /// First match after `from` (wrapping round the 64K view), or nil.
+    func find(_ q: FindQuery, after from: Int) -> Int? {
+        if q.mode == .assembler {
+            for k in 1...65536 {
+                let a = (from + k) & 0xFFFF
+                let t = disasm(a).0
+                if FindQuery.asmMatch(t, q.input) || FindQuery.asmMatch(symbolise(t), q.input) { return a }
+            }
+            return nil
+        }
+        guard !q.bytes.isEmpty else { return nil }
+        let mem = readBlock(0, 65536)
+        let fold = q.mode == .text && !q.caseSensitive
+        func eq(_ a: UInt8, _ b: UInt8) -> Bool { fold ? (a | (a >= 65 && a <= 90 ? 32 : 0)) == (b | (b >= 65 && b <= 90 ? 32 : 0)) : a == b }
+        for k in 1...65536 {
+            let a = (from + k) & 0xFFFF
+            var ok = true
+            for (i, b) in q.bytes.enumerated() where !q.wild[i] { if !eq(mem[(a + i) & 0xFFFF], b) { ok = false; break } }
+            if ok { return a }
+        }
+        return nil
+    }
 }

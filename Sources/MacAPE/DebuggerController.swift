@@ -37,7 +37,8 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     var dataAreasWindow: DataAreasController?
     var timersWindow: TimersController?
     var graphicsWindow: GraphicsController?
-    var lastFind: (pattern: [UInt8], wild: [Bool])?
+    var lastFind: FindQuery?
+    var compareWindow: NSPanel?
 
     init(emulator: Emulator) {
         emu = emulator; model = DebugModel(emu: emulator)
@@ -48,6 +49,9 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         disasm.model = model; memory.model = model; stackView.model = model
         disasm.onFocus = { [weak self] in self?.lastPane = self?.disasm }
         memory.onFocus = { [weak self] in self?.lastPane = self?.memory }
+        disasm.onCommand = { [weak self] c in self?.paneCommand(c, memoryPane: false) }
+        memory.onCommand = { [weak self] c in self?.paneCommand(c, memoryPane: true) }
+        stackView.onPick = { [weak self] a in self?.showInDisassembler(a) }
         build()
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             guard let self = self, self.window?.isVisible == true, !self.emu.paused else { return }
@@ -269,34 +273,41 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     }
     @objc func memoryFollowCurrent(_ s: Any?) { model.followMachine = true; model.view.mode = 0; refreshAll() }
 
+    private func paneCommand(_ c: PaneCommand, memoryPane: Bool) {
+        lastPane = memoryPane ? memory : disasm
+        switch c {
+        case .find: findInPane(nil)
+        case .findAgain: findAgain(nil)
+        case .goto: gotoAddress(nil)
+        case .f5: if memoryPane { loadData(nil) } else { toggleBP(nil) }
+        case .toggleASCII: break
+        }
+    }
+    func showInDisassembler(_ a: Int) {
+        checkFollow.state = .off; disasm.followPC = false; disasm.anchor = nil
+        disasm.topAddr = a & 0xFFFF; disasm.selected = a & 0xFFFF; disasm.reload()
+        window?.makeFirstResponder(disasm); lastPane = disasm
+    }
+
     @objc func gotoAddress(_ s: Any?) {
-        guard let t = promptText("Go To Address", "Address or expression:", ""), !t.isEmpty else { return }
+        let inMemory = lastPane === memory
+        guard let t = promptText("Goto", inMemory ? "Position the memory cursor at (address, symbol or expression):" : "Position the disassembler at (address, symbol or expression):", ""), !t.isEmpty else { return }
         guard let v = model.eval(t).0 else { NSSound.beep(); return }
-        if lastPane === memory { memory.cursor = Int(v) & 0xFFFF; memory.topAddr = Int(v) & 0xFFF0; memory.anchor = nil }
-        else { checkFollow.state = .off; disasm.followPC = false; disasm.topAddr = Int(v); disasm.selected = Int(v) & 0xFFFF }
+        if inMemory { memory.show(Int(v)) } else { showInDisassembler(Int(v)) }
         disasm.reload(); memory.reload()
     }
 
     @objc func findInPane(_ s: Any?) {
-        let a = NSAlert(); a.messageText = "Find"; a.informativeText = "Enter search text (use ? for wildcard), or bytes separated by spaces."
-        let f = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-        let kind = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 300, height: 24)); kind.addItems(withTitles: ["Text", "Bytes (hex)"])
-        let stack = NSStackView(views: [kind, f]); stack.orientation = .vertical; stack.frame = NSRect(x: 0, y: 0, width: 300, height: 56)
-        a.accessoryView = stack; a.addButton(withTitle: "Find"); a.addButton(withTitle: "Cancel")
-        guard a.runModal() == .alertFirstButtonReturn, !f.stringValue.isEmpty else { return }
-        var pat: [UInt8] = [], wild: [Bool] = []
-        if kind.indexOfSelectedItem == 0 { for ch in f.stringValue.utf8 { pat.append(ch == 63 ? 0 : ch); wild.append(ch == 63) } }
-        else { for tok in f.stringValue.split(separator: " ") { if tok == "?" || tok == "??" { pat.append(0); wild.append(true) } else if let v = UInt8(tok, radix: 16) { pat.append(v); wild.append(false) } else { NSSound.beep(); return } } }
-        lastFind = (pat, wild); findAgain(nil)
+        guard let q = FindQuery.ask(previous: lastFind) else { return }
+        lastFind = q; findAgain(nil)
     }
     @objc func findAgain(_ s: Any?) {
-        guard let (pat, wild) = lastFind else { findInPane(nil); return }
-        let from = lastPane === memory ? memory.cursor : (disasm.selected >= 0 ? disasm.selected : model.pc)
-        emu.lock.lock()
-        let r = pat.withUnsafeBufferPointer { p in wild.withUnsafeBufferPointer { w in dbg_find(emu.cpc, &model.view, UInt16(from & 0xFFFF), p.baseAddress, w.baseAddress, Int32(pat.count), true) } }
-        emu.lock.unlock()
-        if r < 0 { NSSound.beep(); return }
-        if lastPane === memory { memory.cursor = Int(r); memory.topAddr = Int(r) & 0xFFF0; memory.anchor = nil } else { disasm.followPC = false; checkFollow.state = .off; disasm.topAddr = Int(r); disasm.selected = Int(r) }
+        guard let q = lastFind else { findInPane(nil); return }
+        let inMemory = lastPane === memory
+        let from = inMemory ? memory.cursor : (disasm.selected >= 0 ? disasm.selected : model.pc)
+        guard let r = model.find(q, after: from) else { NSSound.beep(); return }
+        if inMemory { memory.show(r); if q.mode != .assembler { memory.anchor = r; memory.cursor = (r + q.length - 1) & 0xFFFF } }
+        else { showInDisassembler(r) }
         disasm.reload(); memory.reload()
     }
 
@@ -319,16 +330,100 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     @objc func showGraphics(_ s: Any?) { if graphicsWindow == nil { graphicsWindow = GraphicsController(model: model) }; graphicsWindow?.show() }
     @objc func showChipRegisters(_ s: Any?) { if registersWindow == nil { registersWindow = RegistersController(emu: emu) }; registersWindow?.show() }
 
-    // MARK: disassembler context menu
+    // MARK: context menus (the shortcuts shown are handled by the panes)
+    private func fkey(_ n: Int) -> String { String(UnicodeScalar(UInt32(NSF1FunctionKey) + UInt32(n - 1))!) }
+    private func menuItem(_ m: NSMenu, _ t: String, _ sel: Selector, _ key: String = "", _ mods: NSEvent.ModifierFlags = []) {
+        let i = NSMenuItem(title: t, action: sel, keyEquivalent: key); i.keyEquivalentModifierMask = mods; i.target = self; m.addItem(i)
+    }
     func disasmContextMenu() -> NSMenu {
+        lastPane = disasm
         let m = NSMenu()
-        func add(_ t: String, _ sel: Selector, _ key: String = "") { let i = NSMenuItem(title: t, action: sel, keyEquivalent: key); i.target = self; m.addItem(i) }
-        add("Find…", #selector(findInPane(_:))); add("Find Again", #selector(findAgain(_:))); m.addItem(.separator())
-        add("Goto…", #selector(gotoAddress(_:))); m.addItem(.separator())
-        add("Run to Cursor", #selector(runToCursor(_:))); add("Toggle Breakpoint", #selector(toggleBP(_:))); m.addItem(.separator())
-        add("Disassemble…", #selector(disassembleRange(_:))); m.addItem(.separator())
-        add("Mark as Data", #selector(markData(_:))); add("Clear Data Area", #selector(clearData(_:)))
+        menuItem(m, "Find…", #selector(findInPane(_:)), "f", .control); menuItem(m, "Find Again", #selector(findAgain(_:)), fkey(3)); m.addItem(.separator())
+        menuItem(m, "Goto…", #selector(gotoAddress(_:)), "g", .control); m.addItem(.separator())
+        menuItem(m, "Run to Cursor", #selector(runToCursor(_:)), fkey(4)); menuItem(m, "Toggle Breakpoint", #selector(toggleBP(_:)), fkey(5)); m.addItem(.separator())
+        menuItem(m, "Disassemble…", #selector(disassembleRange(_:))); m.addItem(.separator())
+        menuItem(m, "Mark as Data", #selector(markData(_:))); menuItem(m, "Clear Data Area", #selector(clearData(_:)))
         return m
+    }
+    func memoryContextMenu() -> NSMenu {
+        lastPane = memory
+        let m = NSMenu()
+        menuItem(m, "Find…", #selector(findInPane(_:)), "f", .control); menuItem(m, "Find Again", #selector(findAgain(_:)), fkey(3)); m.addItem(.separator())
+        menuItem(m, "Goto…", #selector(gotoAddress(_:)), "g", .control); menuItem(m, "Select Block…", #selector(selectBlock(_:))); m.addItem(.separator())
+        menuItem(m, "Load…", #selector(loadData(_:)), fkey(5)); menuItem(m, "Save…", #selector(saveData(_:))); m.addItem(.separator())
+        menuItem(m, "Breakpoint on Read", #selector(memoryBreakRead(_:))); menuItem(m, "Breakpoint on Write", #selector(memoryBreakWrite(_:))); m.addItem(.separator())
+        menuItem(m, "Compare To…", #selector(compareTo(_:))); menuItem(m, "Fill…", #selector(fillMemory(_:))); menuItem(m, "Disassemble…", #selector(disassembleRange(_:))); m.addItem(.separator())
+        menuItem(m, "Mark as Data", #selector(markData(_:))); menuItem(m, "Clear Data Area", #selector(clearData(_:)))
+        menuItem(m, memory.asciiMode ? "Edit Hex" : "Edit ASCII", #selector(toggleASCII(_:)), "\t", .control)
+        return m
+    }
+    @objc func toggleASCII(_ s: Any?) { memory.asciiMode.toggle(); memory.editNibble = nil; memory.reload() }
+
+    /// Range from "start,end" or "start" + length text; used by Select Block / Compare / Fill.
+    private func range(from text: String) -> ClosedRange<Int>? {
+        let parts = text.split(separator: ",").map { model.eval(String($0).trimmingCharacters(in: .whitespaces)).0 }
+        guard parts.count == 2, let a = parts[0], let b = parts[1] else { return nil }
+        return Int(min(a, b)) & 0xFFFF...Int(max(a, b)) & 0xFFFF
+    }
+    @objc func selectBlock(_ s: Any?) {
+        let r = memory.selection
+        guard let t = promptText("Select Block", "Start, End:", String(format: "#%04X,#%04X", r.lowerBound, r.upperBound)), let sel = range(from: t) else { return }
+        memory.show(sel.lowerBound); memory.anchor = sel.lowerBound; memory.cursor = sel.upperBound; memory.reload()
+    }
+    @objc func memoryBreakRead(_ s: Any?) { addMemoryBreak(read: true) }
+    @objc func memoryBreakWrite(_ s: Any?) { addMemoryBreak(read: false) }
+    private func addMemoryBreak(read: Bool) {
+        let r = memory.selection
+        emu.lock.lock(); _ = dbg_add_mem_bp(emu.cpc, UInt16(r.lowerBound), UInt16(r.upperBound), read, !read); emu.lock.unlock()
+        refreshAll()
+    }
+    @objc func fillMemory(_ s: Any?) {
+        let r = memory.selection
+        let a = NSAlert(); a.messageText = "Fill Memory"; a.informativeText = String(format: "Fill #%04X-#%04X (%d bytes) with:", r.lowerBound, r.upperBound, r.count)
+        let kind = NSPopUpButton(frame: NSRect(x: 0, y: 30, width: 300, height: 24)); kind.addItems(withTitles: ["Hex bytes (e.g. 01 02 03)", "String"])
+        let f = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        let v = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 56)); v.addSubview(kind); v.addSubview(f)
+        a.accessoryView = v; a.addButton(withTitle: "Fill"); a.addButton(withTitle: "Cancel"); a.window.initialFirstResponder = f
+        guard a.runModal() == .alertFirstButtonReturn, !f.stringValue.isEmpty else { return }
+        let pat: [UInt8] = kind.indexOfSelectedItem == 0 ? f.stringValue.split(separator: " ").compactMap { UInt8($0, radix: 16) } : Array(f.stringValue.utf8)
+        guard !pat.isEmpty else { NSSound.beep(); return }
+        emu.lock.lock(); pat.withUnsafeBufferPointer { dbg_fill(emu.cpc, &model.view, UInt16(r.lowerBound), UInt16(r.upperBound), $0.baseAddress, Int32(pat.count)) }; emu.lock.unlock()
+        refreshAll()
+    }
+    @objc func compareTo(_ s: Any?) {
+        let r = memory.selection
+        let a = NSAlert(); a.messageText = "Compare Memory"
+        a.informativeText = String(format: "Compare #%04X-#%04X (%d bytes) with an address or a file.", r.lowerBound, r.upperBound, r.count)
+        let kind = NSPopUpButton(frame: NSRect(x: 0, y: 30, width: 300, height: 24)); kind.addItems(withTitles: ["Address", "File…"])
+        let f = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24)); f.placeholderString = "Address (memory) — leave empty for File"
+        let v = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 56)); v.addSubview(kind); v.addSubview(f)
+        a.accessoryView = v; a.addButton(withTitle: "Compare"); a.addButton(withTitle: "Cancel")
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        let mine = model.readBlock(r.lowerBound, r.count)
+        var other: [UInt8], otherName: String
+        if kind.indexOfSelectedItem == 1 {
+            let o = NSOpenPanel(); guard o.runModal() == .OK, let u = o.url, let d = try? Data(contentsOf: u) else { return }
+            other = [UInt8](d.prefix(r.count)); otherName = u.lastPathComponent
+        } else {
+            guard let b = model.eval(f.stringValue).0 else { NSSound.beep(); return }
+            other = model.readBlock(Int(b), r.count); otherName = String(format: "#%04X", Int(b) & 0xFFFF)
+        }
+        var lines: [String] = [], i = 0
+        while i < mine.count {
+            guard i >= other.count || mine[i] != other[i] else { i += 1; continue }
+            var j = i; while j < mine.count && (j >= other.count || mine[j] != other[j]) { j += 1 }
+            let hex = { (b: [UInt8]) in b.prefix(16).map { String(format: "%02X", $0) }.joined(separator: " ") + (b.count > 16 ? " …" : "") }
+            lines.append(String(format: "#%04X  %4d byte(s)   ", (r.lowerBound + i) & 0xFFFF, j - i) + hex(Array(mine[i..<j])) + "   |   " + hex(j <= other.count ? Array(other[i..<j]) : Array(other[min(i, other.count)...])))
+            i = j
+        }
+        showCompareResults(String(format: "#%04X-#%04X compared with %@: ", r.lowerBound, r.upperBound, otherName) + (lines.isEmpty ? "identical" : "\(lines.count) difference(s)"), lines)
+    }
+    private func showCompareResults(_ title: String, _ lines: [String]) {
+        let p = compareWindow ?? makePanel("Comparison Results", width: 720, height: 360)
+        let tv = NSTextView(); tv.isEditable = false; tv.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        tv.string = title + "\n\n" + lines.joined(separator: "\n")
+        let sc = NSScrollView(); sc.documentView = tv; sc.hasVerticalScroller = true; tv.autoresizingMask = [.width]
+        p.contentView = sc; compareWindow = p; p.makeKeyAndOrderFront(nil)
     }
     @objc func runToCursor(_ s: Any?) {
         guard disasm.selected >= 0 else { return }
@@ -336,15 +431,17 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     }
     @objc func toggleBP(_ s: Any?) { if disasm.selected >= 0 { model.toggleBreakpoint(at: disasm.selected); refreshAll() } }
     @objc func markData(_ s: Any?) {
-        let r = lastPane === memory ? memory.selection : (disasm.selected >= 0 ? disasm.selected...disasm.selected : model.pc...model.pc)
+        let r = lastPane === memory ? memory.selection : (disasm.selectionRange ?? model.pc...model.pc)
         emu.lock.lock(); dbg_area_add(emu.cpc, UInt16(r.lowerBound), UInt16(r.upperBound), false); emu.lock.unlock(); refreshAll()
     }
     @objc func clearData(_ s: Any?) {
-        guard disasm.selected >= 0 else { return }
-        emu.lock.lock(); dbg_area_remove(emu.cpc, UInt16(disasm.selected)); emu.lock.unlock(); refreshAll()
+        let a = lastPane === memory ? memory.cursor : disasm.selected
+        guard a >= 0 else { return }
+        emu.lock.lock(); dbg_area_remove(emu.cpc, UInt16(a)); emu.lock.unlock(); refreshAll()
     }
     @objc func disassembleRange(_ s: Any?) {
-        guard let t = promptText("Disassemble", "Range (start,end):", String(format: "#%04X,#%04X", disasm.selected >= 0 ? disasm.selected : model.pc, ((disasm.selected >= 0 ? disasm.selected : model.pc) + 0x100) & 0xFFFF)) else { return }
+        let sel = lastPane === memory ? memory.selection : (disasm.selectionRange ?? model.pc...((model.pc + 0xFF) & 0xFFFF))
+        guard let t = promptText("Disassemble", "Range (start,end):", String(format: "#%04X,#%04X", sel.lowerBound, sel.upperBound)) else { return }
         let parts = t.split(separator: ",").map { model.eval(String($0)).0 }
         guard parts.count == 2, let s0 = parts[0], let e0 = parts[1] else { NSSound.beep(); return }
         var out = "", a = Int(s0)

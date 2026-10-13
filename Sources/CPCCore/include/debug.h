@@ -45,6 +45,7 @@ typedef struct Debugger {
 Debugger *dbg_attach(CPC *c);
 void dbg_detach(CPC *c);
 void dbg_rebuild_watch(Debugger *d);
+static inline uint8_t dbg_watch_bits(const Debugger *d, uint16_t addr) { return d->watch[addr] & 3; }   /* 1 read, 2 write */
 
 int dbg_add_code_bp(CPC *c, uint16_t addr);                    /* returns index or -1 */
 int dbg_add_mem_bp(CPC *c, uint16_t start, uint16_t end, bool read, bool write);
