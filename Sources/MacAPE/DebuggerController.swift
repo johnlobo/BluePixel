@@ -189,6 +189,8 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     // MARK: show / refresh
     func show() { window?.makeKeyAndOrderFront(nil); window?.makeFirstResponder(disasm); refreshAll() }
     func windowDidResize(_ notification: Notification) { refreshAll() }
+    /// Closing the debugger resumes emulation, like Run (F9) in WinAPE.
+    func windowWillClose(_ notification: Notification) { if emu.paused { emu.debugResume() } }
 
     func refreshAll() {
         model.sync()
