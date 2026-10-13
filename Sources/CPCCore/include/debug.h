@@ -76,7 +76,7 @@ void dbg_area_remove(CPC *c, uint16_t addr);
 const DbgDataArea *dbg_area_at(const Debugger *d, uint16_t addr);
 
 /* Memory views */
-typedef struct { int mode; bool lower, upper; int upper_rom; uint8_t ram_cfg; } DbgView; /* mode 0=read 1=write 2=any */
+typedef struct { int mode; bool lower, upper; int upper_rom; uint8_t ram_cfg; uint8_t lower_base, cart_bank; } DbgView; /* mode 0=read 1=write 2=any; lower_base/cart_bank: Plus secondary ROM mapping */
 uint8_t dbg_view_read(CPC *c, const DbgView *v, uint16_t addr);
 void dbg_view_write(CPC *c, const DbgView *v, uint16_t addr, uint8_t value);
 void dbg_view_current(CPC *c, DbgView *v);

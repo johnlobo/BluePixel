@@ -140,7 +140,7 @@ static int32_t call_function(P *p, const char *name, int32_t *a, int n) {
     if (IS("hibyte")) return n ? (a[0] >> 8) & 0xFF : 0;
     if (IS("hiword")) return n ? (int32_t)(((uint32_t)a[0] >> 16) & 0xFFFF) : 0;
     if (IS("peek")) return n ? cpc_mem_read(c, (uint16_t)a[0]) : 0;
-    if (IS("poke")) { for (int i = 1; i < n; i++) { DbgView v = {1, 0, 0, 0, 0}; dbg_view_current(c, &v); v.mode = 1; dbg_view_write(c, &v, (uint16_t)(a[0] + i - 1), (uint8_t)a[i]); } return 0; }
+    if (IS("poke")) { for (int i = 1; i < n; i++) { DbgView v = {1, 0, 0, 0, 0, 0, 0}; dbg_view_current(c, &v); v.mode = 1; dbg_view_write(c, &v, (uint16_t)(a[0] + i - 1), (uint8_t)a[i]); } return 0; }
     if (IS("ay") || IS("psg")) return c->psg.regs[(n ? a[0] : c->psg.sel) & 15];
     if (IS("crtc")) return c->crtc.r[(n ? a[0] : c->crtc.sel) & 31];
     if (IS("rtc")) return 0;
@@ -364,7 +364,7 @@ int dbg_symbols_load(CPC *c, const char *path) {
         if (nt < 2) continue;
         int32_t v; char name[64];
         if (!strcasecmp(tok[0], "DEF") && nt >= 3) {        /* NoICE (.noi, SDCC/CPCtelera): DEF name 0xADDR */
-            if (!strncmp(tok[1], "l__", 3) || !strncmp(tok[1], ".__.", 4) || !parse_num(tok[2], &v)) continue;   /* skip section lengths */
+            if (!strncmp(tok[1], "l__", 3) || !strncmp(tok[1], "s__", 3) || !strncmp(tok[1], ".__.", 4) || !parse_num(tok[2], &v)) continue;   /* skip linker section lengths/starts */
             snprintf(name, sizeof name, "%s", tok[1]);
         }
         else if (!strcasecmp(tok[0], "al") && nt >= 3) { if (!parse_num(tok[1], &v)) { char *e; v = (int32_t)strtol(tok[1], &e, 16); if (e == tok[1]) continue; } snprintf(name, sizeof name, "%s", tok[2][0] == '.' ? tok[2] + 1 : tok[2]); }
@@ -390,10 +390,10 @@ const DbgDataArea *dbg_area_at(const Debugger *d, uint16_t addr) {
 }
 
 /* ---------------- Memory views ---------------- */
-void dbg_view_current(CPC *c, DbgView *v) { v->mode = 0; v->lower = c->lower_rom_en; v->upper = c->upper_rom_en; v->upper_rom = c->upper_rom_sel; v->ram_cfg = c->ga_ram; }
+void dbg_view_current(CPC *c, DbgView *v) { v->mode = 0; v->lower = c->lower_rom_en; v->upper = c->upper_rom_en; v->upper_rom = c->upper_rom_sel; v->ram_cfg = c->ga_ram; v->lower_base = c->asic.lower_base; v->cart_bank = c->asic.cart_bank; }
 
 static void view_maps(CPC *c, const DbgView *v, uint8_t **rd, uint8_t **wr) {
-    cpc_compute_mapping(c, v->ram_cfg, v->mode == 1 ? false : v->lower, v->mode == 1 ? false : v->upper, (uint8_t)v->upper_rom, c->asic.lower_base, c->asic.cart_bank, rd, wr);
+    cpc_compute_mapping(c, v->ram_cfg, v->mode == 1 ? false : v->lower, v->mode == 1 ? false : v->upper, (uint8_t)v->upper_rom, v->lower_base, v->cart_bank, rd, wr);
 }
 
 uint8_t dbg_view_read(CPC *c, const DbgView *v, uint16_t addr) {

@@ -4,7 +4,7 @@ import CPCCore
 /// Thread-safe accessors to the emulated machine for the debugger UI.
 final class DebugModel {
     let emu: Emulator
-    var view = DbgView(mode: 0, lower: true, upper: true, upper_rom: 0, ram_cfg: 0xC0)
+    var view = DbgView(mode: 0, lower: true, upper: true, upper_rom: 0, ram_cfg: 0xC0, lower_base: 0, cart_bank: 0)
     var followMachine = true       // while true, `view` mirrors the live mapping
 
     init(emu: Emulator) { self.emu = emu }

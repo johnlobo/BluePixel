@@ -15,10 +15,12 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     let model: DebugModel
     let disasm = DisasmView(), memory = MemoryView()
     private var regFields: [Reg: NSTextField] = [:]
-    private var flagButtons: [NSButton] = []
-    private let tLabel = NSTextField(labelWithString: "0")
-    private let intLabel = NSTextField(labelWithString: "DI")
-    private let stackView = NSTextView()
+    private let flagsField = NSTextField(string: "00000000")
+    private let tLabel = NSTextField(string: "0")
+    private let intsCheck = NSButton(checkboxWithTitle: "Ints", target: nil, action: nil)
+    private let stackView = StackListView()
+    private let lowerBasePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let cartBankPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private var lastPane: NSView?
     private var timer: Timer?
     private var checkFollow = NSButton(checkboxWithTitle: "Follow PC", target: nil, action: nil)
@@ -39,11 +41,11 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
 
     init(emulator: Emulator) {
         emu = emulator; model = DebugModel(emu: emulator)
-        let win = NSWindow(contentRect: NSRect(x: 120, y: 120, width: 940, height: 720), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        let win = NSWindow(contentRect: NSRect(x: 120, y: 120, width: 1000, height: 740), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         win.title = "MacAPE Debugger"; win.isReleasedWhenClosed = false
         super.init(window: win)
         win.delegate = self
-        disasm.model = model; memory.model = model
+        disasm.model = model; memory.model = model; stackView.model = model
         disasm.onFocus = { [weak self] in self?.lastPane = self?.disasm }
         memory.onFocus = { [weak self] in self?.lastPane = self?.memory }
         build()
@@ -58,92 +60,127 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     private func hexField(_ reg: Reg) -> NSTextField {
         let f = NSTextField(string: ""); f.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         f.alignment = .center; f.target = self; f.action = #selector(registerEdited(_:)); f.identifier = NSUserInterfaceItemIdentifier(reg.rawValue)
-        f.translatesAutoresizingMaskIntoConstraints = false
-        f.widthAnchor.constraint(equalToConstant: reg.digits == 2 ? 36 : 56).isActive = true
         regFields[reg] = f; return f
     }
 
+    /// Lays subviews out top-down (frames are given with y measured from the top).
     final class Root: NSView {
         var onLayout: (() -> Void)?
-        override func layout() { super.layout(); onLayout?(); let h = bounds.height; for v in subviews { v.frame.origin.y = h - v.frame.maxY } }
+        override var isFlipped: Bool { true }
+        override func layout() { super.layout(); onLayout?() }
     }
     private let root = Root()
-    private var rowLabels: [NSView] = []
 
-    private func place(_ views: [NSView], x: CGFloat, y: CGFloat, gap: CGFloat = 6) -> CGFloat {
-        var cx = x
-        for v in views {
-            var w = v.fittingSize.width
-            let fh = v.fittingSize.height
-            if let f = v as? NSTextField, f.isEditable { w = 58 }
-            if v === intLabel || v === tLabel { w = max(w, 48) }
-            v.frame = NSRect(x: cx, y: y, width: max(w, 16), height: max(fh, 20))
-            cx += w + gap
-        }
-        return cx
+    private func box(_ title: String, _ views: [NSView]) -> NSBox {
+        let b = NSBox(); b.title = title; b.titleFont = .systemFont(ofSize: 11)
+        let st = NSStackView(views: views); st.orientation = .vertical; st.alignment = .leading; st.spacing = 4
+        st.translatesAutoresizingMaskIntoConstraints = false
+        let c = b.contentView!; c.addSubview(st)
+        NSLayoutConstraint.activate([st.leadingAnchor.constraint(equalTo: c.leadingAnchor, constant: 6), st.topAnchor.constraint(equalTo: c.topAnchor, constant: 4),
+                                     st.trailingAnchor.constraint(lessThanOrEqualTo: c.trailingAnchor, constant: -6)])
+        root.addSubview(b); return b
     }
+    private func hrow(_ views: [NSView]) -> NSStackView { let s = NSStackView(views: views); s.orientation = .horizontal; s.spacing = 6; return s }
 
     private func build() {
         guard let content = window?.contentView else { return }
         root.frame = content.bounds; root.autoresizingMask = [.width, .height]
         content.addSubview(root)
-        let regLayout: [[Reg]] = [[.af, .hl, .de, .bc], [.ix, .iy, .pc], [.af2, .hl2, .de2, .bc2], [.sp, .im, .i, .r]]
-        var registerViews: [[NSView]] = []
-        for r in regLayout { registerViews.append(r.flatMap { [makeLabel($0.rawValue), hexField($0)] }) }
-        let flagNames = ["S", "Z", "-", "H", "-", "V", "N", "C"]
-        for (i, n) in flagNames.enumerated() {
-            let b = NSButton(checkboxWithTitle: n, target: self, action: #selector(flagToggled(_:))); b.tag = 7 - i
-            b.isEnabled = n != "-"; b.font = .systemFont(ofSize: 11); flagButtons.append(b)
+
+        // Right-hand column: flags, register pairs, IM/Ints, T counter, stack.
+        let mono = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        let flagCaption = makeLabel("SZ-H-VNC"); flagCaption.font = .monospacedSystemFont(ofSize: 12, weight: .regular); flagCaption.textColor = .systemBlue
+        flagsField.font = mono; flagsField.alignment = .center; flagsField.target = self; flagsField.action = #selector(flagsEdited(_:))
+        let flagsLabel = makeLabel("Flags")
+        let pairs: [(Reg, Reg)] = [(.af, .af2), (.hl, .hl2), (.de, .de2), (.bc, .bc2), (.ix, .sp), (.iy, .i), (.pc, .r)]
+        var regViews: [(NSTextField, NSTextField, NSTextField, NSTextField)] = []
+        for (l, r) in pairs {
+            let ll = makeLabel(l.rawValue), rl = makeLabel(r.rawValue)
+            for x in [ll, rl] { x.font = .monospacedSystemFont(ofSize: 12, weight: .semibold); x.textColor = .systemBlue }
+            regViews.append((ll, hexField(l), rl, hexField(r)))
         }
-        let tReset = makeButton("Reset", self, #selector(resetT(_:))); tReset.controlSize = .small
-        let tRow: [NSView] = [makeLabel("T"), tLabel, tReset, makeLabel("Ints"), intLabel]
-        stackView.isEditable = false; stackView.font = monoFont()
-        let stackScroll = NSScrollView(); stackScroll.documentView = stackView; stackScroll.hasVerticalScroller = true
-        stackView.autoresizingMask = [.width]
-        let stackTitle = makeLabel("Stack", bold: true)
-        func symButton(_ sym: String, _ tip: String, _ sel: Selector) -> NSButton {
-            let b = NSButton(image: NSImage(systemSymbolName: sym, accessibilityDescription: tip)!, target: self, action: sel); b.toolTip = tip; b.bezelStyle = .texturedRounded; return b
-        }
-        let tools: [NSView] = [symButton("arrow.right.to.line", "Go To Address", #selector(gotoAddress(_:))), symButton("magnifyingglass", "Search", #selector(findInPane(_:))),
-            symButton("square.and.arrow.down", "Load Data", #selector(loadData(_:))), symButton("square.and.arrow.up", "Save Data", #selector(saveData(_:))),
-            symButton("circle.fill", "Edit Breakpoints", #selector(showBreakpoints(_:))), symButton("list.bullet.rectangle", "Edit Data Areas", #selector(showDataAreas(_:))),
-            symButton("photo", "Find Graphics", #selector(showGraphics(_:))), symButton("timer", "Show Timers", #selector(showTimers(_:))),
-            symButton("cpu", "Registers", #selector(showChipRegisters(_:)))]
-        for b in [checkFollow, checkBreaks, checkHide, checkBRK] { b.target = self; b.action = #selector(optionsChanged(_:)) }
-        checkFollow.state = .on; checkBreaks.state = .on; checkHide.state = .on
+        let imLabel = makeLabel("IM"); imLabel.font = .monospacedSystemFont(ofSize: 12, weight: .semibold); imLabel.textColor = .systemBlue
+        let imField = hexField(.im)
+        intsCheck.target = self; intsCheck.action = #selector(intsToggled(_:))
+        let tCaption = makeLabel("T"); tCaption.font = .monospacedSystemFont(ofSize: 12, weight: .semibold); tCaption.textColor = .systemBlue
+        tLabel.isEditable = false; tLabel.font = mono
+        let tReset = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: "Reset T")!, target: self, action: #selector(resetT(_:)))
+        tReset.isBordered = false; tReset.contentTintColor = .systemRed; tReset.toolTip = "Reset T counter"
+        let stackTitle = makeLabel("Stack")
+        let rightViews: [NSView] = [flagCaption, flagsLabel, flagsField, imLabel, imField, intsCheck, tCaption, tLabel, tReset, stackTitle, stackView] + regViews.flatMap { [$0.0, $0.1, $0.2, $0.3] }
+        rightViews.forEach { root.addSubview($0) }
+
+        // Bottom: memory selection groups, file buttons, options and tool buttons.
         for (i, t) in ["Read", "Write", "Any"].enumerated() {
             let b = NSButton(radioButtonWithTitle: t, target: self, action: #selector(memorySelectionChanged(_:))); b.tag = i; modeButtons.append(b)
         }
         modeButtons[0].state = .on
-        upperPopup.addItems(withTitles: (0..<32).map { String($0) })
+        upperPopup.addItems(withTitles: (0..<32).map { String(format: "%02d", $0) })
         ramPopup.addItems(withTitles: (0..<64).map { String(format: "%02X", 0xC0 + $0) })
+        lowerBasePopup.addItems(withTitles: ["#0000 (Default)", "#4000", "#8000"])
+        cartBankPopup.addItems(withTitles: (0..<32).map { String($0) })
         for c in [lowerCheck, upperCheck] { c.target = self; c.action = #selector(memorySelectionChanged(_:)) }
-        for p in [upperPopup, ramPopup] { p.target = self; p.action = #selector(memorySelectionChanged(_:)); p.controlSize = .small }
+        for p in [upperPopup, ramPopup, lowerBasePopup, cartBankPopup] { p.target = self; p.action = #selector(memorySelectionChanged(_:)); p.controlSize = .small; p.font = .systemFont(ofSize: 11) }
+        upperCheck.title = "Upper ROM:"; lowerCheck.title = "Lower"
         let current = makeButton("Current", self, #selector(memoryFollowCurrent(_:))); current.controlSize = .small
-        let memTitle = makeLabel("Memory:", bold: true), ramLabel = makeLabel("RAM:")
-        let memRow: [NSView] = [memTitle] + modeButtons + [lowerCheck, upperCheck, upperPopup, ramLabel, ramPopup, current]
-        let optRow: [NSView] = [checkFollow, checkBreaks, checkHide, checkBRK]
-
-        let all: [NSView] = registerViews.flatMap { $0 } + flagButtons + tRow + [stackScroll, stackTitle] + tools + optRow + memRow + [disasm, memory]
-        for v in all { root.addSubview(v) }
+        let memBox = box("Memory", modeButtons)
+        let romBox = box("ROM", [hrow([lowerCheck, upperCheck, upperPopup])])
+        let ramBox = box("RAM", [hrow([makeLabel("RAM Bank:"), ramPopup, current])])
+        let secBox = box("Secondary ROM Mapping", [hrow([makeLabel("Lower ROM Base:"), lowerBasePopup, makeLabel("Cartridge Bank:"), cartBankPopup])])
+        func symButton(_ sym: String, _ tip: String, _ sel: Selector, tint: NSColor? = nil) -> NSButton {
+            let b = NSButton(image: NSImage(systemSymbolName: sym, accessibilityDescription: tip)!, target: self, action: sel)
+            b.toolTip = tip; b.bezelStyle = .texturedRounded
+            if let t = tint { b.image = b.image?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [t])) }
+            root.addSubview(b); return b
+        }
+        let fileButtons = [symButton("folder", "Load Data", #selector(loadData(_:))), symButton("square.and.arrow.down", "Save Data", #selector(saveData(_:))),
+                           symButton("arrow.right.to.line", "Go To Address", #selector(gotoAddress(_:)))]
+        for b in [checkFollow, checkHide, checkBreaks, checkBRK] { b.target = self; b.action = #selector(optionsChanged(_:)); root.addSubview(b) }
+        checkFollow.state = .on; checkBreaks.state = .on; checkHide.state = .on
+        let tools = [symButton("circle.fill", "Edit Breakpoints", #selector(showBreakpoints(_:)), tint: .systemRed), symButton("list.bullet.rectangle", "Edit Data Areas", #selector(showDataAreas(_:))),
+                     symButton("timer", "Show Timers", #selector(showTimers(_:))), symButton("cpu", "Chip Registers", #selector(showChipRegisters(_:))),
+                     symButton("photo", "Find Graphics", #selector(showGraphics(_:))), symButton("magnifyingglass", "Search", #selector(findInPane(_:)))]
+        root.addSubview(disasm); root.addSubview(memory)
 
         root.onLayout = { [weak self] in
             guard let self = self else { return }
             let w = self.root.bounds.width, h = self.root.bounds.height
-            var y: CGFloat = 10
-            for r in registerViews { _ = self.place(r, x: 12, y: y); y += 26 }
-            _ = self.place(self.flagButtons, x: 12, y: y, gap: 2); y += 24
-            _ = self.place(tRow, x: 12, y: y); y += 28
-            stackTitle.frame = NSRect(x: w - 252, y: 8, width: 100, height: 18)
-            stackScroll.frame = NSRect(x: w - 252, y: 28, width: 240, height: 142)
-            self.stackView.frame = NSRect(x: 0, y: 0, width: 240, height: 300)
-            _ = self.place(tools, x: 12, y: y); _ = self.place(optRow, x: 12 + 9 * 38 + 12, y: y + 2); y += 32
-            let remaining = h - y - 40
-            self.disasm.frame = NSRect(x: 12, y: y, width: w - 24, height: remaining * 0.58); y += remaining * 0.58 + 6
-            _ = self.place(memRow, x: 12, y: y); y += 28
-            self.memory.frame = NSRect(x: 12, y: y, width: w - 24, height: h - y - 10)
-            self.disasm.reload(); self.memory.reload()
-            if ProcessInfo.processInfo.environment["DBGLAYOUT"] != nil { for v in self.root.subviews.prefix(14) { FileHandle.standardError.write("  \(type(of: v)) \(v.frame) hidden=\(v.isHidden) alpha=\(v.alphaValue)\n".data(using: .utf8)!) }; FileHandle.standardError.write("layout w=\(w) h=\(h) disasm=\(self.disasm.frame) memory=\(self.memory.frame) first=\(registerViews[0][0].frame) rows=\(self.disasm.bounds.height)\n".data(using: .utf8)!) }
+            let rightW: CGFloat = 230, gap: CGFloat = 8, left = w - rightW - gap * 2
+            let bottomH: CGFloat = 132
+            // left panes
+            let paneH = h - bottomH - gap * 2
+            self.disasm.frame = NSRect(x: gap, y: gap, width: left, height: (paneH * 0.7).rounded())
+            self.memory.frame = NSRect(x: gap, y: self.disasm.frame.maxY + 4, width: left, height: paneH - self.disasm.frame.height - 4)
+            // bottom groups
+            var x = gap; let by = h - bottomH
+            func put(_ b: NSBox, _ width: CGFloat, _ height: CGFloat = 84) { b.frame = NSRect(x: x, y: by, width: width, height: height); x += width + 4 }
+            put(memBox, 84, 96)
+            let gx = x
+            romBox.frame = NSRect(x: gx, y: by, width: 320, height: 46); ramBox.frame = NSRect(x: gx + 324, y: by, width: 232, height: 46)
+            secBox.frame = NSRect(x: gx, y: by + 50, width: 556, height: 46)
+            x = gx + 560
+                for (i, b) in fileButtons.enumerated() { b.frame = NSRect(x: x + 4, y: by + 4 + CGFloat(i) * 32, width: 32, height: 26) }
+            var cx = gap; let oy = h - 30
+            for b in [self.checkFollow, self.checkHide, self.checkBreaks, self.checkBRK] { let bw = b.fittingSize.width; b.frame = NSRect(x: cx, y: oy, width: bw, height: 22); cx += bw + 14 }
+            for b in tools { b.frame = NSRect(x: cx, y: oy - 2, width: 32, height: 26); cx += 36 }
+            // right column
+            let rx = w - rightW - gap
+            flagCaption.frame = NSRect(x: rx + 96, y: gap, width: 110, height: 18)
+            flagsLabel.frame = NSRect(x: rx + 40, y: gap + 22, width: 50, height: 20)
+            self.flagsField.frame = NSRect(x: rx + 92, y: gap + 20, width: 92, height: 22)
+            var ry = gap + 50
+            for (ll, lf, rl, rf) in regViews {
+                ll.frame = NSRect(x: rx, y: ry + 2, width: 30, height: 20); lf.frame = NSRect(x: rx + 30, y: ry, width: 58, height: 22)
+                rl.frame = NSRect(x: rx + 100, y: ry + 2, width: 30, height: 20); rf.frame = NSRect(x: rx + 132, y: ry, width: rf === self.regFields[.i] || rf === self.regFields[.r] ? 40 : 58, height: 22)
+                ry += 28
+            }
+            imLabel.frame = NSRect(x: rx, y: ry + 2, width: 30, height: 20); imField.frame = NSRect(x: rx + 30, y: ry, width: 40, height: 22)
+            self.intsCheck.frame = NSRect(x: rx + 132, y: ry + 1, width: 70, height: 22); ry += 28
+            tCaption.frame = NSRect(x: rx, y: ry + 2, width: 30, height: 20); self.tLabel.frame = NSRect(x: rx + 30, y: ry, width: 150, height: 22)
+            tReset.frame = NSRect(x: rx + 186, y: ry, width: 22, height: 22); ry += 32
+            stackTitle.frame = NSRect(x: rx, y: ry, width: 100, height: 18); ry += 20
+            self.stackView.frame = NSRect(x: rx, y: ry, width: rightW, height: h - ry - gap)
+            self.disasm.reload(); self.memory.reload(); self.stackView.reload()
         }
         root.needsLayout = true
     }
@@ -170,21 +207,27 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         let t = emu.cpc.pointee.t_counter
         emu.lock.unlock()
         for (r, f) in regFields where window?.firstResponder !== f.currentEditor() { f.stringValue = String(format: "%0\(r.digits)X", r.get(z)) }
-        for b in flagButtons { b.state = (Int(z.af.l) >> b.tag) & 1 == 1 ? .on : .off }
+        if window?.firstResponder !== flagsField.currentEditor() {
+            let f = Int(z.af.l); flagsField.stringValue = (0..<8).map { (f >> (7 - $0)) & 1 == 1 ? "1" : "0" }.joined()
+        }
         tLabel.stringValue = String(t)
-        intLabel.stringValue = (z.iff1 ? "EI" : "DI")
-        var s = ""
-        let sp = Int(z.sp.w)
-        for i in 0..<16 { let a = (sp + i * 2) & 0xFFFF; let lo = model.read(a), hi = model.read(a + 1); s += String(format: "%04X: %04X\n", a, Int(lo) | Int(hi) << 8) }
-        stackView.string = s
+        intsCheck.state = z.iff1 ? .on : .off
+        stackView.reload()
     }
 
     private func syncMemoryControls() {
         let v = model.view
         modeButtons.forEach { $0.state = $0.tag == Int(v.mode) ? .on : .off }
         lowerCheck.state = v.lower ? .on : .off; upperCheck.state = v.upper ? .on : .off
+        for i in 0..<32 {   // "00 - BASIC1-1": slot number and ROM name, as WinAPE shows it
+            let name = emu.settings.string("ROMS", "Upper(\(i))")
+            upperPopup.item(at: i)?.title = name.isEmpty ? String(format: "%02d", i) : String(format: "%02d - %@", i, (name as NSString).lastPathComponent)
+        }
         upperPopup.selectItem(at: Int(min(v.upper_rom, 31)))
         let i = Int(v.ram_cfg) - 0xC0; ramPopup.selectItem(at: max(0, min(63, i)))
+        let plus = emu.cpc.pointee.cfg.plus
+        lowerBasePopup.isEnabled = plus; cartBankPopup.isEnabled = plus
+        lowerBasePopup.selectItem(at: Int(min(v.lower_base, 2))); cartBankPopup.selectItem(at: Int(min(v.cart_bank, 31)))
     }
 
     // MARK: actions
@@ -194,8 +237,13 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         if let v = v { emu.lock.lock(); r.set(&emu.cpc.pointee.z80, Int(v)); emu.lock.unlock() } else { NSSound.beep(); _ = err }
         refreshAll()
     }
-    @objc func flagToggled(_ b: NSButton) {
-        emu.lock.lock(); var f = emu.cpc.pointee.z80.af.l; if b.state == .on { f |= 1 << UInt8(b.tag) } else { f &= ~(1 << UInt8(b.tag)) }; emu.cpc.pointee.z80.af.l = f; emu.lock.unlock()
+    @objc func flagsEdited(_ f: NSTextField) {
+        let t = f.stringValue.filter { $0 == "0" || $0 == "1" }
+        guard t.count == 8, let v = UInt8(t, radix: 2) else { NSSound.beep(); refreshRegisters(); return }
+        emu.lock.lock(); emu.cpc.pointee.z80.af.l = v; emu.lock.unlock(); refreshAll()
+    }
+    @objc func intsToggled(_ b: NSButton) {
+        emu.lock.lock(); emu.cpc.pointee.z80.iff1 = b.state == .on; emu.cpc.pointee.z80.iff2 = b.state == .on; emu.lock.unlock()
     }
     @objc func resetT(_ s: Any?) { emu.lock.lock(); emu.cpc.pointee.t_counter = 0; emu.lock.unlock(); refreshRegisters() }
     @objc func optionsChanged(_ s: Any?) {
@@ -214,6 +262,7 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         if let b = s as? NSButton, modeButtons.contains(b) { model.view.mode = Int32(b.tag) }
         model.view.lower = lowerCheck.state == .on; model.view.upper = upperCheck.state == .on
         model.view.upper_rom = Int32(upperPopup.indexOfSelectedItem); model.view.ram_cfg = UInt8(0xC0 + ramPopup.indexOfSelectedItem)
+        model.view.lower_base = UInt8(lowerBasePopup.indexOfSelectedItem); model.view.cart_bank = UInt8(cartBankPopup.indexOfSelectedItem)
         disasm.reload(); memory.reload()
     }
     @objc func memoryFollowCurrent(_ s: Any?) { model.followMachine = true; model.view.mode = 0; refreshAll() }
