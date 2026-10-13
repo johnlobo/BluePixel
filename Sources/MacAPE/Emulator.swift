@@ -315,14 +315,22 @@ extension Emulator {
     func debugPause() {
         _ = dbg
         paused = true
-        lock.lock(); lock.unlock()
+        // a pending run-to / step-over / step-out target is cancelled by stopping by hand
+        lock.lock(); let d = dbg_attach(cpc)!; d.pointee.temp_bp = -1; d.pointee.step_out = false; lock.unlock()
     }
 
     func debugResume() {
         lock.lock()
         let d = dbg_attach(cpc)!
-        d.pointee.hit = false; d.pointee.skip_once = true
+        d.pointee.hit = false; d.pointee.skip_once = true; d.pointee.temp_bp = -1; d.pointee.step_out = false
         lock.unlock()
+        paused = false
+    }
+
+    /// Runs until the current function returns (Shift+F8).
+    func debugStepOut() {
+        debugPause()
+        lock.lock(); dbg_step_out(cpc); lock.unlock()
         paused = false
     }
 

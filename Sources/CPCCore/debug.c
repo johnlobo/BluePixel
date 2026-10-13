@@ -330,6 +330,8 @@ bool dbg_step_over(CPC *c) {
     return true;
 }
 
+void dbg_step_out(CPC *c) { Debugger *d = dbg_attach(c); d->hit = false; d->skip_once = true; d->step_out = true; d->step_out_sp = c->z80.sp.w; }
+
 void dbg_run_to(CPC *c, uint16_t addr) { Debugger *d = dbg_attach(c); d->hit = false; d->skip_once = true; d->temp_bp = addr; }
 
 /* ---------------- Symbols & data areas ---------------- */

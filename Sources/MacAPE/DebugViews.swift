@@ -84,7 +84,7 @@ enum DebugStyle {
 }
 
 /// Debugger pane shortcuts (WinAPE: Ctrl+F find, Ctrl+G goto, F3 find again, F5 breakpoint/load, Ctrl+Tab hex/ASCII).
-enum PaneCommand { case find, findAgain, goto, f5, toggleASCII }
+enum PaneCommand { case find, findAgain, goto, f5, toggleASCII, follow, back }
 func paneCommand(for e: NSEvent) -> PaneCommand? {
     let mods = e.modifierFlags.intersection([.control, .command, .shift, .option])
     let key = e.charactersIgnoringModifiers?.lowercased() ?? ""
@@ -210,6 +210,8 @@ final class DisasmView: NSView {
         case 126: scrollLines(-1); followPC = false
         case 121: scrollLines(rows - 1); followPC = false
         case 116: scrollLines(-(rows - 1)); followPC = false
+        case 36, 76: onCommand?(.follow)        // Return / Enter: follow CALL/JP/JR target
+        case 51: onCommand?(.back)              // Delete: back to where the last jump came from
         default: if let c = paneCommand(for: event) { onCommand?(c) } else { super.keyDown(with: event) }
         }
     }

@@ -620,7 +620,13 @@ static void advance(CPC *c, int nops) {
 
 int cpc_step(CPC *c) {
     if (c->dbg) { c->z80.brk_enabled = c->dbg->break_instructions; if (dbg_check_code(c)) return 0; }
+    bool ret_op = false;          /* Step Out: is this a RET/RETcc/RETI/RETN? */
+    if (c->dbg && c->dbg->step_out) {
+        uint8_t op = cpc_mem_read(c, c->z80.pc), op2 = cpc_mem_read(c, (uint16_t)(c->z80.pc + 1));
+        ret_op = op == 0xC9 || (op & 0xC7) == 0xC0 || (op == 0xED && (op2 & 0xC7) == 0x45);
+    }
     int n = z80_step(&c->z80, c->irq_line);
+    if (ret_op && !c->z80.int_ack && c->z80.sp.w > c->dbg->step_out_sp) { c->dbg->step_out = false; c->dbg->hit = true; c->dbg->hit_index = -1; }
     if (c->z80.int_ack) { c->irq_line = false; c->ga_irq_counter &= 0x1F; }
     if (c->z80.retn_hit && c->mf_running) c->mf_running = false;
     if (c->z80.brk_hit) { if (c->dbg) { c->dbg->hit = true; c->dbg->hit_index = -2; } return n; }

@@ -38,6 +38,11 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     var timersWindow: TimersController?
     var graphicsWindow: GraphicsController?
     var lastFind: FindQuery?
+    var symbolsWindow: SymbolsController?
+    private var history: [(top: Int, selected: Int)] = []        // disassembler navigation (Enter / Delete)
+    private var lastStopRegs: [Reg: Int] = [:], lastStopFlags = -1
+    private var changedRegs: Set<Reg> = [], flagsChanged = false
+    private var lastStopInstructions: UInt64 = .max
     var compareWindow: NSPanel?
 
     init(emulator: Emulator) {
@@ -144,7 +149,8 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         checkFollow.state = .on; checkBreaks.state = .on; checkHide.state = .on
         let tools = [symButton("circle.fill", "Edit Breakpoints", #selector(showBreakpoints(_:)), tint: .systemRed), symButton("list.bullet.rectangle", "Edit Data Areas", #selector(showDataAreas(_:))),
                      symButton("timer", "Show Timers", #selector(showTimers(_:))), symButton("cpu", "Chip Registers", #selector(showChipRegisters(_:))),
-                     symButton("photo", "Find Graphics", #selector(showGraphics(_:))), symButton("magnifyingglass", "Search", #selector(findInPane(_:)))]
+                     symButton("photo", "Find Graphics", #selector(showGraphics(_:))), symButton("magnifyingglass", "Search", #selector(findInPane(_:))),
+                     symButton("tag", "Symbols", #selector(showSymbols(_:)))]
         root.addSubview(disasm); root.addSubview(memory)
 
         root.onLayout = { [weak self] in
@@ -196,8 +202,19 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     /// and selects it, even if the user had scrolled elsewhere.
     func show() {
         window?.makeKeyAndOrderFront(nil); window?.makeFirstResponder(disasm)
+        noteStop()
         refreshAll()
         focusPC()
+    }
+    /// Registers that changed since the previous stop are shown in red (WinAPE/RVM style).
+    private func noteStop() {
+        emu.lock.lock(); let z = emu.cpc.pointee.z80; emu.lock.unlock()
+        guard z.instructions != lastStopInstructions else { return }      // re-shown without running: keep the colours
+        lastStopInstructions = z.instructions
+        var now: [Reg: Int] = [:]; for r in Reg.allCases { now[r] = r.get(z) }
+        changedRegs = lastStopRegs.isEmpty ? [] : Set(Reg.allCases.filter { r in r != .r && now[r] != lastStopRegs[r] })
+        flagsChanged = lastStopFlags >= 0 && lastStopFlags != Int(z.af.l)
+        lastStopRegs = now; lastStopFlags = Int(z.af.l)
     }
     func focusPC() {
         let follow = disasm.followPC
@@ -226,7 +243,11 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         let z = emu.cpc.pointee.z80
         let t = emu.cpc.pointee.t_counter
         emu.lock.unlock()
-        for (r, f) in regFields where window?.firstResponder !== f.currentEditor() { f.stringValue = String(format: "%0\(r.digits)X", r.get(z)) }
+        for (r, f) in regFields where window?.firstResponder !== f.currentEditor() {
+            f.stringValue = String(format: "%0\(r.digits)X", r.get(z))
+            f.textColor = emu.paused && changedRegs.contains(r) ? .systemRed : .labelColor
+        }
+        flagsField.textColor = emu.paused && flagsChanged ? .systemRed : .labelColor
         if window?.firstResponder !== flagsField.currentEditor() {
             let f = Int(z.af.l); flagsField.stringValue = (0..<8).map { (f >> (7 - $0)) & 1 == 1 ? "1" : "0" }.joined()
         }
@@ -295,12 +316,62 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         case .goto: gotoAddress(nil)
         case .f5: if memoryPane { loadData(nil) } else { toggleBP(nil) }
         case .toggleASCII: break
+        case .follow: followTarget()
+        case .back: navigateBack()
         }
     }
+    /// Moves the disassembler to an address, remembering where it was for Delete (back).
     func showInDisassembler(_ a: Int) {
+        if disasm.selected >= 0 || !history.isEmpty { history.append((disasm.topAddr, disasm.selected)); if history.count > 100 { history.removeFirst() } }
         checkFollow.state = .off; disasm.followPC = false; disasm.anchor = nil
         disasm.topAddr = a & 0xFFFF; disasm.selected = a & 0xFFFF; disasm.reload()
         window?.makeFirstResponder(disasm); lastPane = disasm
+    }
+
+    /// Enter on a CALL/JP/JR/DJNZ/RST shows its destination without executing anything; on other
+    /// instructions a 16-bit operand ((#nnnn) or #nnnn) is shown in the memory pane.
+    func followTarget() {
+        let a = disasm.selected >= 0 ? disasm.selected : model.pc
+        let text = model.disasm(a).0.uppercased()
+        let mnemonic = text.split(separator: " ").first.map(String.init) ?? ""
+        emu.lock.lock(); let z = emu.cpc.pointee.z80; emu.lock.unlock()
+        func lastHex() -> Int? {
+            guard let r = text.range(of: "#[0-9A-F]+", options: [.regularExpression, .backwards]) else { return nil }
+            return Int(text[r].dropFirst(), radix: 16)
+        }
+        if ["CALL", "JP", "JR", "DJNZ", "RST"].contains(mnemonic) {
+            var target: Int?
+            if text.contains("(HL)") { target = Int(z.hl.w) } else if text.contains("(IX)") { target = Int(z.ix.w) } else if text.contains("(IY)") { target = Int(z.iy.w) } else { target = lastHex() }
+            if let t = target { showInDisassembler(t); return }
+        } else if let v = lastHex(), text.range(of: "#[0-9A-F]{4}", options: .regularExpression) != nil {
+            memory.show(v); memory.reload(); lastPane = memory; window?.makeFirstResponder(memory); return
+        }
+        NSSound.beep()
+    }
+    func navigateBack() {
+        guard let h = history.popLast() else { NSSound.beep(); return }
+        checkFollow.state = .off; disasm.followPC = false; disasm.anchor = nil
+        disasm.topAddr = h.top; disasm.selected = h.selected; disasm.reload()
+        window?.makeFirstResponder(disasm); lastPane = disasm
+    }
+
+    // MARK: symbols
+    @objc func loadSymbols(_ s: Any?) {
+        let p = NSOpenPanel(); p.title = "Load Symbols"; p.message = "NoICE (.noi), SDCC map, Maxam/WinAPE or label = value lists"
+        guard p.runModal() == .OK, let u = p.url else { return }
+        emu.lock.lock(); _ = dbg_attach(emu.cpc); let n = dbg_symbols_load(emu.cpc, u.path); emu.lock.unlock()
+        if n < 0 { let a = NSAlert(); a.messageText = "Cannot load symbols"; a.informativeText = u.path; a.runModal(); return }
+        window?.title = "MacAPE Debugger — \(n) symbols from \(u.lastPathComponent)"
+        refreshAll(); symbolsWindow?.reload()
+    }
+    @objc func clearSymbols(_ s: Any?) {
+        emu.lock.lock(); dbg_symbol_clear(emu.cpc); emu.lock.unlock()
+        window?.title = "MacAPE Debugger"
+        refreshAll(); symbolsWindow?.reload()
+    }
+    @objc func showSymbols(_ s: Any?) {
+        if symbolsWindow == nil { symbolsWindow = SymbolsController(debugger: self) }
+        symbolsWindow?.show()
     }
 
     @objc func gotoAddress(_ s: Any?) {

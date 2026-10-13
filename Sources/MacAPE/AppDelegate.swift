@@ -250,6 +250,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if emu.debugStepOver() { if d.hideOnRun { d.window?.orderOut(nil) } } else { d.show() }
     }
     @objc func debugRunToCursor(_ s: Any?) { ensureDebugger().runToCursor(s) }
+    @objc func debugStepOut(_ s: Any?) { let d = ensureDebugger(); emu.debugStepOut(); if d.hideOnRun { d.window?.orderOut(nil) } }
+    @objc func debugLoadSymbols(_ s: Any?) { let d = ensureDebugger(); d.show(); d.loadSymbols(s) }
+    @objc func debugClearSymbols(_ s: Any?) { ensureDebugger().clearSymbols(s) }
+    @objc func debugShowSymbols(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showSymbols(s) }
     @objc func debugFindAgain(_ s: Any?) { ensureDebugger().findAgain(s) }
     @objc func showRegisters(_ s: Any?) { let d = ensureDebugger(); d.showChipRegisters(s) }
     @objc func showBreakpoints(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showBreakpoints(s) }
@@ -341,9 +345,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item("AMX Mouse", #selector(amxMouse(_:)), fkey(12), ctrl), item("Multiface Stop", #selector(multifaceStop(_:)), fkey(11)),
         ])
         let debug = submenu("Debug", [
-            item("Run", #selector(debugRun(_:)), fkey(9)), item("Pause", #selector(debugPause(_:)), fkey(7)), item("Step Into", #selector(debugStep(_:)), fkey(7), shift), item("Step Over", #selector(debugStepOver(_:)), fkey(8)), item("Run to Cursor", #selector(debugRunToCursor(_:)), fkey(4)), item("Find Again", #selector(debugFindAgain(_:)), fkey(3)),
+            item("Run", #selector(debugRun(_:)), fkey(9)), item("Pause", #selector(debugPause(_:)), fkey(7)), item("Step Into", #selector(debugStep(_:)), fkey(7), shift), item("Step Over", #selector(debugStepOver(_:)), fkey(8)), item("Step Out", #selector(debugStepOut(_:)), fkey(8), shift), item("Run to Cursor", #selector(debugRunToCursor(_:)), fkey(4)), item("Find Again", #selector(debugFindAgain(_:)), fkey(3)),
             item("Registers", #selector(showRegisters(_:))), item("Breakpoints", #selector(showBreakpoints(_:))),
             item("Data Areas", #selector(showDataAreas(_:))), item("Timers", #selector(showTimers(_:))), item("Find Graphics", #selector(showGraphics(_:))),
+            .separator(),
+            item("Symbols…", #selector(debugShowSymbols(_:))), item("Load Symbols…", #selector(debugLoadSymbols(_:))), item("Clear Symbols", #selector(debugClearSymbols(_:))),
         ])
         let asm = submenu("Assembler", [item("Show Assembler", #selector(showAssembler(_:)), fkey(3))])
         let window = submenu("Window", [item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m", .command)])

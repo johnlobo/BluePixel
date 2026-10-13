@@ -34,6 +34,7 @@ typedef struct Debugger {
     DbgSymbol *syms; int nsyms, syms_cap;
     DbgTimer timers[DBG_MAX_TIMERS];
     int temp_bp;                   /* run-to address, -1 when unused */
+    bool step_out; uint16_t step_out_sp;   /* stop after a RET that leaves the frame entered at step_out_sp */
     uint8_t watch[65536];          /* bit0 = read watch, bit1 = write watch */
     int io_bps;
     bool hit; int hit_index;       /* last breakpoint that stopped the machine */
@@ -65,6 +66,7 @@ void dbg_io_event(CPC *c, uint16_t port, uint8_t value, bool write);
 void dbg_step_into(CPC *c);
 bool dbg_step_over(CPC *c);                        /* true when the machine must keep running until the next instruction */
 void dbg_run_to(CPC *c, uint16_t addr);
+void dbg_step_out(CPC *c);                         /* run until the current function returns */
 
 /* Symbols & data areas */
 void dbg_symbol_set(CPC *c, const char *name, int32_t value);

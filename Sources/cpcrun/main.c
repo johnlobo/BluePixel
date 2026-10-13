@@ -253,6 +253,20 @@ static int run_steptest(const char *roms, const char *disc) {
         if (c->z80.pc == pc && !self_loop) { stuck++; printf("  stuck at %04X op %02X %02X\n", pc, op, op2); }
     }
     CHECK(stuck == 0, "F8 always advances");
+    /* Step Out: step into a CALL, then run until the routine returns */
+    int found = 0;
+    for (int i = 0; i < 2000 && !found; i++) {
+        uint16_t pc = c->z80.pc; uint8_t op = cpc_mem_read(c, pc);
+        if (op == 0xCD) {
+            uint16_t ret = (uint16_t)(pc + 3), sp = c->z80.sp.w;
+            dbg_step_into(c);
+            dbg_step_out(c); d->hit = false;
+            for (int f = 0; f < 500 && !d->hit; f++) cpc_run_frame(c);
+            CHECK(c->z80.pc == ret && c->z80.sp.w == sp, "step out returns after the CALL");
+            printf("  CALL at %04X -> step out at %04X (expected %04X)\n", pc, c->z80.pc, ret);
+            found = 1;
+        } else dbg_step_into(c);
+    }
     printf("  %d call/block step-overs, final pc=%04X\n", runs, c->z80.pc);
     cpc_destroy(c);
     printf("%d failure(s)\n", fails);
