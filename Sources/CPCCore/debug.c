@@ -310,6 +310,9 @@ void dbg_step_into(CPC *c) {
     Debugger *d = dbg_attach(c);
     d->hit = false; d->skip_once = true;
     cpc_step(c);
+    /* A halted Z80 only runs NOPs until an interrupt: complete the HALT in one step instead of
+     * leaving PC unchanged for thousands of steps (bounded to a couple of frames). */
+    for (int n = 0; c->z80.halted && n < 80000; n++) { d->skip_once = true; cpc_step(c); }
     d->hit = false;
 }
 

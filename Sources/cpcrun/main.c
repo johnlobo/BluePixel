@@ -227,6 +227,38 @@ static int run_symtest(const char *path, const char *name) {
     cpc_destroy(c); return ok ? 0 : 1;
 }
 
+static int run_steptest(const char *roms, const char *disc) {
+    int fails = 0;
+    CPC *c = cpc_create(CPC_MODEL_6128); load_roms(c, roms, CPC_MODEL_6128); cpc_reset(c, true);
+    for (int i = 0; i < 100; i++) cpc_run_frame(c);
+    Debugger *d = dbg_attach(c);
+    /* HALT: EI / HALT / JR -3 at #4000 */
+    cpc_poke(c, 0x4000, 0xFB); cpc_poke(c, 0x4001, 0x76); cpc_poke(c, 0x4002, 0x18); cpc_poke(c, 0x4003, 0xFC);
+    c->z80.pc = 0x4000; c->z80.halted = false;
+    dbg_step_into(c); dbg_step_into(c);   /* EI, then HALT completes into the interrupt */
+    CHECK(!c->z80.halted && c->z80.pc != 0x4001 && c->z80.pc != 0x4002, "step over HALT reaches the interrupt");
+    printf("  after HALT pc=%04X\n", c->z80.pc);
+    cpc_destroy(c);
+    /* F8 x300 on a running game: PC must change unless the instruction loops on itself */
+    c = cpc_create(CPC_MODEL_6128); load_roms(c, roms, CPC_MODEL_6128); cpc_reset(c, true);
+    CPCDisc *dk = disc ? dsk_load_file(disc) : NULL; if (dk) fdc_insert(c->fdc, 0, dk);
+    for (int i = 0; i < 100; i++) cpc_run_frame(c);
+    if (dk) { cpc_autotype(c, "run\"boop\n"); for (int i = 0; i < 700; i++) cpc_run_frame(c); }
+    d = dbg_attach(c);
+    int stuck = 0, runs = 0;
+    for (int i = 0; i < 300; i++) {
+        uint16_t pc = c->z80.pc; uint8_t op = cpc_mem_read(c, pc), op2 = cpc_mem_read(c, pc + 1);
+        bool self_loop = (op == 0x18 && op2 == 0xFE) || (op == 0x10 && op2 == 0xFE) || (op == 0xED && (op2 & 0xF0) == 0xB0);
+        if (dbg_step_over(c)) { runs++; d->hit = false; for (int f = 0; f < 500 && !d->hit; f++) cpc_run_frame(c); }
+        if (c->z80.pc == pc && !self_loop) { stuck++; printf("  stuck at %04X op %02X %02X\n", pc, op, op2); }
+    }
+    CHECK(stuck == 0, "F8 always advances");
+    printf("  %d call/block step-overs, final pc=%04X\n", runs, c->z80.pc);
+    cpc_destroy(c);
+    printf("%d failure(s)\n", fails);
+    return fails ? 1 : 0;
+}
+
 static int run_amxtest(const char *roms) {
     int fails = 0;
     CPC *c = cpc_create(CPC_MODEL_6128); load_roms(c, roms, CPC_MODEL_6128); cpc_reset(c, true);
@@ -327,6 +359,7 @@ int main(int argc, char **argv) {
     if (argc >= 6 && !strcmp(argv[1], "dis")) return run_dis(argv[2], strtoul(argv[3], 0, 0), strtoul(argv[4], 0, 0), atoi(argv[5]));
     if (argc >= 3 && !strcmp(argv[1], "dbgtest")) return run_dbgtest(argv[2]);
     if (argc >= 3 && !strcmp(argv[1], "mftest")) return run_mftest(argv[2]);
+    if (argc >= 3 && !strcmp(argv[1], "steptest")) return run_steptest(argv[2], argc >= 4 ? argv[3] : NULL);
     if (argc >= 3 && !strcmp(argv[1], "amxtest")) return run_amxtest(argv[2]);
     if (argc >= 4 && !strcmp(argv[1], "symtest")) return run_symtest(argv[2], argv[3]);
     if (argc >= 3 && !strcmp(argv[1], "inttest")) return run_inttest(argv[2]);

@@ -160,6 +160,9 @@ final class Emulator {
         while running {
             if paused { resume.wait(); next = Double(nowUS()); continue }
             lock.lock()
+            // Re-check under the lock: a pause/step requested after the check above must not let a whole
+            // frame run behind the debugger's back.
+            if paused { lock.unlock(); continue }
             let n = speed > 1.0 ? Int(speed.rounded()) : 1
             for _ in 0..<n { cpc_run_frame(cpc) }
             let hit = cpc_dbg_break(cpc)

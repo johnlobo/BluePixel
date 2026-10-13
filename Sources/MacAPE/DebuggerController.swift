@@ -191,7 +191,20 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     private func monoFont() -> NSFont { .monospacedSystemFont(ofSize: 11, weight: .regular) }
 
     // MARK: show / refresh
-    func show() { window?.makeKeyAndOrderFront(nil); window?.makeFirstResponder(disasm); refreshAll() }
+    /// Shown whenever the machine stops (pause, step, breakpoint): the disassembler jumps back to PC
+    /// and selects it, even if the user had scrolled elsewhere.
+    func show() {
+        window?.makeKeyAndOrderFront(nil); window?.makeFirstResponder(disasm)
+        refreshAll()
+        focusPC()
+    }
+    func focusPC() {
+        let follow = disasm.followPC
+        disasm.followPC = true; disasm.anchor = nil; disasm.selected = model.pc
+        disasm.reload()
+        disasm.followPC = follow || checkFollow.state == .on
+        lastPane = disasm
+    }
     func windowDidResize(_ notification: Notification) { refreshAll() }
     /// Closing the debugger resumes emulation, like Run (F9) in WinAPE.
     func windowWillClose(_ notification: Notification) { if emu.paused { emu.debugResume() } }
