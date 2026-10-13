@@ -19,6 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var driveSetup: DriveSetupController!
     var tapeControl: TapeController!
     var lastSnapshot: URL?
+    var debugger: DebuggerController?
+    func ensureDebugger() -> DebuggerController { if debugger == nil { debugger = DebuggerController(emulator: emu) }; return debugger! }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Profiles.installDefaults()
@@ -32,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         main = MainWindowController(emulator: emu)
         main.view.onFileDrop = { [weak self] in self?.openFile($0) }
         driveSetup = DriveSetupController(emu: emu); tapeControl = TapeController(emu: emu)
+        emu.onBreak = { [weak self] in guard let self = self else { return }; self.ensureDebugger().show() }
         buildMenus()
         main.showWindow(nil)
         main.window?.makeKeyAndOrderFront(nil)
@@ -55,7 +58,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if let pn = panel { DispatchQueue.main.asyncAfter(deadline: .now() + 1) { _ = self.perform(Selector(pn), with: nil) } }
         if let path = shot {
             DispatchQueue.main.asyncAfter(deadline: .now() + after) {
-                if let title = shotWin, let w = NSApp.windows.first(where: { $0.title.contains(title) }), let v = w.contentView?.superview ?? w.contentView {
+                if let title = shotWin, let w = NSApp.windows.first(where: { $0.title.contains(title) }), let v = (ProcessInfo.processInfo.environment["SHOTCONTENT"] != nil ? w.contentView : (w.contentView?.superview ?? w.contentView)) {
+                    w.contentView?.layoutSubtreeIfNeeded(); w.contentView?.displayIfNeeded()
                     let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds)!
                     v.cacheDisplay(in: v.bounds, to: rep)
                     try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
@@ -193,15 +197,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     // MARK: Debug / assembler / help
-    @objc func debugRun(_ s: Any?) { emu.paused = false }
-    @objc func debugPause(_ s: Any?) { emu.paused = true }
-    @objc func debugStep(_ s: Any?) { todo(s) }
-    @objc func debugStepOver(_ s: Any?) { todo(s) }
-    @objc func showRegisters(_ s: Any?) { todo(s) }
-    @objc func showBreakpoints(_ s: Any?) { todo(s) }
-    @objc func showDataAreas(_ s: Any?) { todo(s) }
-    @objc func showTimers(_ s: Any?) { todo(s) }
-    @objc func showGraphics(_ s: Any?) { todo(s) }
+    @objc func debugRun(_ s: Any?) {
+        let d = ensureDebugger()
+        if d.hideOnRun { d.window?.orderOut(nil) }
+        emu.debugResume()
+    }
+    @objc func debugPause(_ s: Any?) { let d = ensureDebugger(); emu.debugPause(); d.show() }
+    @objc func debugStep(_ s: Any?) { let d = ensureDebugger(); emu.debugStepInto(); d.show() }
+    @objc func debugStepOver(_ s: Any?) {
+        let d = ensureDebugger()
+        if emu.debugStepOver() { if d.hideOnRun { d.window?.orderOut(nil) } } else { d.show() }
+    }
+    @objc func debugRunToCursor(_ s: Any?) { ensureDebugger().runToCursor(s) }
+    @objc func debugFindAgain(_ s: Any?) { ensureDebugger().findAgain(s) }
+    @objc func showRegisters(_ s: Any?) { let d = ensureDebugger(); d.showChipRegisters(s) }
+    @objc func showBreakpoints(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showBreakpoints(s) }
+    @objc func showDataAreas(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showDataAreas(s) }
+    @objc func showTimers(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showTimers(s) }
+    @objc func showGraphics(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showGraphics(s) }
     @objc func showAssembler(_ s: Any?) { todo(s) }
     @objc func showPokes(_ s: Any?) { todo(s) }
     @objc func showHelp(_ s: Any?) { todo(s) }
@@ -284,7 +297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item("AMX Mouse", #selector(amxMouse(_:)), fkey(12), ctrl), item("Multiface Stop", #selector(multifaceStop(_:)), fkey(11)),
         ])
         let debug = submenu("Debug", [
-            item("Run", #selector(debugRun(_:)), fkey(9)), item("Pause", #selector(debugPause(_:)), fkey(7)),
+            item("Run", #selector(debugRun(_:)), fkey(9)), item("Pause", #selector(debugPause(_:)), fkey(7)), item("Step Into", #selector(debugStep(_:)), fkey(7)), item("Step Over", #selector(debugStepOver(_:)), fkey(8)), item("Run to Cursor", #selector(debugRunToCursor(_:)), fkey(4)), item("Find Again", #selector(debugFindAgain(_:)), fkey(3)),
             item("Registers", #selector(showRegisters(_:))), item("Breakpoints", #selector(showBreakpoints(_:))),
             item("Data Areas", #selector(showDataAreas(_:))), item("Timers", #selector(showTimers(_:))), item("Find Graphics", #selector(showGraphics(_:))),
         ])

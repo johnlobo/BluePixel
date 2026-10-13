@@ -45,6 +45,8 @@ typedef struct {
     float level[3];
 } CPCPsg;
 
+typedef struct { uint16_t addr, loop_addr; uint8_t prescale; uint16_t pause, loop_cnt; int tick; bool stopped; } CPCDma;
+
 typedef struct {
     bool unlocked; int unlock_pos;
     bool page_visible;            /* ASIC registers mapped at 0x4000-0x7FFF */
@@ -54,7 +56,7 @@ typedef struct {
     uint8_t cart_bank;            /* cartridge bank mapped as lower ROM */
     uint8_t pri, splt, ivr, sscr, dcsr, icsr;
     uint16_t ssa;
-    struct { uint16_t addr, loop_addr; uint8_t prescale; uint16_t pause, loop_cnt; int tick; bool stopped; } dma[3];
+    CPCDma dma[3];
     uint32_t pal_rgb[17];         /* current display colours for pens 0..15 and border */
     uint32_t spal_rgb[16];
     uint16_t pal12[17];

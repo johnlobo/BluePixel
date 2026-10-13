@@ -125,7 +125,7 @@ final class Emulator {
             lock.lock()
             let n = speed > 1.0 ? Int(speed.rounded()) : 1
             for _ in 0..<n { cpc_run_frame(cpc) }
-            let hit = cpc.pointee.z80.brk_hit
+            let hit = cpc_dbg_break(cpc)
             lock.unlock()
             audio?.muted = speed != 1.0
             shown += 1
@@ -257,4 +257,45 @@ extension Emulator {
         return (try? Data(bytes: p, count: n).write(to: url)) != nil
     }
     var isRecordingTape: Bool { cpc.pointee.rec_active }
+}
+
+// MARK: - Debugger control
+extension Emulator {
+    var dbg: UnsafeMutablePointer<Debugger> { lock.lock(); defer { lock.unlock() }; return dbg_attach(cpc)! }
+
+    /// Pauses at an instruction boundary (waits for the current frame to finish).
+    func debugPause() {
+        _ = dbg
+        paused = true
+        lock.lock(); lock.unlock()
+    }
+
+    func debugResume() {
+        lock.lock()
+        let d = dbg_attach(cpc)!
+        d.pointee.hit = false; d.pointee.skip_once = true
+        lock.unlock()
+        paused = false
+    }
+
+    func debugStepInto() {
+        debugPause()
+        lock.lock(); dbg_step_into(cpc); lock.unlock()
+        publish()
+    }
+
+    /// Returns true when the machine continues running (CALL/RST/block instruction).
+    @discardableResult
+    func debugStepOver() -> Bool {
+        debugPause()
+        lock.lock(); let run = dbg_step_over(cpc); lock.unlock()
+        if run { paused = false } else { publish() }
+        return run
+    }
+
+    func debugRunTo(_ addr: UInt16) {
+        debugPause()
+        lock.lock(); dbg_run_to(cpc, addr); lock.unlock()
+        paused = false
+    }
 }
