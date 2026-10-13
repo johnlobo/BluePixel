@@ -1,0 +1,6 @@
+#!/bin/sh
+# Runs MacAPE from the terminal with WinAPE-style arguments, e.g.
+#   macape game.dsk /A          macape disc.dsk /A:loader     macape /SN:game.sna
+# Symlink it somewhere on PATH:  ln -s "$PWD/tools/macape" /usr/local/bin/macape
+here="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)"
+exec "$here/../build/MacAPE.app/Contents/MacOS/MacAPE" "$@"

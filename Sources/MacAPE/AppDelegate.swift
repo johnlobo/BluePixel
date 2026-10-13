@@ -47,20 +47,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         NSApp.activate(ignoringOtherApps: true)
         if !FileManager.default.fileExists(atPath: emu.romFolder.appendingPathComponent("OS6128.ROM").path) { askForROMFolder() }
         emu.start()
-        let args = Array(CommandLine.arguments.dropFirst())
-        var i = 0
-        var shot: String?, after = 4.0, typed: String?, panel: String?, shotWin: String?
-        while i < args.count {
-            let a = args[i]
-            if a == "--shot", i + 1 < args.count { shot = args[i + 1]; i += 2; continue }
-            if a == "--after", i + 1 < args.count { after = Double(args[i + 1]) ?? 4; i += 2; continue }
-            if a == "--panel", i + 1 < args.count { panel = args[i + 1]; i += 2; continue }
-            if a == "--shotwin", i + 1 < args.count { shotWin = args[i + 1]; i += 2; continue }
-            if a == "--type", i + 1 < args.count { typed = args[i + 1]; i += 2; continue }
-            if !a.hasPrefix("-") { openFile(URL(fileURLWithPath: a)) }
-            i += 1
+        let opt = LaunchOptions(Array(CommandLine.arguments.dropFirst()))
+        if opt.help { print(LaunchOptions.usage); exit(0) }
+        for e in opt.errors { FileHandle.standardError.write(("MacAPE: " + e + "\n").data(using: .utf8)!) }
+        var discs = 0
+        for f in opt.files {
+            if ["dsk", "dsc", "hdr"].contains(f.pathExtension.lowercased()) {
+                if discs == 0 { openFile(f) } else if !emu.insertDisc(drive: 1, url: f) { alert("Cannot open disc image", f.path) }
+                discs += 1
+            } else { openFile(f) }
         }
-        if let t = typed { DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.emu.type(t.replacingOccurrences(of: "~", with: "\n")) } }
+        if let sn = opt.snapshot { openFile(sn) }
+        if let sym = opt.symbols {
+            emu.lock.lock(); _ = dbg_attach(emu.cpc); let n = dbg_symbols_load(emu.cpc, sym.path); emu.lock.unlock()
+            if n < 0 { alert("Cannot load symbols", sym.path) }
+        }
+        var typing = ""
+        if let req = opt.autoRun {
+            if let cmd = emu.autoRunCommand(req) { typing += cmd } else { alert("Nothing to run", "No program found on the disc in drive A.") }
+        }
+        if let tf = opt.typeFile {
+            if let t = try? String(contentsOf: tf, encoding: .isoLatin1) { typing += t.replacingOccurrences(of: "\r\n", with: "\n") } else { alert("Cannot read Auto-Type file", tf.path) }
+        }
+        if let t = opt.typed { typing += t.replacingOccurrences(of: "~", with: "\n") }
+        if !typing.isEmpty { DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.emu.type(typing) } }
+        let panel = opt.panel, shot = opt.shot, shotWin = opt.shotWin, after = opt.after
         if let pn = panel { DispatchQueue.main.asyncAfter(deadline: .now() + 1) { _ = self.perform(Selector(pn), with: nil) } }
         if let path = shot {
             DispatchQueue.main.asyncAfter(deadline: .now() + after) {

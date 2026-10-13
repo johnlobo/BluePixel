@@ -38,4 +38,10 @@ void dsk_free(CPCDisc *d);
 void dsk_format(CPCDisc *d, DskFormat f, int tracks, int sides);
 void dsk_track_clear(CPCTrack *t);
 int dsk_sector_size(const CPCSector *s);
+
+typedef struct { char name[9], ext[4]; uint8_t user; bool system, read_only; } DskFile;
+/* AMSDOS directory (first extent of each file); -1 when no known format is found. */
+int dsk_catalogue(const CPCDisc *d, DskFile *out, int max);
+/* System-format disc with a CP/M boot sector (track 0, sector &41). */
+bool dsk_is_cpm_boot(const CPCDisc *d);
 #endif

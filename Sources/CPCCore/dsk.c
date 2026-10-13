@@ -127,3 +127,39 @@ void dsk_format(CPCDisc *d, DskFormat f, int tracks, int sides) {
     }
     d->dirty = true;
 }
+
+static const CPCSector *find_sector(const CPCDisc *d, int track, int id) {
+    if (track >= d->tracks) return NULL;
+    const CPCTrack *t = &d->trk[track][0];
+    for (int i = 0; i < t->nsectors; i++) if (t->sec[i].r == id && t->sec[i].data) return &t->sec[i];
+    return NULL;
+}
+
+int dsk_catalogue(const CPCDisc *d, DskFile *out, int max) {
+    /* Directory: first four 512-byte sectors of the data (C1, track 0), system (41, track 2) or IBM (01, track 1) format. */
+    static const int first_id[3] = {0xC1, 0x41, 0x01}, dir_track[3] = {0, 2, 1};
+    for (int f = 0; f < 3; f++) {
+        if (!find_sector(d, dir_track[f], first_id[f])) continue;
+        int n = 0;
+        for (int s = 0; s < 4; s++) {
+            const CPCSector *sec = find_sector(d, dir_track[f], first_id[f] + s);
+            if (!sec || sec->len < 512) break;
+            for (int e = 0; e < 16; e++) {
+                const uint8_t *en = sec->data + e * 32;
+                if (en[0] > 15 || en[12] != 0) continue;          /* deleted/unused, or not the first extent */
+                if (n >= max) return n;
+                DskFile *o = &out[n++];
+                o->user = en[0]; o->system = (en[10] & 0x80) != 0; o->read_only = (en[9] & 0x80) != 0;
+                int k = 0;
+                for (int i = 1; i <= 8; i++) { char ch = en[i] & 0x7F; if (ch != ' ') o->name[k++] = ch; }
+                o->name[k] = 0; k = 0;
+                for (int i = 9; i <= 11; i++) { char ch = en[i] & 0x7F; if (ch != ' ') o->ext[k++] = ch; }
+                o->ext[k] = 0;
+            }
+        }
+        return n;
+    }
+    return -1;
+}
+
+bool dsk_is_cpm_boot(const CPCDisc *d) { return find_sector(d, 0, 0x41) != NULL; }
