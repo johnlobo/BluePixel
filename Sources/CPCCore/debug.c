@@ -10,7 +10,7 @@ enum { W_READ = 1, W_WRITE = 2, W_CODE = 4 };
 Debugger *dbg_attach(CPC *c) {
     if (c->dbg) return c->dbg;
     Debugger *d = calloc(1, sizeof *d);
-    d->active = true; d->temp_bp = -1;
+    d->active = true; d->temp_bp = -1; d->hist_on = true;
     c->dbg = d;
     c->z80.brk_enabled = d->break_instructions;
     return d;
@@ -329,6 +329,16 @@ bool dbg_step_over(CPC *c) {
     d->hit = false; d->skip_once = true; d->temp_bp = next;
     return true;
 }
+
+void dbg_history_record(CPC *c) {
+    Debugger *d = c->dbg; Z80 *z = &c->z80;
+    if (z->halted) return;              /* a HALT loop would flood the history */
+    d->hist[d->hist_pos] = (DbgHistory){z->pc, z->af.w, z->bc.w, z->de.w, z->hl.w, z->ix.w, z->iy.w, z->sp.w};
+    d->hist_pos = (d->hist_pos + 1) % DBG_HISTORY;
+    if (d->hist_count < DBG_HISTORY) d->hist_count++;
+}
+int dbg_history_count(const Debugger *d) { return d->hist_count; }
+DbgHistory dbg_history_get(const Debugger *d, int back) { return d->hist[(d->hist_pos - 1 - back + 2 * DBG_HISTORY) % DBG_HISTORY]; }
 
 void dbg_step_out(CPC *c) { Debugger *d = dbg_attach(c); d->hit = false; d->skip_once = true; d->step_out = true; d->step_out_sp = c->z80.sp.w; }
 

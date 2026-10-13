@@ -361,6 +361,12 @@ static int run_boot(int argc, char **argv) {
         printf("pri=%d splt=%d ssa=%04X sscr=%02X ivr=%02X dcsr=%02X\n", c->asic.pri, c->asic.splt, c->asic.ssa, c->asic.sscr, c->asic.ivr, c->asic.dcsr);
         printf("asic ram 6400:"); for (int k = 0; k < 40; k++) printf(" %02X", c->asic.ram[0x2400 + k]); printf("\n");
     }
+    if (getenv("MIDFRAME")) { uint64_t s0 = c->cycles; while (c->cycles - s0 < (uint64_t)atoi(getenv("MIDFRAME"))) cpc_step(c); }
+    if (getenv("VIEW")) {
+        static uint32_t v[CPC_SCREEN_W * CPC_SCREEN_H];
+        if (!strcmp(getenv("VIEW"), "raster")) cpc_render_raster(c, v); else cpc_render_vram(c, v);
+        write_bmp(out, v, CPC_SCREEN_W, CPC_SCREEN_H);
+    } else
     write_bmp(out, cpc_frame(c), CPC_SCREEN_W, CPC_SCREEN_H);
     printf("frames=%llu pc=%04x cycles=%llu\n", (unsigned long long)c->frames, c->z80.pc, (unsigned long long)c->cycles);
     cpc_destroy(c); return 0;

@@ -180,6 +180,27 @@ struct FindQuery {
 
 extension DebugModel {
     /// First match after `from` (wrapping round the 64K view), or nil.
+    /// "name+offset" for the closest symbol at or below an address (within 4K), for call-stack display.
+    func nearestSymbol(_ addr: Int) -> String? {
+        let all = cachedSymbols()
+        var lo = 0, hi = all.count - 1, best = -1
+        while lo <= hi { let m = (lo + hi) / 2; if all[m].1 <= addr { best = m; lo = m + 1 } else { hi = m - 1 } }
+        guard best >= 0, addr - all[best].1 < 0x1000 else { return nil }
+        let off = addr - all[best].1
+        return off == 0 ? all[best].0 : all[best].0 + String(format: "+%d", off)
+    }
+    private static var symbolCache: (count: Int, list: [(String, Int)]) = (-1, [])
+    private func cachedSymbols() -> [(String, Int)] {
+        let n = Int(cpc.pointee.dbg?.pointee.nsyms ?? 0)
+        if DebugModel.symbolCache.count != n { DebugModel.symbolCache = (n, symbols().sorted { $0.1 < $1.1 }) }
+        return DebugModel.symbolCache.list
+    }
+    /// True when the word looks like a return address: it follows a CALL/CALL cc or an RST.
+    func isReturnAddress(_ v: Int) -> Bool {
+        let op3 = read(v - 3), op1 = read(v - 1)
+        return op3 == 0xCD || (op3 & 0xC7) == 0xC4 || (op1 & 0xC7) == 0xC7
+    }
+
     /// Loaded symbols as (name, address).
     func symbols() -> [(String, Int)] {
         emu.lock.lock(); defer { emu.lock.unlock() }

@@ -395,6 +395,7 @@ static inline void put_row16(CPC *c, const uint32_t *px) {
 }
 
 static inline uint32_t pen_rgb(CPC *c, int pen) { return c->cfg.plus ? c->asic.pal_rgb[pen] : c->hw_rgb[c->ga_palette[pen] & 31]; }
+uint32_t cpc_pen_rgb(CPC *c, int pen) { return pen_rgb(c, pen); }
 
 static void emit_char(CPC *c, bool de, uint16_t ma, uint16_t ra) {
     uint32_t px[16];
@@ -620,6 +621,7 @@ static void advance(CPC *c, int nops) {
 
 int cpc_step(CPC *c) {
     if (c->dbg) { c->z80.brk_enabled = c->dbg->break_instructions; if (dbg_check_code(c)) return 0; }
+    if (c->dbg && c->dbg->hist_on) dbg_history_record(c);
     bool ret_op = false;          /* Step Out: is this a RET/RETcc/RETI/RETN? */
     if (c->dbg && c->dbg->step_out) {
         uint8_t op = cpc_mem_read(c, c->z80.pc), op2 = cpc_mem_read(c, (uint16_t)(c->z80.pc + 1));

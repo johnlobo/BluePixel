@@ -237,11 +237,19 @@ final class StackListView: NSView {
             let a = (sp + (offset + r) * 2) & 0xFFFF
             let v = Int(model.read(a)) | Int(model.read(a + 1)) << 8
             let current = offset + r == 0
-            let text = String(format: "%04X: %04X", a, v) + (v > 0xFF ? model.symbol(for: v).map { " " + $0 } ?? "" : "")
-            // centre the "ADDR: VALUE" block; a symbol name may extend to the right
-            let base = ("0000: 0000" as NSString).size(withAttributes: [.font: monoFont]).width
-            let x = max(4, (bounds.width - base) / 2 - (text.count > 10 ? min(CGFloat(text.count - 10) * 3.6, (bounds.width - base) / 2 - 4) : 0))
-            NSAttributedString(string: text, attributes: [.font: monoFont, .foregroundColor: current ? NSColor.systemBlue : NSColor.labelColor]).draw(at: NSPoint(x: x, y: CGFloat(r) * lineHeight))
+            // return addresses (after a CALL/RST) are marked with the calling function
+            let note: String
+            if v > 0xFF, model.isReturnAddress(v), let caller = model.nearestSymbol(v - 1) { note = " ← " + caller }
+            else if v > 0xFF, let s = model.symbol(for: v) { note = " " + s } else { note = "" }
+            // "ADDR: VALUE" in a fixed column, then the caller/symbol (orange), cut to the pane width
+            let cw = ("0" as NSString).size(withAttributes: [.font: monoFont]).width
+            let x0: CGFloat = 8, y = CGFloat(r) * lineHeight
+            NSAttributedString(string: String(format: "%04X: %04X", a, v), attributes: [.font: monoFont, .foregroundColor: current ? NSColor.systemBlue : NSColor.labelColor]).draw(at: NSPoint(x: x0, y: y))
+            if !note.isEmpty {
+                let room = max(0, Int((bounds.width - x0 - cw * 10 - 6) / cw))
+                let shown = note.count > room ? String(note.prefix(max(0, room - 1))) + "…" : note
+                NSAttributedString(string: shown, attributes: [.font: monoFont, .foregroundColor: DebugStyle.symbol]).draw(at: NSPoint(x: x0 + cw * 10, y: y))
+            }
         }
     }
     override func scrollWheel(with event: NSEvent) { offset += event.scrollingDeltaY > 0 ? -2 : 2 }

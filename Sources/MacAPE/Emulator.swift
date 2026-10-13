@@ -22,6 +22,10 @@ final class Emulator {
     private(set) var rendered = [UInt32](repeating: 0, count: 768 * 540)
     private(set) var renderedSize = (w: 768, h: 540)
     var renderPAL = true, renderBoth = true, halfSize = false, brightness = 0
+    /// What the display shows while paused in the debugger.
+    enum ScreenView: Int { case normal, raster, videoMemory }
+    var screenView = ScreenView.normal { didSet { if paused { publish() } } }
+    private var viewBuffer = [UInt32](repeating: 0, count: Int(CPC_SCREEN_W * CPC_SCREEN_H))
 
     var romFolder: URL
     var discs: [UnsafeMutablePointer<CPCDisc>?] = [nil, nil, nil, nil]
@@ -188,8 +192,15 @@ final class Emulator {
     func publish() {
         frameLock.lock()
         let half = halfSize
+        let view = paused ? screenView : .normal
+        if view != .normal {
+            lock.lock()
+            viewBuffer.withUnsafeMutableBufferPointer { if view == .raster { cpc_render_raster(cpc, $0.baseAddress) } else { cpc_render_vram(cpc, $0.baseAddress) } }
+            lock.unlock()
+        }
         rendered.withUnsafeMutableBufferPointer { dst in
-            cpc_render(cpc_frame(cpc), dst.baseAddress, renderPAL, renderBoth, half, Int32(brightness))
+            if view == .normal { cpc_render(cpc_frame(cpc), dst.baseAddress, renderPAL, renderBoth, half, Int32(brightness)) }
+            else { viewBuffer.withUnsafeBufferPointer { cpc_render($0.baseAddress, dst.baseAddress, false, true, half, 0) } }
         }
         renderedSize = half ? (384, 270) : (768, 540)
         frameLock.unlock()

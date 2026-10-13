@@ -39,6 +39,8 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     var graphicsWindow: GraphicsController?
     var lastFind: FindQuery?
     var symbolsWindow: SymbolsController?
+    var historyWindow: HistoryController?
+    private let screenPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private var history: [(top: Int, selected: Int)] = []        // disassembler navigation (Enter / Delete)
     private var lastStopRegs: [Reg: Int] = [:], lastStopFlags = -1
     private var changedRegs: Set<Reg> = [], flagsChanged = false
@@ -47,9 +49,9 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
 
     init(emulator: Emulator) {
         emu = emulator; model = DebugModel(emu: emulator)
-        let win = NSWindow(contentRect: NSRect(x: 120, y: 120, width: 940, height: 740), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        let win = NSWindow(contentRect: NSRect(x: 120, y: 120, width: 980, height: 740), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         win.title = "MacAPE Debugger"; win.isReleasedWhenClosed = false
-        win.contentMinSize = NSSize(width: 940, height: 600)   // below this the bottom groups would reach the right column
+        win.contentMinSize = NSSize(width: 980, height: 600)   // below this the bottom groups would reach the right column
         super.init(window: win)
         win.delegate = self
         disasm.model = model; memory.model = model; stackView.model = model
@@ -136,7 +138,7 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         let memBox = box("Memory", modeButtons)
         let romBox = box("ROM", [hrow([lowerCheck, upperCheck, upperPopup])])
         let ramBox = box("RAM", [hrow([makeLabel("RAM Bank:"), ramPopup, current])])
-        let secBox = box("Secondary ROM Mapping", [hrow([makeLabel("Lower ROM Base:"), lowerBasePopup, makeLabel("Cartridge Bank:"), cartBankPopup])])
+        let secBox = box("Secondary ROM Mapping", [hrow([makeLabel("Lower ROM:"), lowerBasePopup, makeLabel("Cart Bank:"), cartBankPopup])])
         func symButton(_ sym: String, _ tip: String, _ sel: Selector, tint: NSColor? = nil) -> NSButton {
             let b = NSButton(image: NSImage(systemSymbolName: sym, accessibilityDescription: tip)!, target: self, action: sel)
             b.toolTip = tip; b.bezelStyle = .texturedRounded
@@ -150,7 +152,11 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         let tools = [symButton("circle.fill", "Edit Breakpoints", #selector(showBreakpoints(_:)), tint: .systemRed), symButton("list.bullet.rectangle", "Edit Data Areas", #selector(showDataAreas(_:))),
                      symButton("timer", "Show Timers", #selector(showTimers(_:))), symButton("cpu", "Chip Registers", #selector(showChipRegisters(_:))),
                      symButton("photo", "Find Graphics", #selector(showGraphics(_:))), symButton("magnifyingglass", "Search", #selector(findInPane(_:))),
-                     symButton("tag", "Symbols", #selector(showSymbols(_:)))]
+                    ]
+        let fileButtons2 = [symButton("tag", "Symbols", #selector(showSymbols(_:))), symButton("clock.arrow.circlepath", "Execution History", #selector(showHistory(_:)))]
+        screenPopup.addItems(withTitles: ["Screen: Normal", "Screen: Raster", "Screen: Video RAM"]); screenPopup.controlSize = .small; screenPopup.font = .systemFont(ofSize: 11)
+        screenPopup.toolTip = "What the emulator display shows while paused: last frame, frame being drawn with the beam position, or video memory as it is now"
+        screenPopup.target = self; screenPopup.action = #selector(screenViewChanged(_:)); root.addSubview(screenPopup)
         root.addSubview(disasm); root.addSubview(memory)
 
         root.onLayout = { [weak self] in
@@ -168,12 +174,14 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
             put(memBox, 84, 96)
             let gx = x
             romBox.frame = NSRect(x: gx, y: by, width: 320, height: 46); ramBox.frame = NSRect(x: gx + 324, y: by, width: 232, height: 46)
-            secBox.frame = NSRect(x: gx, y: by + 50, width: 556, height: 46)
+            secBox.frame = NSRect(x: gx, y: by + 50, width: 400, height: 46)
             x = gx + 560
                 for (i, b) in fileButtons.enumerated() { b.frame = NSRect(x: x + 4, y: by + 4 + CGFloat(i) * 32, width: 32, height: 26) }
+            for (i, b) in fileButtons2.enumerated() { b.frame = NSRect(x: x + 40, y: by + 4 + CGFloat(i) * 32, width: 32, height: 26) }
             var cx = gap; let oy = h - 30
             for b in [self.checkFollow, self.checkHide, self.checkBreaks, self.checkBRK] { let bw = b.fittingSize.width; b.frame = NSRect(x: cx, y: oy, width: bw, height: 22); cx += bw + 14 }
             for b in tools { b.frame = NSRect(x: cx, y: oy - 2, width: 32, height: 26); cx += 36 }
+            self.screenPopup.frame = NSRect(x: gx + 406, y: by + 66, width: 148, height: 24)
             // right column
             let rx = w - rightW - gap
             flagCaption.frame = NSRect(x: rx + 96, y: gap, width: 110, height: 18)
@@ -236,6 +244,7 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         if memory.topAddr == 0 && memory.cursor == 0 { memory.cursor = model.pc; memory.topAddr = model.pc & 0xFFF0 }
         memory.reload()
         breakpointsWindow?.reload(); registersWindow?.reload(); timersWindow?.reload(); dataAreasWindow?.reload(); graphicsWindow?.reload()
+        if emu.paused { historyWindow?.reload(); if emu.screenView != .normal { emu.publish() } }
     }
 
     func refreshRegisters() {
@@ -369,6 +378,13 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         window?.title = "MacAPE Debugger"
         refreshAll(); symbolsWindow?.reload()
     }
+    @objc func showHistory(_ s: Any?) {
+        if historyWindow == nil { historyWindow = HistoryController(debugger: self) }
+        historyWindow?.show()
+    }
+    @objc func screenViewChanged(_ s: Any?) { setScreenView(Emulator.ScreenView(rawValue: screenPopup.indexOfSelectedItem) ?? .normal) }
+    func setScreenView(_ v: Emulator.ScreenView) { emu.screenView = v; screenPopup.selectItem(at: v.rawValue) }
+
     @objc func showSymbols(_ s: Any?) {
         if symbolsWindow == nil { symbolsWindow = SymbolsController(debugger: self) }
         symbolsWindow?.show()

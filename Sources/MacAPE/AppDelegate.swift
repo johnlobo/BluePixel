@@ -254,6 +254,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc func debugLoadSymbols(_ s: Any?) { let d = ensureDebugger(); d.show(); d.loadSymbols(s) }
     @objc func debugClearSymbols(_ s: Any?) { ensureDebugger().clearSymbols(s) }
     @objc func debugShowSymbols(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showSymbols(s) }
+    @objc func debugShowHistory(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showHistory(s) }
+    @objc func debugScreenView(_ s: NSMenuItem) { ensureDebugger().setScreenView(Emulator.ScreenView(rawValue: s.tag) ?? .normal) }
     @objc func debugFindAgain(_ s: Any?) { ensureDebugger().findAgain(s) }
     @objc func showRegisters(_ s: Any?) { let d = ensureDebugger(); d.showChipRegisters(s) }
     @objc func showBreakpoints(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showBreakpoints(s) }
@@ -266,6 +268,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(amxMouse(_:)) { item.state = emu.amxEnabled ? .on : .off }
+        if item.action == #selector(debugScreenView(_:)) { item.state = emu.screenView.rawValue == item.tag ? .on : .off }
         return true
     }
 
@@ -349,6 +352,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item("Registers", #selector(showRegisters(_:))), item("Breakpoints", #selector(showBreakpoints(_:))),
             item("Data Areas", #selector(showDataAreas(_:))), item("Timers", #selector(showTimers(_:))), item("Find Graphics", #selector(showGraphics(_:))),
             .separator(),
+            item("Execution History…", #selector(debugShowHistory(_:))),
+            { let m = NSMenuItem(title: "Paused Screen", action: nil, keyEquivalent: ""); let sub = NSMenu(title: "Paused Screen")
+              for (i, t) in ["Normal (last frame)", "Raster (beam position)", "Video Memory"].enumerated() { let it = NSMenuItem(title: t, action: #selector(debugScreenView(_:)), keyEquivalent: ""); it.tag = i; sub.addItem(it) }
+              m.submenu = sub; return m }(),
             item("Symbols…", #selector(debugShowSymbols(_:))), item("Load Symbols…", #selector(debugLoadSymbols(_:))), item("Clear Symbols", #selector(debugClearSymbols(_:))),
         ])
         let asm = submenu("Assembler", [item("Show Assembler", #selector(showAssembler(_:)), fkey(3))])

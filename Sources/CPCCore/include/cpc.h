@@ -214,6 +214,12 @@ void asic_ga_palette(CPC *c, int pen, uint8_t hw);
 void asic_line(CPC *c);        /* once per scanline (hsync end) */
 
 void cpc_remove_cartridge(CPC *c);
+uint32_t cpc_pen_rgb(CPC *c, int pen);
+/* Debugger screen views (CPC_SCREEN_W x CPC_SCREEN_H):
+ * raster: lines drawn so far this frame, the rest from the previous frame dimmed, beam marked;
+ * vram:   the whole screen rebuilt from video memory with the current CRTC registers, mode and palette. */
+void cpc_render_raster(CPC *c, uint32_t *out);
+void cpc_render_vram(CPC *c, uint32_t *out);
 /* Palette intensity (0..15) to 8-bit, honouring the linear palette option. */
 uint8_t cpc_level8(const CPC *c, int intensity);
 void asic_refresh_palette(CPC *c);
