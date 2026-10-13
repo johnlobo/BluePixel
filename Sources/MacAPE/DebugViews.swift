@@ -16,6 +16,7 @@ final class DisasmView: NSView {
     override var acceptsFirstResponder: Bool { true }
     private var rows: Int { max(1, Int(bounds.height / lineHeight)) }
     private var lines: [(addr: Int, len: Int, text: String)] = []
+    private var charWidth: CGFloat { ("0" as NSString).size(withAttributes: [.font: monoFont]).width }
 
     func reload() {
         let pc = model.pc
@@ -53,11 +54,14 @@ final class DisasmView: NSView {
             if model.hasBreakpoint(at: l.addr) { NSColor.systemRed.setFill(); NSBezierPath(ovalIn: NSRect(x: 3, y: y + 3, width: 10, height: 10)).fill() }
             var bytes = ""
             for k in 0..<min(l.len, 4) { bytes += String(format: "%02X ", model.read(l.addr + k)) }
-            let label = model.symbol(for: l.addr).map { $0 + ":" } ?? ""
+            // address  bytes  label:  instruction (operands shown as symbols when known)
             let attrs: [NSAttributedString.Key: Any] = [.font: monoFont, .foregroundColor: NSColor.labelColor]
             String(format: "%04X  %@", l.addr, bytes.padding(toLength: 12, withPad: " ", startingAt: 0)).draw(at: NSPoint(x: 18, y: y), withAttributes: attrs)
-            l.text.draw(at: NSPoint(x: 18 + 7.3 * 18, y: y), withAttributes: [.font: monoFont, .foregroundColor: NSColor.systemBlue])
-            if !label.isEmpty { label.draw(at: NSPoint(x: 18 + 7.3 * 34, y: y), withAttributes: [.font: monoFont, .foregroundColor: NSColor.secondaryLabelColor]) }
+            if let s = model.symbol(for: l.addr) {
+                let label = s.count > 17 ? String(s.prefix(16)) + "…:" : s + ":"
+                label.draw(at: NSPoint(x: 18 + charWidth * 18, y: y), withAttributes: [.font: monoFont, .foregroundColor: NSColor.systemOrange])
+            }
+            model.symbolise(l.text).draw(at: NSPoint(x: 18 + charWidth * 37, y: y), withAttributes: [.font: monoFont, .foregroundColor: NSColor.systemBlue])
         }
     }
 

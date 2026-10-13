@@ -21,7 +21,7 @@ final class SettingsController: NSObject, NSWindowDelegate {
     init(emu: Emulator) {
         self.emu = emu
         super.init()
-        panel.title = "WinAPE - Setup"; panel.isReleasedWhenClosed = false; panel.delegate = self
+        panel.title = "MacAPE - Setup"; panel.isReleasedWhenClosed = false; panel.delegate = self
         build()
     }
 

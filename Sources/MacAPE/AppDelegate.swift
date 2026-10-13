@@ -71,8 +71,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
         if let t = opt.typed { typing += t.replacingOccurrences(of: "~", with: "\n") }
         if !typing.isEmpty { DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.emu.type(typing) } }
-        let panel = opt.panel, shot = opt.shot, shotWin = opt.shotWin, after = opt.after
-        if let pn = panel { DispatchQueue.main.asyncAfter(deadline: .now() + 1) { _ = self.perform(Selector(pn), with: nil) } }
+        let panel = opt.panel, shot = opt.shot, shotWin = opt.shotWin, after = opt.after, panelAt = opt.panelAt
+        if let pn = panel { DispatchQueue.main.asyncAfter(deadline: .now() + panelAt) { _ = self.perform(Selector(pn), with: nil) } }
         if let path = shot {
             DispatchQueue.main.asyncAfter(deadline: .now() + after) {
                 if let title = shotWin, let w = NSApp.windows.first(where: { $0.title.contains(title) }), let v = (ProcessInfo.processInfo.environment["SHOTCONTENT"] != nil ? w.contentView : (w.contentView?.superview ?? w.contentView)) {

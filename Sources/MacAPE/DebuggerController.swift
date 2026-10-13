@@ -40,7 +40,7 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     init(emulator: Emulator) {
         emu = emulator; model = DebugModel(emu: emulator)
         let win = NSWindow(contentRect: NSRect(x: 120, y: 120, width: 940, height: 720), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        win.title = "WinAPE Debugger"; win.isReleasedWhenClosed = false
+        win.title = "MacAPE Debugger"; win.isReleasedWhenClosed = false
         super.init(window: win)
         win.delegate = self
         disasm.model = model; memory.model = model

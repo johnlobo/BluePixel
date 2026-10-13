@@ -14,7 +14,7 @@ struct LaunchOptions {
     var symbols: URL?
     // test/automation hooks
     var typed: String?, shot: String?, shotWin: String?, panel: String?
-    var after = 4.0
+    var after = 4.0, panelAt = 1.0
     var help = false
     var errors: [String] = []
 
@@ -41,13 +41,14 @@ struct LaunchOptions {
         while i < args.count {
             let a = args[i]; i += 1
             // Value-taking automation flags (--flag value).
-            if ["--shot", "--after", "--panel", "--shotwin", "--type"].contains(a) {
+            if ["--shot", "--after", "--panel", "--panelat", "--shotwin", "--type"].contains(a) {
                 guard i < args.count else { errors.append("\(a) needs a value"); continue }
                 let v = args[i]; i += 1
                 switch a {
                 case "--shot": shot = v
                 case "--after": after = Double(v) ?? 4
                 case "--panel": panel = v
+                case "--panelat": panelAt = Double(v) ?? 1
                 case "--shotwin": shotWin = v
                 default: typed = v
                 }

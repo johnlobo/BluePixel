@@ -43,6 +43,20 @@ final class DebugModel {
         return String(cString: p)
     }
 
+    /// Replaces 16-bit operands (#XXXX) that match a symbol with its name, as WinAPE's disassembler does.
+    func symbolise(_ text: String) -> String {
+        guard text.contains("#") else { return text }
+        var out = "", rest = Substring(text)
+        while let r = rest.range(of: "#") {
+            out += rest[..<r.lowerBound]
+            let hex = rest[r.upperBound...].prefix { $0.isHexDigit }
+            if hex.count == 4, let v = Int(hex, radix: 16), let name = symbol(for: v) { out += name }
+            else { out += "#" + hex }
+            rest = rest[rest.index(r.upperBound, offsetBy: hex.count)...]
+        }
+        return out + rest
+    }
+
     func describe(_ addr: Int) -> String {
         emu.lock.lock(); defer { emu.lock.unlock() }
         var buf = [CChar](repeating: 0, count: 40)

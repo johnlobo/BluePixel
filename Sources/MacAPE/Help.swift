@@ -41,7 +41,7 @@ final class HelpController: NSObject, NSOutlineViewDataSource, NSOutlineViewDele
     private override init() {
         super.init()
         roots = HelpController.parseContents((try? String(contentsOf: HelpController.folder.appendingPathComponent("WinAPE.hhc"), encoding: .isoLatin1)) ?? "")
-        window.title = "WinAPE Help"; window.isReleasedWhenClosed = false; window.center()
+        window.title = "MacAPE Help (WinAPE manual)"; window.isReleasedWhenClosed = false; window.center()
         let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("t")); outline.addTableColumn(col); outline.outlineTableColumn = col
         outline.headerView = nil; outline.dataSource = self; outline.delegate = self; outline.style = .sourceList
         let scroll = NSScrollView(); scroll.documentView = outline; scroll.hasVerticalScroller = true
