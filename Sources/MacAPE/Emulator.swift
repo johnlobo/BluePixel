@@ -338,6 +338,34 @@ extension Emulator {
         paused = false
     }
 
+    /// Runs to the start of the next scanline (lines > 0) or to the next frame (VSYNC), stopping early at a breakpoint.
+    func debugStepRaster(frame: Bool) {
+        debugPause()
+        lock.lock()
+        let d = dbg_attach(cpc)!
+        d.pointee.hit = false; d.pointee.skip_once = true
+        let y0 = cpc.pointee.beam_y, f0 = cpc.pointee.frames, start = cpc.pointee.cycles
+        while !d.pointee.hit && cpc.pointee.cycles - start < 80_000 {
+            cpc_step(cpc)
+            if frame ? cpc.pointee.frames != f0 : cpc.pointee.beam_y != y0 { break }
+        }
+        d.pointee.hit = false
+        lock.unlock()
+        publish()
+    }
+    /// Human-readable beam position for the debugger.
+    var beamDescription: String {
+        lock.lock(); defer { lock.unlock() }
+        let k = cpc.pointee.crtc, y = Int(cpc.pointee.beam_y)
+        let regs = String(format: "VCC %02X VLC %02X HCC %02X", k.vcc, k.vlc, k.hcc)
+        if k.vsync { return "Beam: VSYNC · " + regs }
+        if k.vde {   // inside the vertical display area: pixel row of the picture, and where along the line
+            let row = Int(k.vcc) * (Int(k.r.9 & 31) + 1) + Int(k.vlc)
+            return "Beam: picture row \(row) (screen line \(y)), " + (k.hde ? "char \(k.hcc)" : "side border") + " · " + regs
+        }
+        return (y < 0 ? "Beam: top border / flyback (\(-y) lines above screen) · " : "Beam: vertical border, line \(y) · ") + regs
+    }
+
     /// Runs until the current function returns (Shift+F8).
     func debugStepOut() {
         debugPause()

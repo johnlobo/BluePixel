@@ -290,7 +290,7 @@ static int run_amxtest(const char *roms) {
 }
 
 static int run_boot(int argc, char **argv) {
-    const char *wav = NULL; int space_at = -1;
+    const char *wav = NULL; int space_at = -1, return_at = -1;
     CPCModel m = CPC_MODEL_6128; const char *roms = "roms", *out = "frame.bmp"; int frames = 150, wait = 100; const char *disc = NULL, *typed = NULL, *cart = NULL; int fkey = -1;
     for (int i = 0; i < argc; i++) {
         if (!strcmp(argv[i], "--model") && i + 1 < argc) { const char *v = argv[++i]; m = !strcmp(v, "464") ? CPC_MODEL_464 : !strcmp(v, "664") ? CPC_MODEL_664 : CPC_MODEL_6128; }
@@ -304,6 +304,7 @@ static int run_boot(int argc, char **argv) {
         else if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--wav") && i + 1 < argc) wav = argv[++i];
         else if (!strcmp(argv[i], "--space") && i + 1 < argc) space_at = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--return") && i + 1 < argc) return_at = atoi(argv[++i]);
     }
     FILE *wf = wav ? fopen(wav, "wb") : NULL; uint32_t wav_frames = 0;
     if (wf) fseek(wf, 44, SEEK_SET);
@@ -317,6 +318,8 @@ static int run_boot(int argc, char **argv) {
         if (getenv("IOLOG") && i == (getenv("IOFROM") ? atoi(getenv("IOFROM")) : wait - 1)) { extern int cpc_trace_io; cpc_trace_io = 1; }
         if (i == space_at) cpc_key(c, CPCK_SPACE, true);
         if (i == space_at + 5) cpc_key(c, CPCK_SPACE, false);
+        if (i == return_at) cpc_key(c, CPCK_RETURN, true);
+        if (i == return_at + 5) cpc_key(c, CPCK_RETURN, false);
         if (fkey >= 0) { static const int fk[10] = {CPCK_F0, CPCK_F1, CPCK_F2, CPCK_F3, CPCK_F4, CPCK_F5, CPCK_F6, CPCK_F7, CPCK_F8, CPCK_F9};
             if (i == wait) cpc_key(c, fk[fkey], true); if (i == wait + 8) cpc_key(c, fk[fkey], false); }
         if (getenv("TRACEAT") && i >= wait) {
@@ -356,6 +359,7 @@ static int run_boot(int argc, char **argv) {
         printf("mode=%d ram=%02X lower=%d upper=%d sel=%02X unl=%d vis=%d rmr2=%02X\n", c->ga_mode, c->ga_ram, c->lower_rom_en, c->upper_rom_en, c->upper_rom_sel, c->asic.unlocked, c->asic.page_visible, c->asic.rmr2);
         printf("psg:"); for (int k = 0; k < 16; k++) printf(" %02X", c->psg.regs[k]); printf("  sel=%02X\n", c->psg.sel);
         printf("crtc:"); for (int k = 0; k < 18; k++) printf(" %02X", c->crtc.r[k]); printf("\n");
+        printf("beam_y=%d beam_x=%d frame_line=%d mode=%d\n", c->beam_y, c->beam_x, c->frame_line, c->ga_mode);
         printf("pal12:"); for (int k = 0; k < 17; k++) printf(" %03X", c->asic.pal12[k]); printf("\n");
         printf("ga_pal:"); for (int k = 0; k < 17; k++) printf(" %02X", c->ga_palette[k]); printf("\n");
         printf("pri=%d splt=%d ssa=%04X sscr=%02X ivr=%02X dcsr=%02X\n", c->asic.pri, c->asic.splt, c->asic.ssa, c->asic.sscr, c->asic.ivr, c->asic.dcsr);

@@ -41,6 +41,7 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     var symbolsWindow: SymbolsController?
     var historyWindow: HistoryController?
     private let screenPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let beamLabel = makeLabel("")
     private var history: [(top: Int, selected: Int)] = []        // disassembler navigation (Enter / Delete)
     private var lastStopRegs: [Reg: Int] = [:], lastStopFlags = -1
     private var changedRegs: Set<Reg> = [], flagsChanged = false
@@ -157,6 +158,8 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         screenPopup.addItems(withTitles: ["Screen: Normal", "Screen: Raster", "Screen: Video RAM"]); screenPopup.controlSize = .small; screenPopup.font = .systemFont(ofSize: 11)
         screenPopup.toolTip = "What the emulator display shows while paused: last frame, frame being drawn with the beam position, or video memory as it is now"
         screenPopup.target = self; screenPopup.action = #selector(screenViewChanged(_:)); root.addSubview(screenPopup)
+        beamLabel.font = .monospacedSystemFont(ofSize: 10, weight: .regular); beamLabel.textColor = .secondaryLabelColor; beamLabel.lineBreakMode = .byTruncatingTail
+        root.addSubview(beamLabel)
         root.addSubview(disasm); root.addSubview(memory)
 
         root.onLayout = { [weak self] in
@@ -165,7 +168,7 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
             let rightW: CGFloat = 210, gap: CGFloat = 8, left = w - rightW - gap * 3
             let bottomH: CGFloat = 132
             // left panes
-            let paneH = h - bottomH - gap * 2
+            let paneH = h - bottomH - gap * 2 - 14      // room for the beam indicator
             self.disasm.frame = NSRect(x: gap, y: gap, width: left, height: (paneH * 0.7).rounded())
             self.memory.frame = NSRect(x: gap, y: self.disasm.frame.maxY + 4, width: left, height: paneH - self.disasm.frame.height - 4)
             // bottom groups
@@ -182,6 +185,7 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
             for b in [self.checkFollow, self.checkHide, self.checkBreaks, self.checkBRK] { let bw = b.fittingSize.width; b.frame = NSRect(x: cx, y: oy, width: bw, height: 22); cx += bw + 14 }
             for b in tools { b.frame = NSRect(x: cx, y: oy - 2, width: 32, height: 26); cx += 36 }
             self.screenPopup.frame = NSRect(x: gx + 406, y: by + 66, width: 148, height: 24)
+            self.beamLabel.frame = NSRect(x: gap, y: self.memory.frame.maxY + 1, width: left, height: 14)
             // right column
             let rx = w - rightW - gap
             flagCaption.frame = NSRect(x: rx + 96, y: gap, width: 110, height: 18)
@@ -245,6 +249,7 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         memory.reload()
         breakpointsWindow?.reload(); registersWindow?.reload(); timersWindow?.reload(); dataAreasWindow?.reload(); graphicsWindow?.reload()
         if emu.paused { historyWindow?.reload(); if emu.screenView != .normal { emu.publish() } }
+        beamLabel.stringValue = emu.paused ? emu.beamDescription + "   (⌥F8 next scanline, ⌥⇧F8 next frame)" : ""
     }
 
     func refreshRegisters() {

@@ -250,6 +250,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if emu.debugStepOver() { if d.hideOnRun { d.window?.orderOut(nil) } } else { d.show() }
     }
     @objc func debugRunToCursor(_ s: Any?) { ensureDebugger().runToCursor(s) }
+    @objc func debugStepScanline(_ s: Any?) { let d = ensureDebugger(); emu.debugStepRaster(frame: false); d.show() }
+    @objc func debugStepFrame(_ s: Any?) { let d = ensureDebugger(); emu.debugStepRaster(frame: true); d.show() }
     @objc func debugStepOut(_ s: Any?) { let d = ensureDebugger(); emu.debugStepOut(); if d.hideOnRun { d.window?.orderOut(nil) } }
     @objc func debugLoadSymbols(_ s: Any?) { let d = ensureDebugger(); d.show(); d.loadSymbols(s) }
     @objc func debugClearSymbols(_ s: Any?) { ensureDebugger().clearSymbols(s) }
@@ -348,7 +350,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item("AMX Mouse", #selector(amxMouse(_:)), fkey(12), ctrl), item("Multiface Stop", #selector(multifaceStop(_:)), fkey(11)),
         ])
         let debug = submenu("Debug", [
-            item("Run", #selector(debugRun(_:)), fkey(9)), item("Pause", #selector(debugPause(_:)), fkey(7)), item("Step Into", #selector(debugStep(_:)), fkey(7), shift), item("Step Over", #selector(debugStepOver(_:)), fkey(8)), item("Step Out", #selector(debugStepOut(_:)), fkey(8), shift), item("Run to Cursor", #selector(debugRunToCursor(_:)), fkey(4)), item("Find Again", #selector(debugFindAgain(_:)), fkey(3)),
+            item("Run", #selector(debugRun(_:)), fkey(9)), item("Pause", #selector(debugPause(_:)), fkey(7)), item("Step Into", #selector(debugStep(_:)), fkey(7), shift), item("Step Over", #selector(debugStepOver(_:)), fkey(8)), item("Step Out", #selector(debugStepOut(_:)), fkey(8), shift),
+            item("Step Scanline", #selector(debugStepScanline(_:)), fkey(8), .option), item("Step Frame", #selector(debugStepFrame(_:)), fkey(8), [.option, shift]), item("Run to Cursor", #selector(debugRunToCursor(_:)), fkey(4)), item("Find Again", #selector(debugFindAgain(_:)), fkey(3)),
             item("Registers", #selector(showRegisters(_:))), item("Breakpoints", #selector(showBreakpoints(_:))),
             item("Data Areas", #selector(showDataAreas(_:))), item("Timers", #selector(showTimers(_:))), item("Find Graphics", #selector(showGraphics(_:))),
             .separator(),
