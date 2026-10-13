@@ -369,7 +369,7 @@ final class GraphicsController: NSObject {
                     let bb = Int(b)
                     switch mode {
                     case 0:
-                        let sh = p == 0 ? [7, 5, 3, 1] : [6, 4, 2, 0]
+                        let sh = p == 0 ? [7, 3, 5, 1] : [6, 2, 4, 0]   // pen bits 0..3
                         for (k, bit) in sh.enumerated() { pen |= ((bb >> bit) & 1) << k }
                     case 1:
                         pen = ((bb >> (7 - p)) & 1) | (((bb >> (3 - p)) & 1) << 1)

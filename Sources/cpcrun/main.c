@@ -205,6 +205,19 @@ static int run_mftest(const char *roms) {
     return fails ? 1 : 0;
 }
 
+static int run_inttest(const char *roms) {
+    CPC *c = cpc_create(CPC_MODEL_6128); load_roms(c, roms, CPC_MODEL_6128); cpc_reset(c, true);
+    for (int i = 0; i < 100; i++) cpc_run_frame(c);
+    uint64_t last = 0, f0 = c->cycles; int n = 0; bool vs = false;
+    while (c->cycles - f0 < 19968 * 4) {
+        cpc_step(c);
+        if (c->crtc.vsync != vs) { vs = c->crtc.vsync; if (vs) printf("  VSYNC at %llu\n", (unsigned long long)(c->cycles - f0)); }
+        if (c->z80.int_ack) { printf("INT at %llu (+%llu)\n", (unsigned long long)(c->cycles - f0), (unsigned long long)(c->cycles - last)); last = c->cycles; n++; }
+    }
+    printf("%d interrupts in 4 frames\n", n);
+    cpc_destroy(c); return 0;
+}
+
 static int run_amxtest(const char *roms) {
     int fails = 0;
     CPC *c = cpc_create(CPC_MODEL_6128); load_roms(c, roms, CPC_MODEL_6128); cpc_reset(c, true);
@@ -222,7 +235,7 @@ static int run_amxtest(const char *roms) {
 }
 
 static int run_boot(int argc, char **argv) {
-    const char *wav = NULL;
+    const char *wav = NULL; int space_at = -1;
     CPCModel m = CPC_MODEL_6128; const char *roms = "roms", *out = "frame.bmp"; int frames = 150, wait = 100; const char *disc = NULL, *typed = NULL, *cart = NULL; int fkey = -1;
     for (int i = 0; i < argc; i++) {
         if (!strcmp(argv[i], "--model") && i + 1 < argc) { const char *v = argv[++i]; m = !strcmp(v, "464") ? CPC_MODEL_464 : !strcmp(v, "664") ? CPC_MODEL_664 : CPC_MODEL_6128; }
@@ -235,6 +248,7 @@ static int run_boot(int argc, char **argv) {
         else if (!strcmp(argv[i], "--wait") && i + 1 < argc) wait = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--wav") && i + 1 < argc) wav = argv[++i];
+        else if (!strcmp(argv[i], "--space") && i + 1 < argc) space_at = atoi(argv[++i]);
     }
     FILE *wf = wav ? fopen(wav, "wb") : NULL; uint32_t wav_frames = 0;
     if (wf) fseek(wf, 44, SEEK_SET);
@@ -245,7 +259,9 @@ static int run_boot(int argc, char **argv) {
     if (disc) { CPCDisc *d = dsk_load_file(disc); if (!d) fprintf(stderr, "cannot load %s\n", disc); else { fdc_insert(c->fdc, 0, d); } }
     for (int i = 0; i < frames; i++) {
         if (typed && i == wait) { char *t = strdup(typed); for (char *p = t; *p; p++) if (*p == '~') *p = '\n'; cpc_autotype(c, t); free(t); }
-        if (i == wait - 1 && getenv("IOLOG")) { extern int cpc_trace_io; cpc_trace_io = 1; }
+        if (getenv("IOLOG") && i == (getenv("IOFROM") ? atoi(getenv("IOFROM")) : wait - 1)) { extern int cpc_trace_io; cpc_trace_io = 1; }
+        if (i == space_at) cpc_key(c, CPCK_SPACE, true);
+        if (i == space_at + 5) cpc_key(c, CPCK_SPACE, false);
         if (fkey >= 0) { static const int fk[10] = {CPCK_F0, CPCK_F1, CPCK_F2, CPCK_F3, CPCK_F4, CPCK_F5, CPCK_F6, CPCK_F7, CPCK_F8, CPCK_F9};
             if (i == wait) cpc_key(c, fk[fkey], true); if (i == wait + 8) cpc_key(c, fk[fkey], false); }
         if (getenv("TRACEAT") && i >= wait) {
@@ -283,6 +299,7 @@ static int run_boot(int argc, char **argv) {
     }
     if (getenv("DUMP")) {
         printf("mode=%d ram=%02X lower=%d upper=%d sel=%02X unl=%d vis=%d rmr2=%02X\n", c->ga_mode, c->ga_ram, c->lower_rom_en, c->upper_rom_en, c->upper_rom_sel, c->asic.unlocked, c->asic.page_visible, c->asic.rmr2);
+        printf("psg:"); for (int k = 0; k < 16; k++) printf(" %02X", c->psg.regs[k]); printf("  sel=%02X\n", c->psg.sel);
         printf("crtc:"); for (int k = 0; k < 18; k++) printf(" %02X", c->crtc.r[k]); printf("\n");
         printf("pal12:"); for (int k = 0; k < 17; k++) printf(" %03X", c->asic.pal12[k]); printf("\n");
         printf("ga_pal:"); for (int k = 0; k < 17; k++) printf(" %02X", c->ga_palette[k]); printf("\n");
@@ -302,6 +319,7 @@ int main(int argc, char **argv) {
     if (argc >= 3 && !strcmp(argv[1], "dbgtest")) return run_dbgtest(argv[2]);
     if (argc >= 3 && !strcmp(argv[1], "mftest")) return run_mftest(argv[2]);
     if (argc >= 3 && !strcmp(argv[1], "amxtest")) return run_amxtest(argv[2]);
+    if (argc >= 3 && !strcmp(argv[1], "inttest")) return run_inttest(argv[2]);
     if (argc >= 2 && !strcmp(argv[1], "boot")) return run_boot(argc - 2, argv + 2);
     if (argc >= 3 && !strcmp(argv[1], "zex")) return run_zex(argv[2]);
     fprintf(stderr, "usage: cpcrun zex <file.com>\n");

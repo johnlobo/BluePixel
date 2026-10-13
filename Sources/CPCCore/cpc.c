@@ -267,10 +267,13 @@ static void ga_write(CPC *c, uint8_t v) {
 }
 
 /* ---------------- PSG / PPI ---------------- */
+/* The AY follows its data bus while BDIR/BC1 are held: in latch-address mode every change of PPI port A
+ * reselects the register, and in write mode it is written again (players such as Arkos AKG rely on
+ * this). An address with the upper nibble set deselects the chip, as on the real AY-3-8912. */
 static void psg_ctrl_update(CPC *c) {
     uint8_t ctl = (c->ppi_c >> 6) & 3;      /* bit1 = BDIR, bit0 = BC1 */
-    if (ctl == 3) c->psg.sel = c->ppi_a & 15;
-    else if (ctl == 2) psg_write_reg(&c->psg, c->psg.sel, c->ppi_a);
+    if (ctl == 3) c->psg.sel = c->ppi_a;
+    else if (ctl == 2 && c->psg.sel < 16) psg_write_reg(&c->psg, c->psg.sel, c->ppi_a);
     c->psg_ctl = ctl;
 }
 
@@ -287,6 +290,7 @@ static uint8_t ppi_read(CPC *c, int func) {
     case 0:
         if (c->ppi_ctl & 0x10) {
             if (c->psg_ctl == 1) {
+                if (c->psg.sel > 15) return 0xFF;
                 if (c->psg.sel == 14) { int row = c->ppi_c & 15; return (!(c->psg.regs[7] & 0x40) && row < 10) ? (row == 9 ? c->kbd[9] & c->amx_row : c->kbd[row]) : 0xFF; }
                 return c->psg.regs[c->psg.sel];
             }
@@ -308,7 +312,7 @@ static uint8_t ppi_read(CPC *c, int func) {
 
 static void ppi_write(CPC *c, int func, uint8_t v) {
     switch (func) {
-    case 0: c->ppi_a = v; break;
+    case 0: c->ppi_a = v; if (!(c->ppi_ctl & 0x10) && c->psg_ctl >= 2) psg_ctrl_update(c); break;
     case 1: c->ppi_b = v; break;
     case 2: ppi_write_c(c, v); break;
     default:
@@ -418,8 +422,9 @@ static void emit_char(CPC *c, bool de, uint16_t ma, uint16_t ra) {
         switch (c->ga_mode) {
         case 0: case 3:
             for (int p = 0; p < 2; p++) {
-                int pen = p == 0 ? (((b >> 7) & 1) | (((b >> 5) & 1) << 1) | (((b >> 3) & 1) << 2) | (((b >> 1) & 1) << 3))
-                                 : (((b >> 6) & 1) | (((b >> 4) & 1) << 1) | (((b >> 2) & 1) << 2) | (((b >> 0) & 1) << 3));
+                /* pixel 0: bit7 = pen bit0, bit3 = bit1, bit5 = bit2, bit1 = bit3 (pixel 1 one bit lower) */
+                int pen = p == 0 ? (((b >> 7) & 1) | (((b >> 3) & 1) << 1) | (((b >> 5) & 1) << 2) | (((b >> 1) & 1) << 3))
+                                 : (((b >> 6) & 1) | (((b >> 2) & 1) << 1) | (((b >> 4) & 1) << 2) | (((b >> 0) & 1) << 3));
                 uint32_t rgb = pen_rgb(c, pen); for (int i = 0; i < 4; i++) px[o++] = rgb;
             }
             break;
