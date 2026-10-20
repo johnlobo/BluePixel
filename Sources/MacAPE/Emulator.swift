@@ -31,6 +31,11 @@ final class Emulator {
     var discs: [UnsafeMutablePointer<CPCDisc>?] = [nil, nil, nil, nil]
     var discPaths: [String] = ["", "", "", ""]
     var lastCartridge = ""
+    // session recording / replay (Session.swift)
+    var recordStartFrame: UInt64 = 0
+    var replayRecording: OpaquePointer?, replayPlayer: OpaquePointer?
+    var replayEndNotified = false
+    var onReplayEnd: (() -> Void)?
 
     init(settings: Settings) {
         self.settings = settings
@@ -61,6 +66,7 @@ final class Emulator {
 
     func applySettings() {
         lock.lock(); defer { lock.unlock() }
+        noteUnreproducible("the settings were changed")
         applyConfig()
         applyROMs()
         cpc_reset(cpc, true)
@@ -68,6 +74,7 @@ final class Emulator {
 
     /// Applies everything that does not require a reset (display, sound, timing, devices).
     func applyConfig() {
+        noteUnreproducible("the settings were changed")
         var cfg = CPCConfig()
         let plus = settings.bool("Configuration", "Enable Plus", false)
         cpc_default_config(&cfg, plus ? CPC_MODEL_6128PLUS : CPC_MODEL_6128)
@@ -115,7 +122,7 @@ final class Emulator {
     }
     var amxEnabled: Bool {
         get { cpc.pointee.amx_enabled }
-        set { lock.lock(); cpc.pointee.amx_enabled = newValue; lock.unlock(); settings.set("Configuration", "AMX Mouse Enabled", newValue) }
+        set { noteUnreproducible("the AMX mouse was switched"); lock.lock(); cpc.pointee.amx_enabled = newValue; lock.unlock(); settings.set("Configuration", "AMX Mouse Enabled", newValue) }
     }
 
     /// Presses the Multiface Stop button; false when it is disabled, has no ROM or is already running.
@@ -170,7 +177,10 @@ final class Emulator {
             let n = speed > 1.0 ? Int(speed.rounded()) : 1
             for _ in 0..<n { cpc_run_frame(cpc) }
             let hit = cpc_dbg_break(cpc)
+            let replayDone = cpc_player_active(cpc) && cpc_player_finished(cpc) && !replayEndNotified
+            if replayDone { replayEndNotified = true; paused = true }
             lock.unlock()
+            if replayDone { DispatchQueue.main.async { self.onReplayEnd?() } }
             audio?.muted = speed != 1.0
             shown += 1
             if frameSkip <= 1 || shown % frameSkip == 0 { publish() }
@@ -216,6 +226,7 @@ final class Emulator {
     func insertDisc(drive: Int, url: URL) -> Bool {
         guard let d = dsk_load_file(url.path) else { return false }
         lock.lock(); defer { lock.unlock() }
+        noteUnreproducible("a disc was inserted")
         d.pointee.write_protect = !FileManager.default.isWritableFile(atPath: url.path)
         d.pointee.temp_writes = settings.bool("Drives", "Allow Write \(drive)", false)
         cpc.pointee.single_sided_read.0 = false
@@ -231,6 +242,7 @@ final class Emulator {
     func removeDisc(drive: Int) {
         commitDisc(drive: drive)
         lock.lock(); defer { lock.unlock() }
+        noteUnreproducible("a disc was removed")
         fdc_insert(cpc.pointee.fdc, Int32(drive), nil)
         if let old = discs[drive] { dsk_free(old) }
         discs[drive] = nil; discPaths[drive] = ""
@@ -239,6 +251,7 @@ final class Emulator {
 
     func swapDiscs() {
         lock.lock(); defer { lock.unlock() }
+        noteUnreproducible("the discs were swapped")
         discs.swapAt(0, 1); discPaths.swapAt(0, 1)
         fdc_insert(cpc.pointee.fdc, 0, discs[0]); fdc_insert(cpc.pointee.fdc, 1, discs[1])
     }
@@ -265,19 +278,21 @@ extension Emulator {
         }
         guard let nt = t else { return false }
         lock.lock(); defer { lock.unlock() }
+        noteUnreproducible("a tape was inserted")
         tape_free(cpc.pointee.tape)
         cpc.pointee.tape = nt
         tape_set_motor(nt, cpc.pointee.tape_motor)
         return true
     }
 
-    func removeTape() { lock.lock(); tape_free(cpc.pointee.tape); cpc.pointee.tape = nil; lock.unlock() }
-    func rewindTape() { lock.lock(); tape_rewind(cpc.pointee.tape); lock.unlock() }
-    func playTape(_ on: Bool) { lock.lock(); tape_play(cpc.pointee.tape, on); lock.unlock() }
+    func removeTape() { noteUnreproducible("the tape was removed"); lock.lock(); tape_free(cpc.pointee.tape); cpc.pointee.tape = nil; lock.unlock() }
+    func rewindTape() { noteUnreproducible("the tape was rewound"); lock.lock(); tape_rewind(cpc.pointee.tape); lock.unlock() }
+    func playTape(_ on: Bool) { noteUnreproducible("the tape was started or stopped"); lock.lock(); tape_play(cpc.pointee.tape, on); lock.unlock() }
 
     func loadSnapshot(url: URL) -> Bool {
         guard let d = try? Data(contentsOf: url) else { return false }
         lock.lock(); defer { lock.unlock() }
+        noteUnreproducible("a snapshot was loaded")
         let ok = d.withUnsafeBytes { cpc_snapshot_load(cpc, $0.bindMemory(to: UInt8.self).baseAddress, d.count) }
         return ok
     }
@@ -301,13 +316,14 @@ extension Emulator {
 extension Emulator {
     func applyDriveOptions() {
         lock.lock(); defer { lock.unlock() }
+        noteUnreproducible("the drive options were changed")
         for i in 0..<4 {
             discs[i]?.pointee.temp_writes = settings.bool("Drives", "Allow Write \(i)", false)
             withUnsafeMutablePointer(to: &cpc.pointee.single_sided_read) { $0.withMemoryRebound(to: Bool.self, capacity: 4) { $0[i] = settings.bool("Drives", "Single Sided \(i)", false) } }
         }
     }
 
-    func startTapeRecording() { lock.lock(); cpc_tape_record_start(cpc); lock.unlock() }
+    func startTapeRecording() { noteUnreproducible("tape recording was started"); lock.lock(); cpc_tape_record_start(cpc); lock.unlock() }
     func stopTapeRecording(to url: URL) -> Bool {
         lock.lock(); defer { lock.unlock() }
         var n = 0

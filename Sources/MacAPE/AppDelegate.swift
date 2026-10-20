@@ -22,6 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var debugger: DebuggerController?
     var pokes: PokesController?
     var help: HelpController?
+    var cutTimer: Timer?
+    var askingAboutCut = false
     var symbolsURL: URL?            // last symbols file (from /SYM or Load Symbols), reloaded by ⌘R
     var autoRunRequest: String?     // /A value from the command line ("" = pick from the catalogue)
     var settingsWindow: SettingsController!
@@ -43,6 +45,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         settingsWindow.onApply = { [weak self] in guard let self = self else { return }; self.currentProfile = self.settingsWindow.currentProfile; self.emu.applySettings(); self.main.view.keyTable = KeyMap.effectiveMap(settings: self.settings); self.applyDisplayOptions() }
         main.view.keyTable = KeyMap.effectiveMap(settings: settings)
         emu.onBreak = { [weak self] in guard let self = self else { return }; self.ensureDebugger().show() }
+        emu.onReplayEnd = { [weak self] in self?.replayEnded() }
+        // a recording cut short by an action it cannot reproduce (inserting a disc, editing memory...) is offered for saving
+        cutTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self = self, !self.askingAboutCut, let why = self.emu.cutReason else { return }
+            self.askingAboutCut = true
+            DispatchQueue.main.async { self.finishAndSaveRecording(cutBy: why); self.askingAboutCut = false }
+        }
         buildMenus()
         main.showWindow(nil)
         main.window?.makeKeyAndOrderFront(nil)
@@ -291,6 +300,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(amxMouse(_:)) { item.state = emu.amxEnabled ? .on : .off }
+        if item.action == #selector(recordSession(_:)) { item.title = emu.isRecording ? "Stop Recording…" : "Record Session"; return !emu.isReplaying }
+        if item.action == #selector(playSession(_:)) { return !emu.isRecording }
+        if item.action == #selector(goToTime(_:)) || item.action == #selector(stopPlayback(_:)) { return emu.isReplaying }
         if item.action == #selector(debugScreenView(_:)) { item.state = emu.screenView.rawValue == item.tag ? .on : .off }
         return true
     }
@@ -346,7 +358,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item("Save Snapshot…", #selector(saveSnapshot(_:)), fkey(6)),
             item("Update Snapshot", #selector(updateSnapshot(_:)), fkey(6), ctrl),
             .separator(),
-            item("Playback Session…", #selector(todo(_:))), item("Record Session…", #selector(todo(_:))),
+            item("Record Session", #selector(recordSession(_:))), item("Playback Session…", #selector(playSession(_:))),
+            item("Go to Time…", #selector(goToTime(_:)), "g", [.command, .option]), item("Stop Playback", #selector(stopPlayback(_:))),
             .separator(),
             item("Save Screenshot…", #selector(saveScreenshot(_:)), fkey(7), ctrl),
             item("Record AVI…", #selector(todo(_:))), item("Record WAV…", #selector(todo(_:))), item("Record YM…", #selector(todo(_:))),

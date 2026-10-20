@@ -77,6 +77,7 @@ void cpc_destroy(CPC *c) {
     if (!c) return;
     for (int i = 0; i < 32; i++) free(c->rom_upper[i]);
     free(c->rom_lower); free(c->rom_multiface); free(c->cartridge);
+    cpc_recording_free(c->recorder); cpc_recording_free(c->stopped_recording);
     free(c->rec_buf); tape_free(c->tape); free(c->ram); free(c->frame); free(c->frame_done); free(c->audio);
     fdc_destroy(c->fdc);
     free(c);

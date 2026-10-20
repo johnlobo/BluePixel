@@ -18,15 +18,15 @@ struct CPCState {
  * They are zeroed in the saved image and kept from the live machine on restore. One list drives both. */
 #define LIVE_FIELDS(X) \
     X(z80.ctx) X(z80.rd) X(z80.wr) X(z80.in) X(z80.out) X(z80.brk_enabled) X(z80.brk_hit) X(z80.turbo) \
-    X(cfg) X(model) X(hw_rgb) X(single_sided_read) X(amx_enabled) \
+    X(cfg) X(model) X(hw_rgb) \
     X(ram) X(ram_size) X(rom_lower) X(rom_upper) X(rom_multiface) X(cartridge) X(cartridge_banks) X(rd_map) X(wr_map) \
     X(frame) X(frame_done) X(audio) X(audio_cap) X(audio_w) X(audio_r) \
-    X(fdc) X(disc) X(tape) X(rec_active) X(rec_buf) X(rec_len) X(rec_cap) X(rec_phase) X(t_counter) X(dbg) X(recorder) X(player) \
+    X(fdc) X(disc) X(tape) X(rec_active) X(rec_buf) X(rec_len) X(rec_cap) X(rec_phase) X(t_counter) X(dbg) X(recorder) X(stopped_recording) X(player) \
     X(asic.pal_rgb) X(asic.spal_rgb)
 
 typedef struct {                       /* hardware configuration the state depends on */
     uint8_t type, plus, plus_ppi, silicon_disc, fast_disc, turbo, four_drives, amdrum, digiblaster, multiface,
-            joystick_enabled, enable_32_roms, refresh_50hz, pad[3];
+            joystick_enabled, enable_32_roms, refresh_50hz, amx_enabled, single_sided_read[4], pad[3];
     int32_t ram_kb;
 } StateCfg;
 
@@ -36,6 +36,7 @@ static StateCfg cfg_of(const CPC *c) {
     s.silicon_disc = c->cfg.silicon_disc; s.fast_disc = c->cfg.fast_disc; s.turbo = c->cfg.turbo; s.four_drives = c->cfg.four_drives;
     s.amdrum = c->cfg.amdrum; s.digiblaster = c->cfg.digiblaster; s.multiface = c->cfg.multiface;
     s.joystick_enabled = c->cfg.joystick_enabled; s.enable_32_roms = c->cfg.enable_32_roms; s.refresh_50hz = c->cfg.refresh_50hz;
+    s.amx_enabled = c->amx_enabled; for (int i = 0; i < 4; i++) s.single_sided_read[i] = c->single_sided_read[i];
     return s;
 }
 
@@ -138,8 +139,9 @@ bool cpc_state_restore(CPC *c, const CPCState *st, unsigned *hazards) {
     uint32_t writes[4]; for (int i = 0; i < 4; i++) writes[i] = take_u32(&r);
     bool ok = !r.bad && ru == ram_used(c);
     if (ok) {
-        StateCfg live = cfg_of(c);
-        if (memcmp(&saved, &live, sizeof live) != 0) hz |= CPC_STATE_HAZARD_CONFIG;
+        StateCfg live = cfg_of(c), cmp = saved;
+        cmp.amx_enabled = live.amx_enabled; memcpy(cmp.single_sided_read, live.single_sided_read, 4);   /* applied below, not a mismatch */
+        if (memcmp(&cmp, &live, sizeof live) != 0) hz |= CPC_STATE_HAZARD_CONFIG;
         for (int i = 0; i < 4; i++) {
             uint32_t now = c->disc[i] ? c->disc[i]->writes : 0xFFFFFFFFu;
             if (now != writes[i]) hz |= CPC_STATE_HAZARD_DISC;
@@ -152,6 +154,7 @@ bool cpc_state_restore(CPC *c, const CPCState *st, unsigned *hazards) {
         if (tn) { if (!c->tape || tn != tape_state_size() || !tape_state_restore(c->tape, tp)) hz |= CPC_STATE_HAZARD_TAPE; }
         else if (c->tape) hz |= CPC_STATE_HAZARD_TAPE;
         if (atn) ok = cpc_autotype_state_restore(c, at, atn) && ok;
+        c->amx_enabled = saved.amx_enabled; for (int i = 0; i < 4; i++) c->single_sided_read[i] = saved.single_sided_read[i];
         asic_refresh_palette(c);
         cpc_update_mapping(c);
     }
@@ -159,3 +162,5 @@ bool cpc_state_restore(CPC *c, const CPCState *st, unsigned *hazards) {
     if (hazards) *hazards = hz;
     return ok;
 }
+
+uint32_t cpc_crc32(const uint8_t *data, size_t size) { return (uint32_t)crc32(0L, data, (uInt)size); }

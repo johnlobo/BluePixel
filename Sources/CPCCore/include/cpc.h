@@ -163,6 +163,7 @@ struct CPC {
 
     /* session recording / replay (see replay.h); never part of the machine state */
     struct CPCRecording *recorder;
+    struct CPCRecording *stopped_recording;   /* finished by an action replay cannot reproduce, waiting to be collected */
     struct CPCPlayer *player;
 };
 

@@ -422,6 +422,20 @@ static int run_rectest(const char *roms, const char *disc) {
       CHECK(hit >= 420 && ds, "an injected input is detected (hash mismatch and desync flag)");
       printf("  injected at frame 420: first differing hash at %d, checkpoint desync reported at frame %llu\n", hit, (unsigned long long)where);
       cpc_player_free(q); cpc_destroy(x); }
+    /* an action replay cannot reproduce ends the recording there; what came before is still exact */
+    { CPC *t = script_boot(roms, disc); for (int i = 0; i < 200; i++) script_frame(t, i);
+      cpc_record_start(t); uint64_t tb = t->frames; static uint64_t th[400]; th[0] = cpc_state_hash(t);
+      int i = 200; for (; i < 300; i++) { script_frame(t, i); th[t->frames - tb] = cpc_state_hash(t); }
+      CHECK(cpc_recording_active(t) && !cpc_record_cut_reason(t), "recording is active before the edit");
+      cpc_poke(t, 0x8000, 0x42);
+      CHECK(!cpc_recording_active(t) && cpc_record_cut_reason(t), "editing memory cuts the recording");
+      for (; i < 330; i++) script_frame(t, i);
+      CPCRecording *cut = cpc_record_stop(t);
+      CHECK(cut && cpc_recording_frames(cut) == 100 && cpc_recording_taint(cut), "the cut recording keeps everything before the edit");
+      CPC *u = script_boot(roms, disc); CPCPlayer *up = cpc_player_create(cut); cpc_player_begin(u, up, NULL); int ok = 1;
+      while (!cpc_player_finished(u)) { cpc_run_frame(u); if (cpc_state_hash(u) != th[u->frames - tb]) ok = 0; }
+      CHECK(ok, "the cut recording replays exactly");
+      cpc_player_free(up); cpc_recording_free(cut); cpc_destroy(t); cpc_destroy(u); }
     /* take control: the machine continues live */
     cpc_player_end(b); cpc_key(b, CPCK_A, true); cpc_run_frame(b);
     CHECK(!cpc_player_active(b) && b->kbd[CPCK_A >> 3] != 0xFF, "after leaving the replay the machine takes input again");

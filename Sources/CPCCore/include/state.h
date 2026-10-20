@@ -18,6 +18,7 @@ enum {
 CPCState *cpc_state_save(CPC *c);                                       /* NULL on failure */
 bool cpc_state_restore(CPC *c, const CPCState *s, unsigned *hazards);   /* false: unusable (different build/RAM size) */
 void cpc_state_free(CPCState *s);
+uint32_t cpc_crc32(const uint8_t *data, size_t size);                  /* for identifying media in recordings */
 uint64_t cpc_state_hash(CPC *c);                                        /* hash of the same content, for sync checks */
 uint64_t cpc_state_frames(const CPCState *s);                           /* c->frames when taken */
 uint64_t cpc_state_cycles(const CPCState *s);

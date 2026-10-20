@@ -28,11 +28,13 @@ void replay_frame_done(CPC *c);            /* instruction boundary right after a
 
 /* --- recording --- */
 bool cpc_record_start(CPC *c);             /* captures the current state and starts logging (false: already recording/replaying) */
-CPCRecording *cpc_record_stop(CPC *c);     /* caller owns the result (cpc_recording_free) */
+CPCRecording *cpc_record_stop(CPC *c);     /* caller owns the result (cpc_recording_free); also collects one cut short by a taint */
 bool cpc_recording_active(const CPC *c);
-void cpc_record_taint(CPC *c, const char *reason);          /* something replay cannot reproduce happened */
-const char *cpc_recording_taint(const CPCRecording *r);     /* NULL when clean */
-const char *cpc_record_taint_now(const CPC *c);             /* same, for the recording in progress */
+void cpc_record_taint(CPC *c, const char *reason);          /* something replay cannot reproduce is about to happen: ends the recording here */
+const char *cpc_recording_taint(const CPCRecording *r);     /* why it ended early; NULL when stopped normally */
+const char *cpc_record_cut_reason(const CPC *c);            /* non-NULL: a recording was cut short and waits for cpc_record_stop */
+void cpc_recording_set_meta(CPCRecording *r, const char *meta);
+const char *cpc_recording_meta(const CPCRecording *r);
 void cpc_recording_free(CPCRecording *r);
 uint64_t cpc_recording_frames(const CPCRecording *r);       /* length in frames */
 uint64_t cpc_recording_events(const CPCRecording *r);

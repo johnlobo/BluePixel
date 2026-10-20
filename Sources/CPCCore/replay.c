@@ -13,7 +13,8 @@ struct CPCRecording {
     Event *ev; size_t nev, ev_cap;
     char *pool; size_t pool_n, pool_cap;
     Check *chk; size_t nchk, chk_cap;
-    char taint[96]; bool tainted;
+    char taint[96];
+    char *meta;                          /* free-form description of the media/config (set by the frontend) */
 };
 
 typedef struct { CPCState *s; size_t next; bool owned; } Keyframe;
@@ -55,24 +56,32 @@ bool cpc_record_start(CPC *c) {
 }
 
 CPCRecording *cpc_record_stop(CPC *c) {
-    CPCRecording *r = c->recorder; if (!r) return NULL;
+    CPCRecording *r = c->recorder;
+    if (!r) { r = c->stopped_recording; c->stopped_recording = NULL; return r; }   /* cut short by a taint */
     r->end_frames = c->frames; r->end_cycles = c->cycles; c->recorder = NULL;
     return r;
 }
+const char *cpc_record_cut_reason(const CPC *c) { return c->stopped_recording ? c->stopped_recording->taint : NULL; }
+void cpc_recording_set_meta(CPCRecording *r, const char *meta) { free(r->meta); r->meta = meta ? strdup(meta) : NULL; }
+const char *cpc_recording_meta(const CPCRecording *r) { return r->meta; }
 
 bool cpc_recording_active(const CPC *c) { return c->recorder != NULL; }
+/* Called before an action that replay cannot reproduce: the recording ends here (everything before is valid). */
 void cpc_record_taint(CPC *c, const char *reason) {
-    CPCRecording *r = c->recorder; if (!r || r->tainted) return;
-    r->tainted = true; snprintf(r->taint, sizeof r->taint, "%s", reason);
+    CPCRecording *r = c->recorder; if (!r) return;
+    snprintf(r->taint, sizeof r->taint, "%s", reason);
+    r->end_frames = c->frames; r->end_cycles = c->cycles;
+    c->recorder = NULL;
+    cpc_recording_free(c->stopped_recording);              /* an earlier uncollected one is dropped */
+    c->stopped_recording = r;
 }
-const char *cpc_recording_taint(const CPCRecording *r) { return r->tainted ? r->taint : NULL; }
-const char *cpc_record_taint_now(const CPC *c) { return c->recorder && c->recorder->tainted ? c->recorder->taint : NULL; }
+const char *cpc_recording_taint(const CPCRecording *r) { return r->taint[0] ? r->taint : NULL; }
 uint64_t cpc_recording_frames(const CPCRecording *r) { return r->end_frames - r->start_frames; }
 uint64_t cpc_recording_events(const CPCRecording *r) { return r->nev; }
 
 void cpc_recording_free(CPCRecording *r) {
     if (!r) return;
-    cpc_state_free(r->start); free(r->ev); free(r->pool); free(r->chk); free(r);
+    cpc_state_free(r->start); free(r->ev); free(r->pool); free(r->chk); free(r->meta); free(r);
 }
 
 /* ---------------- replay ---------------- */
@@ -202,7 +211,8 @@ uint8_t *cpc_recording_serialize(const CPCRecording *r, size_t *size) {
     Out o = {0};
     o_u32(&o, REC_MAGIC); o_u32(&o, REC_VERSION); o_u32(&o, (uint32_t)sizeof(CPC));
     o_u64(&o, r->start_frames); o_u64(&o, r->start_cycles); o_u64(&o, r->end_frames); o_u64(&o, r->end_cycles);
-    uint32_t tl = r->tainted ? (uint32_t)strlen(r->taint) : 0; o_u32(&o, tl); o_put(&o, r->taint, tl);
+    uint32_t tl = (uint32_t)strlen(r->taint); o_u32(&o, tl); o_put(&o, r->taint, tl);
+    uint32_t ml = r->meta ? (uint32_t)strlen(r->meta) : 0; o_u32(&o, ml); o_put(&o, r->meta, ml);
     size_t sn; const uint8_t *sb = cpc_state_bytes(r->start, &sn); o_u32(&o, (uint32_t)sn); o_put(&o, sb, sn);
     o_u32(&o, (uint32_t)r->nev);
     for (size_t i = 0; i < r->nev; i++) { const Event *e = &r->ev[i]; o_u64(&o, e->cycles); o_u32(&o, e->type); o_u32(&o, (uint32_t)e->a); o_u32(&o, (uint32_t)e->b); o_u32(&o, (uint32_t)e->d); o_u32(&o, e->text); }
@@ -223,7 +233,9 @@ CPCRecording *cpc_recording_deserialize(const uint8_t *data, size_t size) {
     CPCRecording *r = calloc(1, sizeof *r);
     r->start_frames = i_u64(&in); r->start_cycles = i_u64(&in); r->end_frames = i_u64(&in); r->end_cycles = i_u64(&in);
     uint32_t tl = i_u32(&in); const uint8_t *tp = i_take(&in, tl);
-    if (tp && tl && tl < sizeof r->taint) { memcpy(r->taint, tp, tl); r->tainted = true; }
+    if (tp && tl && tl < sizeof r->taint) memcpy(r->taint, tp, tl);
+    uint32_t ml = i_u32(&in); const uint8_t *mp = i_take(&in, ml);
+    if (mp && ml) { r->meta = malloc(ml + 1); memcpy(r->meta, mp, ml); r->meta[ml] = 0; }
     uint32_t sn = i_u32(&in); const uint8_t *sb = i_take(&in, sn);
     if (sb) r->start = cpc_state_from_bytes(sb, sn);
     uint32_t nev = i_u32(&in);

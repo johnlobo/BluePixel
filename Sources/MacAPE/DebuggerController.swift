@@ -305,15 +305,17 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     @objc func registerEdited(_ f: NSTextField) {
         guard let id = f.identifier?.rawValue, let r = Reg(rawValue: id) else { return }
         let (v, err) = model.eval(f.stringValue)
-        if let v = v { emu.lock.lock(); r.set(&emu.cpc.pointee.z80, Int(v)); emu.lock.unlock() } else { NSSound.beep(); _ = err }
+        if let v = v { emu.noteUnreproducible("a register was edited"); emu.lock.lock(); r.set(&emu.cpc.pointee.z80, Int(v)); emu.lock.unlock() } else { NSSound.beep(); _ = err }
         refreshAll()
     }
     @objc func flagsEdited(_ f: NSTextField) {
         let t = f.stringValue.filter { $0 == "0" || $0 == "1" }
         guard t.count == 8, let v = UInt8(t, radix: 2) else { NSSound.beep(); refreshRegisters(); return }
+        emu.noteUnreproducible("the flags were edited")
         emu.lock.lock(); emu.cpc.pointee.z80.af.l = v; emu.lock.unlock(); refreshAll()
     }
     @objc func intsToggled(_ b: NSButton) {
+        emu.noteUnreproducible("the interrupt flag was changed")
         emu.lock.lock(); emu.cpc.pointee.z80.iff1 = b.state == .on; emu.cpc.pointee.z80.iff2 = b.state == .on; emu.lock.unlock()
     }
     @objc func resetT(_ s: Any?) { emu.lock.lock(); emu.cpc.pointee.t_counter = 0; emu.lock.unlock(); refreshRegisters() }

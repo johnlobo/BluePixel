@@ -116,10 +116,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let now = Date(); let dt = now.timeIntervalSince(lastTime)
         if dt >= 1 {
             let fr = c.pointee.frames
-            let pct = Double(fr - lastFrames) / dt / 50.08 * 100
+            let pct = Double(fr >= lastFrames ? fr - lastFrames : 0) / dt / 50.08 * 100      // frames go backwards when a state is restored
             timing.stringValue = String(format: "Emulation Timing %3.0f%%", pct)
             lastFrames = fr; lastTime = now
         }
-        if let name = emu.discPaths[0].split(separator: "/").last { window?.title = "MacAPE — \(name)" } else { window?.title = "MacAPE" }
+        let base = emu.discPaths[0].split(separator: "/").last.map { "MacAPE — \($0)" } ?? "MacAPE"
+        let status = emu.sessionStatus
+        window?.title = status.isEmpty ? base : base + "     " + status
     }
 }
