@@ -24,6 +24,7 @@ typedef struct CPCDisc {
     char name[256];
     int tracks, sides;
     bool extended, dirty, write_protect, temp_writes;
+    uint32_t writes;       /* sectors written/formatted by the emulated FDC since the image was loaded (never reset) */
     CPCTrack trk[DSK_MAX_TRACKS][2];
 } CPCDisc;
 

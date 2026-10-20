@@ -1,4 +1,5 @@
 #include "debug.h"
+#include "replay.h"
 #include "fdc.h"
 #include <ctype.h>
 #include <stdio.h>
@@ -468,6 +469,7 @@ uint8_t dbg_view_read(CPC *c, const DbgView *v, uint16_t addr) {
     return (v->mode == 1 ? wr : rd)[addr >> 14][addr & 0x3FFF];
 }
 void dbg_view_write(CPC *c, const DbgView *v, uint16_t addr, uint8_t value) {
+    if (c->recorder) cpc_record_taint(c, "memory was edited");
     uint8_t *rd[4], *wr[4]; view_maps(c, v, rd, wr);
     wr[addr >> 14][addr & 0x3FFF] = value;
 }

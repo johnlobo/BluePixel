@@ -1,4 +1,5 @@
 #include "cpc_keys.h"
+#include "replay.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -39,14 +40,24 @@ static AutoType *at_of(CPC *c) {
     return &states[0];
 }
 
+void cpc_autotype_raw(CPC *c, const char *text);
 void cpc_autotype(CPC *c, const char *text) {
+    if (!replay_input(c, CPC_EV_AUTOTYPE, 0, 0, 0, text)) return;
+    cpc_autotype_raw(c, text);
+}
+void cpc_autotype_raw(CPC *c, const char *text) {
     AutoType *a = at_of(c);
     free(a->text); a->text = strdup(text); a->pos = 0; a->phase = 0; a->hold = 0; a->active = true;
 }
 bool cpc_autotype_active(const CPC *c) { return at_of((CPC *)c)->active; }
+void cpc_autotype_cancel_raw(CPC *c);
 void cpc_autotype_cancel(CPC *c) {
+    if (!replay_input(c, CPC_EV_AUTOTYPE_CANCEL, 0, 0, 0, NULL)) return;
+    cpc_autotype_cancel_raw(c);
+}
+void cpc_autotype_cancel_raw(CPC *c) {
     AutoType *a = at_of(c);
-    if (a->key >= 0 && a->hold) { cpc_key(c, a->key, false); if (a->shift) cpc_key(c, CPCK_SHIFT, false); }
+    if (a->key >= 0 && a->hold) { cpc_key_raw(c, a->key, false); if (a->shift) cpc_key_raw(c, CPCK_SHIFT, false); }
     a->active = false; a->hold = 0;
 }
 
@@ -55,7 +66,7 @@ void cpc_autotype_tick(CPC *c) {
     if (!a->active) return;
     if (a->hold > 0) {
         if (--a->hold == 0) {
-            cpc_key(c, a->key, false); if (a->shift) cpc_key(c, CPCK_SHIFT, false);
+            cpc_key_raw(c, a->key, false); if (a->shift) cpc_key_raw(c, CPCK_SHIFT, false);
             a->hold = -2;                                  /* release gap */
         }
         return;
@@ -65,8 +76,31 @@ void cpc_autotype_tick(CPC *c) {
         int k = cpc_key_for_char((unsigned char)a->text[a->pos++], &a->shift);
         if (k == CPCK_NONE) continue;
         a->key = k;
-        if (a->shift) cpc_key(c, CPCK_SHIFT, true);
-        cpc_key(c, k, true); a->hold = 3; return;
+        if (a->shift) cpc_key_raw(c, CPCK_SHIFT, true);
+        cpc_key_raw(c, k, true); a->hold = 3; return;
     }
     a->active = false;
+}
+
+/* ---------------- state snapshot ---------------- */
+uint8_t *cpc_autotype_state_save(CPC *c, size_t *size) {
+    AutoType *a = at_of(c);
+    size_t tl = a->text ? strlen(a->text) + 1 : 0;
+    size_t n = 8 + 4 * 4 + 3 + tl; uint8_t *out = calloc(1, n), *p = out;
+    uint64_t pos = a->pos; memcpy(p, &pos, 8); p += 8;
+    int32_t v[4] = {a->phase, a->hold, a->key, (int32_t)tl}; memcpy(p, v, sizeof v); p += sizeof v;
+    *p++ = a->shift; *p++ = a->active; *p++ = a->text != NULL;
+    if (tl) memcpy(p, a->text, tl);
+    *size = n; return out;
+}
+bool cpc_autotype_state_restore(CPC *c, const uint8_t *d, size_t n) {
+    if (n < 8 + 16 + 3) return false;
+    AutoType *a = at_of(c);
+    uint64_t pos; int32_t v[4]; memcpy(&pos, d, 8); memcpy(v, d + 8, sizeof v);
+    const uint8_t *p = d + 8 + sizeof v;
+    if (v[3] < 0 || (size_t)v[3] > n - (8 + 16 + 3)) return false;
+    free(a->text); a->text = NULL;
+    if (p[2] && v[3] > 0) { a->text = malloc(v[3]); memcpy(a->text, p + 3, v[3]); a->text[v[3] - 1] = 0; }
+    a->pos = (size_t)pos; a->phase = v[0]; a->hold = v[1]; a->key = v[2]; a->shift = p[0]; a->active = p[1];
+    return true;
 }

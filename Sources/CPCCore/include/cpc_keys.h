@@ -35,5 +35,7 @@ const char *cpc_key_name(int key);
 void cpc_autotype(CPC *c, const char *text);
 bool cpc_autotype_active(const CPC *c);
 void cpc_autotype_cancel(CPC *c);
+void cpc_autotype_raw(CPC *c, const char *text);
+void cpc_autotype_cancel_raw(CPC *c);
 void cpc_autotype_tick(CPC *c);   /* called once per frame by cpc_run_frame */
 #endif

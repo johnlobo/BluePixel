@@ -171,7 +171,7 @@ static void sector_done(FDC *f) {
     if (f->write_mode) {
         free(s->data); int len = f->buf_len; s->data = malloc(len); memcpy(s->data, f->buf, len); s->len = len;
         if (f->deleted_cmd) s->st2 |= 0x40; else s->st2 &= ~0x40;
-        f->disc[f->unit]->dirty = true;
+        f->disc[f->unit]->dirty = true; f->disc[f->unit]->writes++;
     }
     if (stop) { st0 = 0x40; end_rw(f, st0, f->st1, f->st2, s->c, s->h, s->r, s->n); return; }
     if (f->cur_r == f->eot) {
@@ -285,7 +285,7 @@ void fdc_write_data(FDC *f, uint8_t v) {
                 }
                 f->rqm = false; f->timer = f->cpc->cfg.fast_disc ? 200 : 6000;
                 if (f->fmt_count >= f->fmt_sc) {
-                    f->disc[f->unit]->dirty = true;
+                    f->disc[f->unit]->dirty = true; f->disc[f->unit]->writes++;
                     f->timer = f->cpc->cfg.fast_disc ? 400 : 12000; f->fmt_count = 1000;
                 }
             }
@@ -325,4 +325,54 @@ void fdc_tick(FDC *f, int us) {
     } else if (f->state == S_WRITE && !f->rqm) {
         if ((f->timer -= us) <= 0) f->rqm = true;
     }
+}
+
+/* ---------------- state snapshot ---------------- */
+/* Layout: FDC image (live pointers zeroed), then (unit, track index, sector index) for cur / curtrk,
+ * (unit, track index) for fmt_track, then the sector buffer. Discs themselves are media, not state. */
+typedef struct { int32_t unit, trk, sec; } FdcRef;
+
+static FdcRef ref_of(const FDC *f, const CPCTrack *t, const CPCSector *s) {
+    FdcRef r = {-1, 0, 0};
+    if (!t) return r;
+    for (int u = 0; u < 4; u++) {
+        const CPCDisc *d = f->disc[u];
+        if (d && (const char *)t >= (const char *)d && (const char *)t < (const char *)(d + 1)) {
+            r.unit = u; r.trk = (int32_t)(t - &d->trk[0][0]); r.sec = s ? (int32_t)(s - t->sec) : 0; return r;
+        }
+    }
+    return r;
+}
+static CPCTrack *track_of(const FDC *f, FdcRef r) {
+    if (r.unit < 0 || r.unit > 3 || !f->disc[r.unit] || r.trk < 0 || r.trk >= DSK_MAX_TRACKS * 2) return NULL;
+    return &f->disc[r.unit]->trk[0][0] + r.trk;
+}
+
+uint8_t *fdc_state_save(const FDC *f, size_t *size) {
+    FDC img = *f;
+    img.cpc = NULL; memset(img.disc, 0, sizeof img.disc); img.buf = NULL; img.cur = NULL; img.curtrk = NULL; img.fmt_track = NULL;
+    FdcRef rc = ref_of(f, f->curtrk, f->cur), rf = ref_of(f, f->fmt_track, NULL);
+    size_t n = sizeof img + 2 * sizeof(FdcRef) + (f->buf ? f->buf_len : 0);
+    uint8_t *out = malloc(n), *p = out;
+    memcpy(p, &img, sizeof img); p += sizeof img;
+    memcpy(p, &rc, sizeof rc); p += sizeof rc; memcpy(p, &rf, sizeof rf); p += sizeof rf;
+    if (f->buf) memcpy(p, f->buf, f->buf_len);
+    *size = n; return out;
+}
+
+bool fdc_state_restore(FDC *f, const uint8_t *data, size_t size) {
+    if (size < sizeof(FDC) + 2 * sizeof(FdcRef)) return false;
+    FDC img; memcpy(&img, data, sizeof img);
+    FdcRef rc, rf; memcpy(&rc, data + sizeof img, sizeof rc); memcpy(&rf, data + sizeof img + sizeof rc, sizeof rf);
+    const uint8_t *bufdata = data + sizeof img + 2 * sizeof(FdcRef);
+    if (img.buf_len < 0 || (size_t)img.buf_len > size - (sizeof img + 2 * sizeof(FdcRef))) { if (img.buf_len != 0) return false; }
+    CPC *cpc = f->cpc; CPCDisc *discs[4]; memcpy(discs, f->disc, sizeof discs);
+    free(f->buf);
+    *f = img;
+    f->cpc = cpc; memcpy(f->disc, discs, sizeof discs);
+    f->buf = NULL;
+    if (img.buf_len > 0 || size > sizeof img + 2 * sizeof(FdcRef)) { f->buf = calloc(1, img.buf_len ? img.buf_len : 1); memcpy(f->buf, bufdata, img.buf_len); }
+    f->curtrk = track_of(f, rc); f->cur = f->curtrk && rc.sec >= 0 && rc.sec < DSK_MAX_SECTORS ? &f->curtrk->sec[rc.sec] : NULL;
+    f->fmt_track = track_of(f, rf);
+    return true;
 }

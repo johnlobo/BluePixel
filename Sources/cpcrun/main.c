@@ -9,6 +9,9 @@
 #include "fdc.h"
 #include "tape.h"
 #include "snapshot.h"
+#include "state.h"
+#include "replay.h"
+#include <time.h>
 #include "debug.h"
 
 static uint8_t mem[65536];
@@ -294,6 +297,139 @@ static int run_logtest(const char *roms, const char *disc) {
     return fails ? 1 : 0;
 }
 
+/* ---- shared scripted session used by the state and replay tests (boop: load, menu, start) ---- */
+static CPC *script_boot(const char *roms, const char *disc) {
+    CPC *c = cpc_create(CPC_MODEL_6128); load_roms(c, roms, CPC_MODEL_6128); cpc_reset(c, true);
+    CPCDisc *dk = dsk_load_file(disc); fdc_insert(c->fdc, 0, dk); return c;
+}
+static void script_frame(CPC *c, int i) {
+    if (i == 100) cpc_autotype(c, "run\"boop\n");
+    if (i == 900) cpc_key(c, CPCK_SPACE, true); if (i == 905) cpc_key(c, CPCK_SPACE, false);
+    if (i == 1000) cpc_key(c, CPCK_RETURN, true); if (i == 1005) cpc_key(c, CPCK_RETURN, false);
+    if (i == 1100) cpc_key(c, CPCK_DOWN, true); if (i == 1104) cpc_key(c, CPCK_DOWN, false);
+    if (i == 1200) cpc_key(c, CPCK_RETURN, true); if (i == 1205) cpc_key(c, CPCK_RETURN, false);
+    cpc_run_frame(c);
+}
+
+static int run_statetest(const char *roms, const char *disc) {
+    int fails = 0;
+    #define CHECK(cond, msg) do { if (!(cond)) { printf("FAIL: %s\n", msg); fails++; } else printf("ok: %s\n", msg); } while (0)
+    int points[] = {150, 180, 260, 400, 700, 905, 1010, 1102, 1203};
+    for (size_t pi = 0; pi < sizeof points / sizeof *points; pi++) {
+        for (int mid = 0; mid < 2; mid++) {
+            int K = points[pi];
+            CPC *a = script_boot(roms, disc);
+            for (int i = 0; i < K; i++) script_frame(a, i);
+            if (mid) for (int n = 0; n < 4321; n++) cpc_step(a);        /* stop inside a frame, between instructions */
+            CPCState *s = cpc_state_save(a); uint64_t h0 = cpc_state_hash(a);
+            /* a machine that has done something else entirely */
+            CPC *b = script_boot(roms, disc);
+            for (int i = 0; i < K + 37; i++) { if (i == 120) cpc_key(b, CPCK_A, true); if (i == 130) cpc_key(b, CPCK_A, false); cpc_run_frame(b); }
+            unsigned hz = 99; bool ok = cpc_state_restore(b, s, &hz);
+            bool same0 = cpc_state_hash(b) == h0;
+            int bad = -1;
+            for (int i = K; i < K + 200 && bad < 0; i++) {
+                if (!mid || i > K) { script_frame(a, i); script_frame(b, i); } else { cpc_run_frame(a); cpc_run_frame(b); }
+                if (cpc_state_hash(a) != cpc_state_hash(b)) bad = i - K;
+            }
+            char msg[160]; snprintf(msg, sizeof msg, "frame %d%s: restore ok=%d hazards=%u identical-at-restore=%d, identical for 200 frames=%s (state %zu bytes)",
+                                    K, mid ? "+4321 instr" : "", ok, hz, same0, bad < 0 ? "yes" : "NO", cpc_state_size(s));
+            CHECK(ok && hz == 0 && same0 && bad < 0, msg);
+            if (bad >= 0) printf("  diverged %d frames after restore\n", bad);
+            /* byte form round trip */
+            size_t bn; const uint8_t *bytes = cpc_state_bytes(s, &bn); CPCState *s2 = cpc_state_from_bytes(bytes, bn);
+            CHECK(s2 && cpc_state_restore(b, s2, NULL) && cpc_state_hash(b) == h0, "byte round trip restores the same state");
+            cpc_state_free(s2); cpc_state_free(s); cpc_destroy(a); cpc_destroy(b);
+            if (mid == 0 && K != 150 && K != 1010) break;      /* mid-frame variants only at a few points */
+        }
+    }
+    printf("%d failure(s)\n", fails);
+    return fails ? 1 : 0;
+}
+
+static double now_ms(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec * 1e3 + t.tv_nsec / 1e6; }
+
+static void rec_frame(CPC *c, int i) {          /* script_frame plus inputs that exercise every event type */
+    if (i == 1300) cpc_joystick(c, 4, true);
+    if (i == 1310) cpc_joystick(c, 4, false);
+    if (i == 1320) cpc_amx_mouse(c, 5, -3, 1);
+    if (i == 1330) cpc_amx_mouse(c, 0, 0, 0);
+    if (i == 1400) cpc_reset(c, false);
+    if (i == 1440) cpc_autotype(c, "PRINT 1+1\n");
+    script_frame(c, i);
+}
+
+static int run_rectest(const char *roms, const char *disc) {
+    int fails = 0;
+    #define CHECK(cond, msg) do { if (!(cond)) { printf("FAIL: %s\n", msg); fails++; } else printf("ok: %s\n", msg); } while (0)
+    /* 0. two machines that never shared state hash the same (no padding/pointer noise in the hash) */
+    { CPC *a = script_boot(roms, disc), *b = script_boot(roms, disc); int bad = 0;
+      for (int i = 0; i < 400; i++) { script_frame(a, i); script_frame(b, i); if (i % 50 == 0 && cpc_state_hash(a) != cpc_state_hash(b)) bad++; }
+      CHECK(!bad, "independent machines running the same inputs have identical state hashes"); cpc_destroy(a); cpc_destroy(b); }
+    /* 1. record from the middle of the disc load (auto-type still typing) */
+    const int START = 105, END = 1500;
+    CPC *a = script_boot(roms, disc);
+    for (int i = 0; i < START; i++) rec_frame(a, i);
+    CHECK(cpc_record_start(a), "recording starts");
+    uint64_t base = a->frames; static uint64_t ref[3000];
+    ref[0] = cpc_state_hash(a);
+    for (int i = START; i < END; i++) { rec_frame(a, i); ref[a->frames - base] = cpc_state_hash(a); }
+    CPCRecording *rec = cpc_record_stop(a);
+    printf("  recorded %llu frames, %llu input events, taint=%s\n", (unsigned long long)cpc_recording_frames(rec), (unsigned long long)cpc_recording_events(rec), cpc_recording_taint(rec) ? cpc_recording_taint(rec) : "none");
+    CHECK(!cpc_recording_taint(rec) && cpc_recording_frames(rec) == (uint64_t)(END - START), "recording is clean and has the expected length");
+    size_t fn; uint8_t *file = cpc_recording_serialize(rec, &fn); CPCRecording *rec2 = cpc_recording_deserialize(file, fn);
+    printf("  file: %zu bytes\n", fn);
+    CHECK(rec2 && cpc_recording_frames(rec2) == cpc_recording_frames(rec) && cpc_recording_events(rec2) == cpc_recording_events(rec), "file round trip");
+    free(file); cpc_recording_free(rec); rec = rec2;
+    CHECK(cpc_recording_deserialize((const uint8_t *)"garbage", 7) == NULL, "garbage is rejected");
+
+    /* 2. replay in a machine that was somewhere else entirely, host input ignored */
+    CPC *b = script_boot(roms, disc);
+    for (int i = 0; i < 700; i++) { if (i == 50) cpc_key(b, CPCK_Z, true); cpc_run_frame(b); }
+    CPCPlayer *p = cpc_player_create(rec); unsigned hz = 99;
+    CHECK(cpc_player_begin(b, p, &hz) && hz == 0, "replay begins, no hazards");
+    int bad = -1, n = 0;
+    while (!cpc_player_finished(b)) {
+        if (n == 300) cpc_key(b, CPCK_Q, true);             /* must be ignored */
+        cpc_run_frame(b); n++;
+        if (cpc_state_hash(b) != ref[b->frames - base] && bad < 0) bad = n;
+    }
+    CHECK(bad < 0, "forward replay matches the recording at every frame");
+    if (bad >= 0) printf("  first mismatch at frame %d\n", bad);
+    uint64_t df; CHECK(!cpc_player_desync(b, &df), "no desync detected by the checkpoints");
+    printf("  keyframes cached: %zu (%zu KB)\n", cpc_player_keyframes(b), cpc_player_keyframe_bytes(b) / 1024);
+
+    /* 3. seeking: random targets, forward and back, and from the middle of a frame */
+    unsigned long long seed = 12345; int bads = 0; double worst = 0, total = 0; int seeks = 80;
+    for (int k = 0; k < seeks; k++) {
+        seed = seed * 6364136223846793005ULL + 1442695040888963407ULL;
+        uint64_t f = (seed >> 33) % (cpc_recording_frames(rec) + 1);
+        double t0 = now_ms(); bool ok = cpc_player_seek(b, f); double dt = now_ms() - t0; total += dt; if (dt > worst) worst = dt;
+        if (!ok || cpc_state_hash(b) != ref[f] || cpc_player_frame(b) != f) { bads++; printf("  seek to %llu failed (ok=%d)\n", (unsigned long long)f, ok); }
+        if (k % 10 == 3) { for (int s = 0; s < 1234; s++) cpc_step(b); }          /* leave it mid-frame, then seek to the same frame */
+        if (k % 10 == 3) { ok = cpc_player_seek(b, f); if (!ok || cpc_state_hash(b) != ref[f]) { bads++; printf("  re-seek mid-frame to %llu failed\n", (unsigned long long)f); } }
+    }
+    CHECK(!bads, "80 random seeks land on the exact recorded state");
+    printf("  seek time: avg %.2f ms, worst %.2f ms\n", total / seeks, worst);
+    CHECK(!cpc_player_desync(b, &df), "still no desync after seeking");
+    /* play on from a seek and reach the end exactly */
+    cpc_player_seek(b, 700); while (!cpc_player_finished(b)) cpc_run_frame(b);
+    CHECK(cpc_state_hash(b) == ref[cpc_recording_frames(rec)], "playing on from a seek ends in the recorded final state");
+    /* negative control: an input the recording does not contain must be caught as a desync */
+    { CPC *x = script_boot(roms, disc); CPCPlayer *q = cpc_player_create(rec); cpc_player_begin(x, q, NULL); int hit = -1;
+      for (int i = 0; !cpc_player_finished(x); i++) { if (i == 420) cpc_key_raw(x, CPCK_X, true); cpc_run_frame(x); if (hit < 0 && cpc_state_hash(x) != ref[x->frames - base]) hit = i; }
+      uint64_t where; bool ds = cpc_player_desync(x, &where);
+      CHECK(hit >= 420 && ds, "an injected input is detected (hash mismatch and desync flag)");
+      printf("  injected at frame 420: first differing hash at %d, checkpoint desync reported at frame %llu\n", hit, (unsigned long long)where);
+      cpc_player_free(q); cpc_destroy(x); }
+    /* take control: the machine continues live */
+    cpc_player_end(b); cpc_key(b, CPCK_A, true); cpc_run_frame(b);
+    CHECK(!cpc_player_active(b) && b->kbd[CPCK_A >> 3] != 0xFF, "after leaving the replay the machine takes input again");
+    cpc_player_free(p); cpc_recording_free(rec); cpc_destroy(a); cpc_destroy(b);
+    printf("%d failure(s)\n", fails);
+    return fails ? 1 : 0;
+}
+
 static int run_amxtest(const char *roms) {
     int fails = 0;
     CPC *c = cpc_create(CPC_MODEL_6128); load_roms(c, roms, CPC_MODEL_6128); cpc_reset(c, true);
@@ -406,6 +542,8 @@ int main(int argc, char **argv) {
     if (argc >= 3 && !strcmp(argv[1], "mftest")) return run_mftest(argv[2]);
     if (argc >= 3 && !strcmp(argv[1], "steptest")) return run_steptest(argv[2], argc >= 4 ? argv[3] : NULL);
     if (argc >= 4 && !strcmp(argv[1], "logtest")) return run_logtest(argv[2], argv[3]);
+    if (argc >= 4 && !strcmp(argv[1], "rectest")) return run_rectest(argv[2], argv[3]);
+    if (argc >= 4 && !strcmp(argv[1], "statetest")) return run_statetest(argv[2], argv[3]);
     if (argc >= 3 && !strcmp(argv[1], "amxtest")) return run_amxtest(argv[2]);
     if (argc >= 4 && !strcmp(argv[1], "symtest")) return run_symtest(argv[2], argv[3]);
     if (argc >= 3 && !strcmp(argv[1], "inttest")) return run_inttest(argv[2]);

@@ -9,7 +9,7 @@ let package = Package(
         .executable(name: "cpcrun", targets: ["cpcrun"]),
     ],
     targets: [
-        .target(name: "CPCCore", path: "Sources/CPCCore", cSettings: [.unsafeFlags(["-O2"])]),
+        .target(name: "CPCCore", path: "Sources/CPCCore", cSettings: [.unsafeFlags(["-O2"])], linkerSettings: [.linkedLibrary("z")]),
         .executableTarget(name: "cpcrun", dependencies: ["CPCCore"], path: "Sources/cpcrun"),
         .executableTarget(name: "MacAPE", dependencies: ["CPCCore"], path: "Sources/MacAPE"),
     ]

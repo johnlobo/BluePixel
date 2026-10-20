@@ -160,6 +160,10 @@ struct CPC {
 
     /* debugger hooks */
     struct Debugger *dbg;
+
+    /* session recording / replay (see replay.h); never part of the machine state */
+    struct CPCRecording *recorder;
+    struct CPCPlayer *player;
 };
 
 CPC *cpc_create(CPCModel model);
@@ -167,6 +171,12 @@ void cpc_destroy(CPC *c);
 void cpc_configure(CPC *c, const CPCConfig *cfg);
 void cpc_default_config(CPCConfig *cfg, CPCModel model);
 void cpc_reset(CPC *c, bool cold);
+/* Raw variants: apply the action without recording it or being blocked by a running replay (used by the replayer). */
+void cpc_reset_raw(CPC *c, bool cold);
+void cpc_key_raw(CPC *c, int key, bool down);
+void cpc_joystick_raw(CPC *c, int bit, bool down);
+void cpc_amx_mouse_raw(CPC *c, int dx, int dy, uint8_t buttons);
+bool cpc_multiface_stop_raw(CPC *c);
 
 /* ROM management: slot -1 = lower ROM, 0..31 = upper ROMs. Data is copied. */
 bool cpc_load_rom(CPC *c, int slot, const uint8_t *data, size_t size);
@@ -214,6 +224,9 @@ void asic_ga_palette(CPC *c, int pen, uint8_t hw);
 void asic_line(CPC *c);        /* once per scanline (hsync end) */
 
 void cpc_remove_cartridge(CPC *c);
+/* Auto-type queue snapshot (part of the machine state for savestates/replay). */
+uint8_t *cpc_autotype_state_save(CPC *c, size_t *size);
+bool cpc_autotype_state_restore(CPC *c, const uint8_t *data, size_t size);
 uint32_t cpc_pen_rgb(CPC *c, int pen);
 /* Debugger screen views (CPC_SCREEN_W x CPC_SCREEN_H):
  * raster: lines drawn so far this frame, the rest from the previous frame dimmed, beam marked;

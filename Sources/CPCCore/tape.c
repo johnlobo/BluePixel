@@ -296,3 +296,37 @@ void tape_tick(CPCTape *t, int us) {
         }
     }
 }
+
+/* ---------------- state snapshot ---------------- */
+typedef struct {
+    int32_t cur, pidx, loop_start, loop_count, call_stack[16], call_sp;
+    double rem, pause_rem, elapsed_us, pos;
+    uint8_t level, playing, motor, ended, aud_level;
+    uint32_t size; int32_t nblocks;
+} TapeState;
+
+size_t tape_state_size(void) { return sizeof(TapeState); }
+
+void tape_state_save(const CPCTape *t, void *out) {
+    TapeState s; memset(&s, 0, sizeof s);
+    s.cur = t->cur; s.pidx = t->pidx; s.loop_start = t->loop_start; s.loop_count = t->loop_count; s.call_sp = t->call_sp;
+    memcpy(s.call_stack, t->call_stack, sizeof s.call_stack);
+    s.rem = t->rem; s.pause_rem = t->pause_rem; s.elapsed_us = t->elapsed_us; s.pos = t->pos;
+    s.level = t->level; s.playing = t->playing; s.motor = t->motor; s.ended = t->ended; s.aud_level = t->aud_level;
+    s.size = (uint32_t)t->size; s.nblocks = t->nblocks;
+    memcpy(out, &s, sizeof s);
+}
+
+/* False when the inserted tape is not the one the state was taken with. */
+bool tape_state_restore(CPCTape *t, const void *in) {
+    TapeState s; memcpy(&s, in, sizeof s);
+    if (s.size != (uint32_t)t->size || s.nblocks != t->nblocks) return false;
+    t->cur = s.cur; t->loop_start = s.loop_start; t->loop_count = s.loop_count; t->call_sp = s.call_sp;
+    memcpy(t->call_stack, s.call_stack, sizeof s.call_stack);
+    t->elapsed_us = s.elapsed_us; t->pos = s.pos;
+    t->level = s.level; t->playing = s.playing; t->motor = s.motor; t->ended = s.ended; t->aud_level = s.aud_level;
+    if (t->kind == KIND_TZX) load_block(t);           /* pulses are derived from the current block */
+    t->pidx = s.pidx; t->rem = s.rem; t->pause_rem = s.pause_rem;
+    t->level = s.level; t->playing = s.playing; t->ended = s.ended;   /* load_block may have changed them */
+    return true;
+}

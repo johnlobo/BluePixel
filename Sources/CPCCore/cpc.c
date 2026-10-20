@@ -3,6 +3,7 @@
 #include "tape.h"
 #include "cpc_keys.h"
 #include "debug.h"
+#include "replay.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -144,7 +145,12 @@ bool cpc_load_multiface(CPC *c, const uint8_t *data, size_t size) {
     return c->rom_multiface != NULL;
 }
 
+bool cpc_multiface_stop_raw(CPC *c);
 bool cpc_multiface_stop(CPC *c) {
+    if (!replay_input(c, CPC_EV_MF_STOP, 0, 0, 0, NULL)) return false;
+    return cpc_multiface_stop_raw(c);
+}
+bool cpc_multiface_stop_raw(CPC *c) {
     if (!c->cfg.multiface || !c->rom_multiface || c->mf_running) return false;
     c->mf_running = c->mf_active = true; cpc_update_mapping(c);
     c->z80.nmi_pending = true;
@@ -172,6 +178,10 @@ static void mf_snoop(CPC *c, uint16_t port, uint8_t v) {
 }
 
 void cpc_reset(CPC *c, bool cold) {
+    if (!replay_input(c, CPC_EV_RESET, cold, 0, 0, NULL)) return;
+    cpc_reset_raw(c, cold);
+}
+void cpc_reset_raw(CPC *c, bool cold) {
     if (cold) memset(c->ram, 0, c->ram_size);
     z80_reset(&c->z80);
     c->z80.turbo = c->cfg.turbo;
@@ -206,7 +216,7 @@ void cpc_mem_write(void *ctx, uint16_t a, uint8_t v) {
     c->wr_map[a >> 14][a & 0x3FFF] = v;
 }
 uint8_t cpc_peek(CPC *c, uint16_t a) { return cpc_mem_read(c, a); }
-void cpc_poke(CPC *c, uint16_t a, uint8_t v) { cpc_mem_write(c, a, v); }
+void cpc_poke(CPC *c, uint16_t a, uint8_t v) { if (c->recorder) cpc_record_taint(c, "memory was edited"); cpc_mem_write(c, a, v); }
 
 /* RAM access through an arbitrary gate array RAM configuration (0xC0-0xFF), ignoring ROMs. */
 static uint8_t *cpc_bank_ptr(CPC *c, uint8_t ram_cfg, uint16_t a) {
@@ -215,7 +225,7 @@ static uint8_t *cpc_bank_ptr(CPC *c, uint8_t ram_cfg, uint16_t a) {
     return wr[a >> 14] + (a & 0x3fff);
 }
 uint8_t cpc_bank_peek(CPC *c, uint8_t ram_cfg, uint16_t a) { return *cpc_bank_ptr(c, ram_cfg, a); }
-void cpc_bank_poke(CPC *c, uint8_t ram_cfg, uint16_t a, uint8_t v) { *cpc_bank_ptr(c, ram_cfg, a) = v; }
+void cpc_bank_poke(CPC *c, uint8_t ram_cfg, uint16_t a, uint8_t v) { if (c->recorder) cpc_record_taint(c, "memory was edited"); *cpc_bank_ptr(c, ram_cfg, a) = v; }
 
 /* ---------------- CRTC ---------------- */
 void crtc_reset(CPCCrtc *k, uint8_t type) {
@@ -360,12 +370,20 @@ uint8_t cpc_io_read(void *ctx, uint16_t port) {
 
 /* ---------------- Keyboard ---------------- */
 void cpc_key(CPC *c, int key, bool down) {
+    if (!replay_input(c, CPC_EV_KEY, key, down, 0, NULL)) return;
+    cpc_key_raw(c, key, down);
+}
+void cpc_key_raw(CPC *c, int key, bool down) {
     int line = key >> 3, bit = key & 7;
     if (line > 9) return;
     if (down) c->kbd[line] &= ~(1 << bit); else c->kbd[line] |= 1 << bit;
 }
 
-void cpc_amx_mouse(CPC *c, int dx, int dy, uint8_t buttons) { c->amx_dx += dx; c->amx_dy += dy; c->amx_buttons = buttons; }
+void cpc_amx_mouse(CPC *c, int dx, int dy, uint8_t buttons) {
+    if (!replay_input(c, CPC_EV_AMX, dx, dy, buttons, NULL)) return;
+    cpc_amx_mouse_raw(c, dx, dy, buttons);
+}
+void cpc_amx_mouse_raw(CPC *c, int dx, int dy, uint8_t buttons) { c->amx_dx += dx; c->amx_dy += dy; c->amx_buttons = buttons; }
 
 /* Like WinAPE: once per frame a direction line is held low if the mouse moved that way at all. */
 static void amx_frame(CPC *c) {
@@ -380,6 +398,10 @@ static void amx_frame(CPC *c) {
 }
 
 void cpc_joystick(CPC *c, int bit, bool down) {
+    if (!replay_input(c, CPC_EV_JOY, bit, down, 0, NULL)) return;
+    cpc_joystick_raw(c, bit, down);
+}
+void cpc_joystick_raw(CPC *c, int bit, bool down) {
     if (!c->cfg.joystick_enabled) return;
     if (down) c->kbd[9] &= ~(1 << bit); else c->kbd[9] |= 1 << bit;
 }
@@ -494,6 +516,9 @@ static void frame_flyback(CPC *c) {
     uint32_t *t = c->frame_done; c->frame_done = c->frame; c->frame = t;
     c->frame_ready = true; c->frames++;
     c->beam_y = -37; c->ga_vsync_delay = 2;
+    /* once per emulated frame, whatever way the host slices execution (breakpoints, stepping, seeking) */
+    cpc_autotype_tick(c);
+    amx_frame(c);
 }
 
 void cpc_video_tick(CPC *c) {
@@ -620,6 +645,7 @@ static void advance(CPC *c, int nops) {
 }
 
 int cpc_step(CPC *c) {
+    if (c->player) replay_apply_due(c);
     if (c->dbg) { c->z80.brk_enabled = c->dbg->break_instructions; if (dbg_check_code(c)) return 0; }
     if (c->dbg && c->dbg->hist_on) dbg_history_record(c);
     bool ret_op = false;          /* Step Out: is this a RET/RETcc/RETI/RETN? */
@@ -639,12 +665,11 @@ int cpc_step(CPC *c) {
 void cpc_run_frame(CPC *c) {
     uint64_t start = c->cycles;
     c->frame_ready = false;
-    cpc_autotype_tick(c);
-    amx_frame(c);
     while (!c->frame_ready && c->cycles - start < 40000) {
         cpc_step(c);
         if (c->z80.brk_hit || (c->dbg && c->dbg->hit)) return;
     }
+    if (c->frame_ready && (c->recorder || c->player)) replay_frame_done(c);   /* instruction boundary just after the flyback */
 }
 
 const uint32_t *cpc_frame(const CPC *c) { return c->frame_done; }
