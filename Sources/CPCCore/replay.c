@@ -1,5 +1,8 @@
 #include "replay.h"
 #include "cpc_keys.h"
+#include "fdc.h"
+#include "tape.h"
+#include "dsk.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -196,6 +199,68 @@ bool cpc_player_seek(CPC *c, uint64_t frame) {
     while (ok && c->frames < target) { cpc_run_frame(c); if (guard-- == 0) ok = false; }
     c->dbg = dbg;
     return ok;
+}
+
+uint64_t cpc_player_indexed(const CPC *c) {
+    const CPCPlayer *p = c->player; if (!p) return 0;
+    uint64_t len = cpc_recording_frames(p->rec), last = len / CPC_CHECK_FRAMES;
+    uint64_t k = 0;
+    while (k <= last && k < p->nkeys && p->keys[k].s) k++;
+    if (k > last) return len;                         /* every keyframe up to the end exists */
+    return k == 0 ? 0 : (k - 1) * CPC_CHECK_FRAMES;
+}
+
+int cpc_player_capture(CPC *c, uint64_t from, int count, uint32_t *out) {
+    CPCPlayer *p = c->player; if (!p || !cpc_player_seek(c, from)) return 0;
+    uint64_t len = cpc_recording_frames(p->rec);
+    struct Debugger *dbg = c->dbg; c->dbg = NULL;
+    int n = 0;
+    while (n < count && cpc_player_frame(c) < len) {
+        uint64_t before = c->frames; int guard = 4000;
+        while (c->frames == before && guard-- > 0) cpc_run_frame(c);
+        if (c->frames == before) break;
+        memcpy(out + (size_t)n * CPC_SCREEN_W * CPC_SCREEN_H, c->frame_done, (size_t)CPC_SCREEN_W * CPC_SCREEN_H * 4);
+        n++;
+    }
+    c->dbg = dbg;
+    return n;
+}
+
+CPC *cpc_clone_machine(const CPC *src) {
+    CPC *c = cpc_create(src->model);
+    cpc_configure(c, &src->cfg);
+    if (src->rom_lower) cpc_load_rom(c, -1, src->rom_lower, 16384);
+    for (int i = 0; i < 32; i++) if (src->rom_upper[i]) cpc_load_rom(c, i, src->rom_upper[i], 16384);
+    if (src->rom_multiface) cpc_load_multiface(c, src->rom_multiface, 8192);
+    if (src->cartridge) { c->cartridge = malloc((size_t)32 * 16384); memcpy(c->cartridge, src->cartridge, (size_t)32 * 16384); c->cartridge_banks = src->cartridge_banks; }
+    c->amx_enabled = src->amx_enabled; memcpy(c->single_sided_read, src->single_sided_read, sizeof c->single_sided_read);
+    for (int i = 0; i < 4; i++) { CPCDisc *d = fdc_disc(src->fdc, i); if (d) fdc_insert(c->fdc, i, dsk_clone(d)); }
+    if (src->tape) c->tape = tape_clone(src->tape);
+    cpc_update_mapping(c);
+    return c;
+}
+
+void cpc_clone_free(CPC *c) {
+    if (!c) return;
+    for (int i = 0; i < 4; i++) dsk_free(fdc_disc(c->fdc, i));
+    cpc_destroy(c);
+}
+
+size_t cpc_player_adopt_keyframes(CPC *c, CPCPlayer *src) {
+    CPCPlayer *p = c->player;
+    if (!p || p->rec != src->rec) return 0;
+    size_t moved = 0;
+    for (size_t k = 1; k < src->nkeys; k++) {
+        if (!src->keys[k].s || !src->keys[k].owned) continue;
+        if (k >= p->nkeys) {
+            size_t n = k + 16; p->keys = realloc(p->keys, n * sizeof *p->keys);
+            memset(p->keys + p->nkeys, 0, (n - p->nkeys) * sizeof *p->keys); p->nkeys = n;
+        }
+        if (p->keys[k].s) continue;
+        p->keys[k] = src->keys[k]; p->key_bytes += cpc_state_size(src->keys[k].s);
+        src->keys[k].s = NULL; moved++;
+    }
+    return moved;
 }
 
 /* ---------------- file format ---------------- */

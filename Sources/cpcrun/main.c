@@ -436,6 +436,31 @@ static int run_rectest(const char *roms, const char *disc) {
       while (!cpc_player_finished(u)) { cpc_run_frame(u); if (cpc_state_hash(u) != th[u->frames - tb]) ok = 0; }
       CHECK(ok, "the cut recording replays exactly");
       cpc_player_free(up); cpc_recording_free(cut); cpc_destroy(t); cpc_destroy(u); }
+    /* pictures for reverse playback match the displayed frames */
+    { int bad2 = 0; uint64_t froms[] = {0, 50, 123, 1000, cpc_recording_frames(rec) - 40}; static uint32_t pics[50 * CPC_SCREEN_W * CPC_SCREEN_H];
+      for (size_t q = 0; q < sizeof froms / sizeof *froms; q++) {
+          int got = cpc_player_capture(b, froms[q], 50, pics);
+          for (int i = 0; i < got; i += 7) { cpc_player_seek(b, froms[q] + 1 + i); if (memcmp(pics + (size_t)i * CPC_SCREEN_W * CPC_SCREEN_H, b->frame_done, (size_t)CPC_SCREEN_W * CPC_SCREEN_H * 4)) bad2++; }
+          if (got < 1) bad2++;
+      }
+      CHECK(!bad2, "captured pictures equal the frames the player displays"); }
+    /* background indexing: a clone replays everything and hands its keyframes to a player that had none */
+    { CPC *d = script_boot(roms, disc); CPCPlayer *dp = cpc_player_create(rec); cpc_player_begin(d, dp, NULL);
+      CPC *cl = cpc_clone_machine(b); CPCPlayer *cp = cpc_player_create(rec); unsigned chz = 99;
+      CHECK(cpc_player_begin(cl, cp, &chz) && chz == 0, "a clone of the machine starts the replay with no hazards");
+      CHECK(cpc_player_indexed(d) == 0, "nothing is indexed before the clone has run");
+      double t0 = now_ms(); while (!cpc_player_finished(cl)) cpc_run_frame(cl);
+      double indexing = now_ms() - t0; size_t moved = cpc_player_adopt_keyframes(d, cp);
+      CHECK(!cpc_player_desync(cl, &df) && cpc_state_hash(cl) == ref[cpc_recording_frames(rec)], "the clone ends in the recorded final state");
+      printf("  indexing %llu frames took %.0f ms, %zu keyframes adopted\n", (unsigned long long)cpc_recording_frames(rec), indexing, moved);
+      CHECK(cpc_player_indexed(d) == cpc_recording_frames(rec), "the whole recording is indexed");
+      int badx = 0; double worstx = 0; seed = 99;
+      for (int k = 0; k < 60; k++) { seed = seed * 6364136223846793005ULL + 1442695040888963407ULL; uint64_t f = (seed >> 33) % (cpc_recording_frames(rec) + 1);
+          double s0 = now_ms(); bool ok = cpc_player_seek(d, f); double dt = now_ms() - s0; if (dt > worstx) worstx = dt;
+          if (!ok || cpc_state_hash(d) != ref[f]) badx++; }
+      CHECK(!badx, "seeking on the indexed player is exact everywhere");
+      printf("  worst seek on the indexed player: %.1f ms\n", worstx);
+      cpc_player_free(cp); cpc_clone_free(cl); cpc_player_free(dp); cpc_destroy(d); }
     /* take control: the machine continues live */
     cpc_player_end(b); cpc_key(b, CPCK_A, true); cpc_run_frame(b);
     CHECK(!cpc_player_active(b) && b->kbd[CPCK_A >> 3] != 0xFF, "after leaving the replay the machine takes input again");

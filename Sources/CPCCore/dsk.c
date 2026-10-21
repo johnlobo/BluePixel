@@ -163,3 +163,17 @@ int dsk_catalogue(const CPCDisc *d, DskFile *out, int max) {
 }
 
 bool dsk_is_cpm_boot(const CPCDisc *d) { return find_sector(d, 0, 0x41) != NULL; }
+
+CPCDisc *dsk_clone(const CPCDisc *d) {
+    CPCDisc *c = malloc(sizeof *c); if (!c) return NULL;
+    memcpy(c, d, sizeof *c);
+    for (int t = 0; t < DSK_MAX_TRACKS; t++) for (int h = 0; h < 2; h++) {
+        CPCTrack *k = &c->trk[t][h];
+        for (int s = 0; s < DSK_MAX_SECTORS; s++) {
+            CPCSector *sec = &k->sec[s];
+            if (s < k->nsectors && sec->data) { uint8_t *copy = malloc(sec->len ? sec->len : 1); memcpy(copy, sec->data, sec->len); sec->data = copy; }
+            else sec->data = NULL;
+        }
+    }
+    return c;
+}

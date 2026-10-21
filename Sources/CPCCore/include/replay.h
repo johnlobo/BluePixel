@@ -53,5 +53,16 @@ uint64_t cpc_player_length(const CPC *c);
 bool cpc_player_finished(const CPC *c);                     /* reached the end of the recording */
 bool cpc_player_desync(const CPC *c, uint64_t *frame);      /* true once a checkpoint hash did not match */
 size_t cpc_player_keyframes(const CPC *c);                  /* keyframes cached so far */
+uint64_t cpc_player_indexed(const CPC *c);                  /* frames up to which seeking is fast (contiguous keyframes) */
+
+/* Pictures: frames from+1 .. from+count as displayed (frame_done after each flyback), for reverse playback.
+ * Leaves the machine at the last captured frame. Returns the number captured. */
+int cpc_player_capture(CPC *c, uint64_t from, int count, uint32_t *out);
+
+/* Background indexing: a second machine with the same hardware and media replays the whole recording on another
+ * thread, and its keyframes are moved into the visible machine's player so that seeking anywhere is fast. */
+CPC *cpc_clone_machine(const CPC *src);                     /* same config, ROMs, cartridge and (copies of) media; no state */
+void cpc_clone_free(CPC *c);
+size_t cpc_player_adopt_keyframes(CPC *c, CPCPlayer *src);  /* moves keyframes c's player lacks; call with c's lock held */
 size_t cpc_player_keyframe_bytes(const CPC *c);
 #endif

@@ -330,3 +330,5 @@ bool tape_state_restore(CPCTape *t, const void *in) {
     t->level = s.level; t->playing = s.playing; t->ended = s.ended;   /* load_block may have changed them */
     return true;
 }
+
+CPCTape *tape_clone(const CPCTape *t) { return t ? tape_load(t->data, t->size, t->name) : NULL; }
