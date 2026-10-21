@@ -21,7 +21,7 @@ struct CPCState {
     X(cfg) X(model) X(hw_rgb) \
     X(ram) X(ram_size) X(rom_lower) X(rom_upper) X(rom_multiface) X(cartridge) X(cartridge_banks) X(rd_map) X(wr_map) \
     X(frame) X(frame_done) X(audio) X(audio_cap) X(audio_w) X(audio_r) \
-    X(fdc) X(disc) X(tape) X(rec_active) X(rec_buf) X(rec_len) X(rec_cap) X(rec_phase) X(t_counter) X(dbg) X(recorder) X(stopped_recording) X(player) \
+    X(fdc) X(tape) X(rec_active) X(rec_buf) X(rec_len) X(rec_cap) X(rec_phase) X(t_counter) X(dbg) X(recorder) X(stopped_recording) X(player) \
     X(asic.pal_rgb) X(asic.spal_rgb)
 
 typedef struct {                       /* hardware configuration the state depends on */
@@ -79,7 +79,7 @@ static bool write_image(CPC *c, Sink *s) {
     size_t n; uint8_t *b = fdc_state_save(c->fdc, &n); put_u32(s, (uint32_t)n); put(s, b, n); free(b);
     if (c->tape) { uint8_t t[256]; size_t tn = tape_state_size(); tape_state_save(c->tape, t); put_u32(s, (uint32_t)tn); put(s, t, tn); } else put_u32(s, 0);
     b = cpc_autotype_state_save(c, &n); put_u32(s, (uint32_t)n); put(s, b, n); free(b);
-    for (int i = 0; i < 4; i++) put_u32(s, c->disc[i] ? c->disc[i]->writes : 0xFFFFFFFFu);
+    for (int i = 0; i < 4; i++) { const CPCDisc *d = fdc_disc(c->fdc, i); put_u32(s, d ? d->writes : 0xFFFFFFFFu); }   /* the FDC owns the discs */
     return true;
 }
 
@@ -143,7 +143,7 @@ bool cpc_state_restore(CPC *c, const CPCState *st, unsigned *hazards) {
         cmp.amx_enabled = live.amx_enabled; memcpy(cmp.single_sided_read, live.single_sided_read, 4);   /* applied below, not a mismatch */
         if (memcmp(&cmp, &live, sizeof live) != 0) hz |= CPC_STATE_HAZARD_CONFIG;
         for (int i = 0; i < 4; i++) {
-            uint32_t now = c->disc[i] ? c->disc[i]->writes : 0xFFFFFFFFu;
+            const CPCDisc *d = fdc_disc(c->fdc, i); uint32_t now = d ? d->writes : 0xFFFFFFFFu;
             if (now != writes[i]) hz |= CPC_STATE_HAZARD_DISC;
         }
         CPC *keep = malloc(sizeof *keep); memcpy(keep, c, sizeof *keep);

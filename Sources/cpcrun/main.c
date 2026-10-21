@@ -440,6 +440,15 @@ static int run_rectest(const char *roms, const char *disc) {
     cpc_player_end(b); cpc_key(b, CPCK_A, true); cpc_run_frame(b);
     CHECK(!cpc_player_active(b) && b->kbd[CPCK_A >> 3] != 0xFF, "after leaving the replay the machine takes input again");
     cpc_player_free(p); cpc_recording_free(rec); cpc_destroy(a); cpc_destroy(b);
+    /* disc writes must be reported as a hazard (the contents of the disc are not part of the state) */
+    { CPC *a = script_boot(roms, disc); for (int i = 0; i < 300; i++) script_frame(a, i);
+      CPCState *s = cpc_state_save(a); unsigned hz = 0;
+      CHECK(cpc_state_restore(a, s, &hz) && hz == 0, "no hazard when the disc is untouched");
+      fdc_disc(a->fdc, 0)->writes++;
+      CHECK(cpc_state_restore(a, s, &hz) && (hz & CPC_STATE_HAZARD_DISC), "a disc written since the state is reported as a hazard");
+      CPCDisc *gone = fdc_disc(a->fdc, 0); fdc_insert(a->fdc, 0, NULL);
+      CHECK(cpc_state_restore(a, s, &hz) && (hz & CPC_STATE_HAZARD_DISC), "a missing disc is reported as a hazard");
+      fdc_insert(a->fdc, 0, gone); cpc_state_free(s); cpc_destroy(a); }
     printf("%d failure(s)\n", fails);
     return fails ? 1 : 0;
 }
