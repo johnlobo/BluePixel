@@ -359,6 +359,11 @@ struct CPCReverseScan {
     bool finished, found, was_active, was_brk, was_hist; int temp_bp, was_temp;
     CPCReverseHit hit;
     DbgBreakpoint *saved;
+    CPCReverseMode mode;
+    /* CPC_REV_STEPOVER */
+    int so;                              /* 0 analysing the last step, 1 looking for the call site, 2 for the start of a run */
+    uint16_t ret_to, sp0, run_pc;        /* where the machine is / its SP / pc of the repeated instruction */
+    uint64_t plain_cycles; uint16_t plain_pc;   /* the plain "one instruction back" answer */
 };
 
 CPCReverseScan *cpc_reverse_begin(CPC *c, CPCReverseMode mode, uint16_t lo, uint16_t hi) {
@@ -366,8 +371,15 @@ CPCReverseScan *cpc_reverse_begin(CPC *c, CPCReverseMode mode, uint16_t lo, uint
     Debugger *d = dbg_attach(c);
     CPCReverseScan *s = calloc(1, sizeof *s);
     s->saved = malloc(sizeof d->bp); memcpy(s->saved, d->bp, sizeof d->bp);
-    s->origin = s->upper = c->cycles; s->lowest = p->rec->start_cycles; s->temp_bp = -1;
+    s->mode = mode; s->origin = s->upper = c->cycles; s->lowest = p->rec->start_cycles; s->temp_bp = -1;
     s->was_active = d->active; s->was_brk = d->break_instructions; s->was_hist = d->hist_on; s->was_temp = d->temp_bp;
+    if (mode == CPC_REV_STEPOVER) {
+        for (int i = 0; i < DBG_MAX_BP; i++) d->bp[i].enabled = false;                 /* a pure trace: no breakpoints at all */
+        s->so = 0; s->ret_to = c->z80.pc; s->sp0 = c->z80.sp.w; s->temp_bp = -1;
+        d->active = false; d->break_instructions = false; d->hist_on = false; d->temp_bp = -1; d->scanning = true;
+        dbg_rebuild_watch(d);
+        return s;
+    }
     if (mode != CPC_REV_BREAKPOINTS) {
         for (int i = 0; i < DBG_MAX_BP; i++) d->bp[i].enabled = false;                 /* only the temporary watch */
         s->temp_bp = mode == CPC_REV_CODE ? dbg_add_code_bp(c, lo) : dbg_add_mem_bp(c, lo, hi, mode == CPC_REV_READ, mode == CPC_REV_WRITE);
@@ -379,9 +391,64 @@ CPCReverseScan *cpc_reverse_begin(CPC *c, CPCReverseMode mode, uint16_t lo, uint
     return s;
 }
 
+static uint8_t peek8(const CPC *c, uint16_t a) { return c->rd_map[a >> 14][a & 0x3FFF]; }   /* no side effects */
+static bool is_call(uint8_t op) { return op == 0xCD || (op & 0xC7) == 0xC4; }
+static bool is_rst(uint8_t op) { return (op & 0xC7) == 0xC7; }
+static bool is_ret(uint8_t op, uint8_t op2) { return op == 0xC9 || (op & 0xC7) == 0xC0 || (op == 0xED && (op2 & 0xC7) == 0x45); }
+static bool is_run(uint8_t op, uint8_t op2) { return op == 0x76 || (op == 0xED && ((op2 & 0xF4) == 0xB0 || (op2 & 0xF4) == 0xB0 + 8)); }   /* HALT, LDIR/CPIR/INIR/OTIR and the D forms */
+
+/* One interval of a CPC_REV_STEPOVER scan. */
+static bool slice_stepover(CPC *c, CPCReverseScan *s) {
+    CPCPlayer *p = c->player;
+    int k = key_before(p, s->upper);
+    if (k < 0 || !restore_key(c, p, k)) {
+        s->finished = true;
+        if (s->so == 1 && s->plain_cycles) { s->hit = (CPCReverseHit){true, s->plain_cycles, s->plain_pc, 1, -1, 0, 0, 0}; s->found = true; }   /* no call site: an interrupt return */
+        if (s->so == 2) { s->hit = (CPCReverseHit){true, s->lowest, s->run_pc, 1, -1, 0, 0, 0}; s->found = true; }                              /* the run began with the recording */
+        return true;
+    }
+    uint64_t upper = s->upper, guard = 40000000;
+    bool have_last = false, have_cand = false;
+    uint64_t last_t0 = 0, cand = 0; uint16_t last_pc = 0, cand_pc = 0; uint8_t lop = 0, lop2 = 0; uint16_t lsp = 0;
+    while (c->cycles < upper && guard--) {
+        uint64_t t0 = c->cycles; uint16_t pc0 = c->z80.pc, sp_before = c->z80.sp.w;
+        uint8_t op = peek8(c, pc0), op2 = peek8(c, (uint16_t)(pc0 + 1));
+        cpc_step(c);
+        have_last = true; last_t0 = t0; last_pc = pc0; lop = op; lop2 = op2; lsp = sp_before;
+        if (s->so <= 1 && sp_before == s->sp0 && c->z80.sp.w == (uint16_t)(s->sp0 - 2)
+            && ((is_call(op) && (uint16_t)(pc0 + 3) == s->ret_to) || (is_rst(op) && (uint16_t)(pc0 + 1) == s->ret_to))) { have_cand = true; cand = t0; cand_pc = pc0; }
+        if (s->so == 2 && pc0 != s->run_pc) { have_cand = true; cand = c->cycles; cand_pc = c->z80.pc; }   /* the position after the last other instruction */
+    }
+    if (s->so == 0) {
+        if (!have_last) { s->finished = true; return true; }
+        s->plain_cycles = last_t0; s->plain_pc = last_pc;
+        if (is_ret(lop, lop2) && (uint16_t)(lsp + 2) == s->sp0) s->so = 1;                 /* returned to here from a routine */
+        else if (is_run(lop, lop2)) { s->so = 2; s->run_pc = last_pc; }
+        else { s->hit = (CPCReverseHit){true, last_t0, last_pc, 1, -1, 0, 0, 0}; s->found = true; s->finished = true; return true; }
+        if (s->so == 2) {                                                                  /* rescan this interval for the run's start */
+            if (restore_key(c, p, k)) {
+                have_cand = false;
+                while (c->cycles < upper && guard--) {
+                    uint16_t pc0 = c->z80.pc; cpc_step(c);
+                    if (pc0 != s->run_pc) { have_cand = true; cand = c->cycles; cand_pc = c->z80.pc; }
+                }
+            }
+        }
+    }
+    if (have_cand) { s->hit = (CPCReverseHit){true, cand, cand_pc, 1, -1, 0, 0, 0}; s->found = true; s->finished = true; return true; }
+    s->upper = cpc_state_cycles(p->keys[k].s);
+    if (s->upper <= s->lowest) {
+        s->finished = true;
+        if (s->so == 1) { s->hit = (CPCReverseHit){true, s->plain_cycles, s->plain_pc, 1, -1, 0, 0, 0}; s->found = true; }
+        if (s->so == 2) { s->hit = (CPCReverseHit){true, s->lowest, s->run_pc, 1, -1, 0, 0, 0}; s->found = true; }
+    }
+    return s->finished;
+}
+
 bool cpc_reverse_slice(CPC *c, CPCReverseScan *s) {
     CPCPlayer *p = c->player; Debugger *d = c->dbg;
     if (s->finished) return true;
+    if (s->mode == CPC_REV_STEPOVER) return slice_stepover(c, s);
     int k = key_before(p, s->upper);
     if (k < 0 || !restore_key(c, p, k)) { s->finished = true; return true; }
     d->hit = false; d->skip_once = false;

@@ -133,8 +133,8 @@ controls blank (tab strips, segmented controls); use `screencapture` when the re
 ## Not done yet
 
 Session record/playback: core, File menu, the transport bar (`Transport.swift`) and reverse debugging
-(`ReverseDebug.swift`: Step Back ⌥F7, Reverse Continue ⌥F9, Run Back to Cursor ⌥F4, "Who Wrote/Read This?" in the memory
-menu) are done, and so are disc writes during a recording; still to do: reverse Step Over and a way to mark moments on the time line. Integrated Maxam-compatible assembler
+(`ReverseDebug.swift`: Step Back ⌥F7, Reverse Continue ⌥F9, Run Back to Cursor ⌥F4, Step Back Over ⌥⌘F8, "Who Wrote/Read This?" in the memory
+menu) are done, and so are disc writes during a recording; still to do: a way to mark moments on the time line. Reverse Step Over exists (`CPC_REV_STEPOVER`, ⌥⌘F8, `sotest`). Integrated Maxam-compatible assembler
 (menu item says "Not available yet"), disc/sector editor, Format Disc, Flip Disc, AVI/WAV/YM recording, Symbiface II (IDE/RTC/PS2 mouse), 4 MB Yarek RAM, printer, ZIP/RAR,
 tape CSV, DSC/HDR discs, gamepad joystick. Debugger ideas not built: profiler, DeZog/VS Code protocol, rewind,
 "who wrote this byte", memory access map, AY channel viewer, break on change. A web (WebAssembly) build was discussed:

@@ -73,7 +73,10 @@ size_t cpc_player_keyframe_bytes(const CPC *c);
 bool cpc_player_goto_cycles(CPC *c, uint64_t cycles, bool rebuild_history);   /* exact position; refills the execution history */
 bool cpc_player_step_back(CPC *c);                                           /* state before the last executed step; false at the start */
 
-typedef enum { CPC_REV_BREAKPOINTS, CPC_REV_WRITE, CPC_REV_READ, CPC_REV_CODE } CPCReverseMode;
+/* CPC_REV_STEPOVER: the position before the previous statement at this call level: before the CALL/RST when the last
+ * step was the RET of its routine, before the first iteration of a repeated block instruction (LDIR...) or HALT, else
+ * before the last instruction. lo/hi are not used. */
+typedef enum { CPC_REV_BREAKPOINTS, CPC_REV_WRITE, CPC_REV_READ, CPC_REV_CODE, CPC_REV_STEPOVER } CPCReverseMode;
 typedef struct {
     bool found;
     uint64_t cycles;          /* position just before the instruction that triggered */

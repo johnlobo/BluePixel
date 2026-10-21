@@ -111,6 +111,14 @@ extension DebuggerController {
         else { NSSound.beep(); reverseDone("This is the start of the recording.") }
     }
 
+    /// Back to before the previous statement at this call level: the CALL when the last step was its RET, the first
+    /// iteration of an LDIR, otherwise one instruction.
+    @objc func stepBackOver(_ s: Any?) {
+        search(CPC_REV_STEPOVER, 0, 0, found: { [unowned self] h, f in
+            "Stepped back over to " + self.describe(h.pc) + " — " + Emulator.clock(f)
+        }, missing: "This is the start of the recording.")
+    }
+
     private func search(_ mode: CPCReverseMode, _ lo: UInt16, _ hi: UInt16, found: @escaping (CPCReverseHit, UInt64) -> String, missing: String) {
         guard emu.replayActive, !emu.isSearching else { NSSound.beep(); return }
         let panel = ReverseSearchPanel()

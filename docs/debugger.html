@@ -347,6 +347,7 @@
 <table>
   <tr><th>Acción</th><th>Dónde</th><th>Qué hace</th></tr>
   <tr><td>Step Back</td><td><kbd>⌥F7</kbd>, menú Debug, botón de la flecha amarilla</td><td>Vuelve al estado anterior a la última instrucción ejecutada.</td></tr>
+  <tr><td>Step Back Over</td><td><kbd>⌥⌘F8</kbd>, menú Debug, botón de la flecha amarilla con círculo</td><td>Como Step Back, pero si la última instrucción fue el <code>RET</code> de una rutina vuelve al <code>CALL</code> que la llamó, sin recorrer la rutina; ante un <code>LDIR</code>/<code>OTIR</code>… o un <code>HALT</code> repetido vuelve a antes de la primera repetición.</td></tr>
   <tr><td>Reverse Continue</td><td><kbd>⌥F9</kbd>, menú Debug, botón amarillo de rebobinar</td><td>Va hacia atrás hasta el último breakpoint que se habría activado (código, memoria o E/S; se respetan las condiciones).</td></tr>
   <tr><td>Run Back to Cursor</td><td><kbd>⌥F4</kbd>, menú Debug, clic derecho «Run Back to Here»</td><td>Va a la última vez que el PC estuvo en la línea seleccionada.</td></tr>
   <tr><td>Who Wrote This? / Who Read This?</td><td>Clic derecho en el volcado de memoria</td><td>Va a la última escritura o lectura de los bytes seleccionados.</td></tr>
@@ -374,6 +375,7 @@
   <tr><td><kbd>F9</kbd></td><td>Global</td><td>Run</td></tr>
   <tr><td><kbd>⌘R</kbd></td><td>Global</td><td>Reload Disc &amp; Symbols</td></tr>
   <tr><td><kbd>⌥F7</kbd></td><td>Reproducción</td><td>Step Back</td></tr>
+  <tr><td><kbd>⌥⌘F8</kbd></td><td>Reproducción</td><td>Step Back Over</td></tr>
   <tr><td><kbd>⌥F9</kbd></td><td>Reproducción</td><td>Reverse Continue</td></tr>
   <tr><td><kbd>⌥F4</kbd></td><td>Reproducción</td><td>Run Back to Cursor</td></tr>
   <tr><td><kbd>Ctrl</kbd>+<kbd>F</kbd> / <kbd>⌘F</kbd></td><td>Panel activo</td><td>Find</td></tr>
@@ -395,7 +397,8 @@
   <li><strong>Step Over</strong> sobre un <code>CALL</code> que no vuelve a la instrucción siguiente (p. ej. porque saca la dirección de retorno de la pila) deja la máquina corriendo hasta que pauses. Igual que en WinAPE.</li>
   <li><strong>Bucles cortos</strong> (<code>DJNZ</code>, esperas de VSYNC): cada F8 da una vuelta. Selecciona la línea de salida y pulsa <kbd>F4</kbd>.</li>
   <li><strong>Historial:</strong> solo guarda las últimas 4096 instrucciones; en una rutina larga puede no llegar al origen.</li>
-  <li><strong>Depuración inversa</strong> solo funciona durante una reproducción, y no hay «Step Over» hacia atrás.</li>
+  <li><strong>Depuración inversa</strong> solo funciona durante una reproducción.</li>
+  <li><strong>Step Back Over</strong> tras volver de una interrupción (el <code>RET</code> de una ISR) no tiene <code>CALL</code> al que volver: retrocede una sola instrucción, y para saberlo recorre toda la grabación hacia atrás.</li>
   <li><strong>Aún no disponible:</strong> profiler por funciones, depuración a nivel de código fuente C y el ensamblador integrado.</li>
 </ul>
 </main>

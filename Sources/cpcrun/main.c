@@ -611,6 +611,59 @@ static int run_disctest(const char *roms, const char *disc) {
     return fails ? 1 : 0;
 }
 
+
+/* Reverse Step Over on a small program: calls (nested, longer than a keyframe interval), a block instruction, plain steps. */
+static int run_sotest(const char *roms) {
+    int fails = 0;
+    #define CHECK(cond, msg) do { if (!(cond)) { printf("FAIL: %s\n", msg); fails++; } else printf("ok: %s\n", msg); } while (0)
+    static const uint8_t main_code[] = {0xF3, 0x31,0x00,0x80, 0x00, 0xCD,0x00,0x41, 0x00, 0x21,0x00,0x60, 0x11,0x00,0x61, 0x01,0x00,0x04,
+                                        0xED,0xB0, 0x3E,0x05, 0xF5, 0xC1, 0x18,0xFE};
+    static const uint8_t sub1[] = {0x00, 0xC5, 0xCD,0x00,0x42, 0xC1, 0xC9};
+    static const uint8_t sub2[] = {0x16,0x04, 0x01,0x00,0x00, 0x0B, 0x78, 0xB1, 0x20,0xFB, 0x15, 0x20,0xF5, 0xC9};
+    CPC *a = cpc_create(CPC_MODEL_6128); load_roms(a, roms, CPC_MODEL_6128); cpc_reset(a, true);
+    for (size_t i = 0; i < sizeof main_code; i++) cpc_poke(a, 0x4000 + i, main_code[i]);
+    for (size_t i = 0; i < sizeof sub1; i++) cpc_poke(a, 0x4100 + i, sub1[i]);
+    for (size_t i = 0; i < sizeof sub2; i++) cpc_poke(a, 0x4200 + i, sub2[i]);
+    a->z80.pc = 0x4000; a->z80.iff1 = a->z80.iff2 = false;
+    CHECK(cpc_record_start(a), "recording starts");
+    for (int i = 0; i < 300; i++) cpc_run_frame(a);
+    CPCRecording *rec = cpc_record_stop(a);
+    CPCPlayer *p = cpc_player_create(rec);
+    CHECK(cpc_player_begin(a, p, NULL), "replay begins");
+    for (int i = 0; i < 300; i++) cpc_run_frame(a);                     /* index every keyframe */
+    cpc_player_seek(a, 0);
+    struct { uint16_t at; uint16_t sp; uint16_t expect; const char *what; } t[] = {
+        {0x4001, 0, 0x4000, "plain: after DI"},
+        {0x4017, 0, 0x4016, "plain: after PUSH AF"},
+        {0x4018, 0, 0x4017, "plain: after POP BC"},
+        {0x4008, 0x8000, 0x4005, "after RET: back to the CALL"},
+        {0x4105, 0x7FFC, 0x4102, "after a nested RET that ran for more than a keyframe interval: back to its CALL"},
+        {0x4014, 0, 0x4012, "after LDIR: back to the first iteration"},
+    };
+    for (size_t k = 0; k < sizeof t / sizeof *t; k++) {
+        cpc_player_seek(a, 0);
+        uint64_t guard = 4000000; bool seen = false;
+        while (guard--) {
+            cpc_step(a);
+            if (a->z80.pc == t[k].at && (!t[k].sp || a->z80.sp.w == t[k].sp)) { seen = true; break; }
+        }
+        uint64_t here = a->cycles;
+        CPCReverseScan *sc = cpc_reverse_begin(a, CPC_REV_STEPOVER, 0, 0); int slices = 0;
+        while (sc && !cpc_reverse_slice(a, sc)) slices++;
+        CPCReverseHit h; bool found = sc && cpc_reverse_end(a, sc, true, &h);
+        char msg[200]; snprintf(msg, sizeof msg, "%s (%04X -> %04X, %d slices)", t[k].what, t[k].at, a->z80.pc, slices);
+        CHECK(seen && found && a->z80.pc == t[k].expect && a->cycles < here, msg);
+        if (t[k].expect == 0x4012) CHECK(a->z80.bc.w == 0x0400 && a->z80.hl.w == 0x6000, "the block instruction is back at its first iteration");
+    }
+    /* nothing before the first instruction */
+    cpc_player_seek(a, 0);
+    { CPCReverseScan *sc = cpc_reverse_begin(a, CPC_REV_STEPOVER, 0, 0); while (sc && !cpc_reverse_slice(a, sc)) {}
+      CHECK(sc && !cpc_reverse_end(a, sc, true, NULL) && a->z80.pc == 0x4000, "at the start there is nothing to go back to"); }
+    cpc_player_free(p); cpc_recording_free(rec); cpc_destroy(a);
+    printf("%d failure(s)\n", fails);
+    return fails ? 1 : 0;
+}
+
 static int run_amxtest(const char *roms) {
     int fails = 0;
     CPC *c = cpc_create(CPC_MODEL_6128); load_roms(c, roms, CPC_MODEL_6128); cpc_reset(c, true);
@@ -723,6 +776,7 @@ int main(int argc, char **argv) {
     if (argc >= 3 && !strcmp(argv[1], "mftest")) return run_mftest(argv[2]);
     if (argc >= 3 && !strcmp(argv[1], "steptest")) return run_steptest(argv[2], argc >= 4 ? argv[3] : NULL);
     if (argc >= 4 && !strcmp(argv[1], "logtest")) return run_logtest(argv[2], argv[3]);
+    if (argc >= 3 && !strcmp(argv[1], "sotest")) return run_sotest(argv[2]);
     if (argc >= 4 && !strcmp(argv[1], "disctest")) return run_disctest(argv[2], argv[3]);
     if (argc >= 4 && !strcmp(argv[1], "rectest")) return run_rectest(argv[2], argv[3]);
     if (argc >= 4 && !strcmp(argv[1], "statetest")) return run_statetest(argv[2], argv[3]);

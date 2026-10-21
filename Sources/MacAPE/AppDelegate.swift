@@ -282,6 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         main.window?.title = "MacAPE — " + URL(fileURLWithPath: path).lastPathComponent
     }
     @objc func debugStepBack(_ s: Any?) { let d = ensureDebugger(); d.show(); d.stepBack(s) }
+    @objc func debugStepBackOver(_ s: Any?) { let d = ensureDebugger(); d.show(); d.stepBackOver(s) }
     @objc func debugReverseContinue(_ s: Any?) { let d = ensureDebugger(); d.show(); d.reverseContinue(s) }
     @objc func debugRunBackToCursor(_ s: Any?) { let d = ensureDebugger(); d.show(); d.reverseToCursor(s) }
     @objc func debugStepScanline(_ s: Any?) { let d = ensureDebugger(); emu.debugStepRaster(frame: false); d.show() }
@@ -309,7 +310,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if item.action == #selector(recordSession(_:)) { item.title = emu.isRecording ? "Stop Recording…" : "Record Session"; return !emu.isReplaying }
         if item.action == #selector(playSession(_:)) { return !emu.isRecording }
         if item.action == #selector(goToTime(_:)) || item.action == #selector(stopPlayback(_:)) { return emu.isReplaying && !emu.isSearching }
-        if item.action == #selector(debugStepBack(_:)) || item.action == #selector(debugReverseContinue(_:)) || item.action == #selector(debugRunBackToCursor(_:)) { return emu.replayActive && !emu.isSearching }
+        if item.action == #selector(debugStepBack(_:)) || item.action == #selector(debugStepBackOver(_:)) || item.action == #selector(debugReverseContinue(_:)) || item.action == #selector(debugRunBackToCursor(_:)) { return emu.replayActive && !emu.isSearching }
         if item.action == #selector(debugScreenView(_:)) { item.state = emu.screenView.rawValue == item.tag ? .on : .off }
         return true
     }
@@ -398,7 +399,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             .separator(),
             item("Reload Disc & Symbols", #selector(reloadDiscAndSymbols(_:)), "r", .command),
             .separator(),
-            item("Step Back", #selector(debugStepBack(_:)), fkey(7), .option), item("Reverse Continue", #selector(debugReverseContinue(_:)), fkey(9), .option),
+            item("Step Back", #selector(debugStepBack(_:)), fkey(7), .option), item("Step Back Over", #selector(debugStepBackOver(_:)), fkey(8), [.option, .command]), item("Reverse Continue", #selector(debugReverseContinue(_:)), fkey(9), .option),
             item("Run Back to Cursor", #selector(debugRunBackToCursor(_:)), fkey(4), .option),
             .separator(),
             item("Execution History…", #selector(debugShowHistory(_:))),

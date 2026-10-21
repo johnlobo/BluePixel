@@ -164,6 +164,7 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
                             symButton("eye", "Watch", #selector(showWatch(_:)))]
         let logButton = symButton("text.alignleft", "Log (logpoints)", #selector(showLog(_:)))
         let backButton = symButton("arrow.uturn.backward", "Step Back (⌥F7) — during a replay", #selector(stepBack(_:)), tint: .systemYellow)
+        let backOverButton = symButton("arrow.uturn.backward.circle", "Step Back Over (⌥⌘F8): before the CALL that just returned, or the whole LDIR", #selector(stepBackOver(_:)), tint: .systemYellow)
         let revButton = symButton("backward.fill", "Reverse Continue (⌥F9): back to the previous breakpoint", #selector(reverseContinue(_:)), tint: .systemYellow)
         screenPopup.addItems(withTitles: ["Screen: Normal", "Screen: Raster", "Screen: Video RAM"]); screenPopup.controlSize = .small; screenPopup.font = .systemFont(ofSize: 11)
         screenPopup.toolTip = "What the emulator display shows while paused: last frame, frame being drawn with the beam position, or video memory as it is now"
@@ -197,8 +198,8 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
             for (i, b) in fileButtons2.enumerated() { b.frame = NSRect(x: x + 40, y: by + 4 + CGFloat(i) * 32, width: 32, height: 26) }
             var cx = gap; let oy = h - 30
             for b in [self.checkFollow, self.checkHide, self.checkBreaks, self.checkBRK] { let bw = b.fittingSize.width; b.frame = NSRect(x: cx, y: oy, width: bw, height: 22); cx += bw + 10 }
-            for b in tools + [logButton, backButton, revButton] { b.frame = NSRect(x: cx, y: oy - 2, width: 30, height: 26); cx += 33 }
-            backButton.isHidden = !self.emu.replayActive; revButton.isHidden = !self.emu.replayActive
+            for b in tools + [logButton, backButton, backOverButton, revButton] { b.frame = NSRect(x: cx, y: oy - 2, width: 30, height: 26); cx += 33 }
+            backButton.isHidden = !self.emu.replayActive; backOverButton.isHidden = !self.emu.replayActive; revButton.isHidden = !self.emu.replayActive
             self.screenPopup.frame = NSRect(x: gx + 406, y: by + 66, width: 148, height: 24)
             self.beamLabel.frame = NSRect(x: gap, y: self.memory.frame.maxY + 1, width: left - 132, height: 14)
             self.followPopup.frame = NSRect(x: gap + left - 128, y: self.memory.frame.maxY, width: 128, height: 16)
