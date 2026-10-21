@@ -44,7 +44,7 @@ for t in dbgtest mftest amxtest; do .build/release/cpcrun $t $R; done
 .build/release/cpcrun symtest <symbols file> <symbol name>
 ```
 
-`disctest` (a BASIC program writes a file during a session; replay/seek/clone must reproduce state and disc), `sotest` (reverse Step Over + markers) and
+`disctest` (a BASIC program writes a file during a session; replay/seek/clone must reproduce state and disc), `sotest` (reverse Step Over + markers), `tracetest` (break on change, access map, profiler + speed cost) and
 `statetest` (save/restore at 9 points incl. mid-frame, 200 frames each) and `rectest` (record boop with every event
 type, replay in another machine, 80 random seeks, injected input must be detected, edit cuts the recording) are the
 exactness tests for the savestate/replay work: run them after touching anything in `CPCCore` that holds state.
@@ -81,6 +81,11 @@ controls blank (tab strips, segmented controls); use `screencapture` when the re
 - **Debugger stepping:** `dbg_step_into` completes a `HALT`; the emulation loop re-checks `paused` under the lock;
   `debugPause`/`debugResume` cancel pending `temp_bp`/`step_out`. Step Out = run until a RET leaves the frame
   (`step_out_sp`). Every stop re-focuses the disassembler on PC.
+- **Debugger tools (`dbgtrace.c`, `TraceWindows.swift`):** break on change (`BP_CHANGE`, evaluated before each instruction: registers
+  and `peek/word(const)` read directly, anything else through `dbg_eval`), memory access map (needs `watch[]` all set; the Z80 has
+  a separate `fetch` callback so opcode bytes count as executed, not read; `cpc_peek` is event-free, use it for host/debugger reads),
+  and a profiler with a shadow call stack (CALL/RST/interrupt push, RET pops; self vs inclusive per entry address). All stay quiet
+  while `Debugger.quiet`/`scanning` (seeks, reverse re-simulation). A C struct field called `self` is unusable from Swift.
 - **Expressions:** parentheses only group; read memory with `peek(addr)`. Comparisons are `=` or `==`, `<>`
   (not `!=`), `<`, `>`, `<=`, `>=`; logic is `and`, `or`, `xor` (not `&&`/`||`); true is -1. Logpoint text uses
   `{expr}` (hex) / `{expr:d}`.
@@ -137,6 +142,5 @@ Session record/playback is complete: core, File menu, transport bar (`Transport.
 ⌥F7, Step Back Over ⌥⌘F8, Reverse Continue ⌥F9, Run Back to Cursor ⌥F4, "Who Wrote/Read This?"), disc writes and markers (`CPC_MARK_TEXT`,
 stored in the `.cpcrec` and saved back when edited). Integrated Maxam-compatible assembler
 (menu item says "Not available yet"), disc/sector editor, Format Disc, Flip Disc, AVI/WAV/YM recording, Symbiface II (IDE/RTC/PS2 mouse), 4 MB Yarek RAM, printer, ZIP/RAR,
-tape CSV, DSC/HDR discs, gamepad joystick. Debugger ideas not built: profiler, DeZog/VS Code protocol, rewind,
-"who wrote this byte", memory access map, AY channel viewer, break on change. A web (WebAssembly) build was discussed:
+tape CSV, DSC/HDR discs, gamepad joystick. Debugger ideas not built: DeZog/VS Code protocol, AY channel viewer. A web (WebAssembly) build was discussed:
 the core is already portable C, the UI would be new.

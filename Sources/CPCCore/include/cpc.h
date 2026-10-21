@@ -207,6 +207,8 @@ void cpc_poke(CPC *c, uint16_t addr, uint8_t v);
 uint8_t cpc_bank_peek(CPC *c, uint8_t ram_cfg, uint16_t addr);
 void cpc_bank_poke(CPC *c, uint8_t ram_cfg, uint16_t addr, uint8_t v);
 uint8_t cpc_mem_read(void *ctx, uint16_t addr);
+uint8_t cpc_mem_fetch(void *ctx, uint16_t addr);
+uint8_t cpc_mem_peek(void *ctx, uint16_t addr);
 void cpc_mem_write(void *ctx, uint16_t addr, uint8_t v);
 
 /* PSG */

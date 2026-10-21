@@ -673,6 +673,79 @@ static int run_sotest(const char *roms) {
     return fails ? 1 : 0;
 }
 
+
+/* Break on change, memory access map and function profiler on a small program. */
+#include <time.h>
+static int run_tracetest(const char *roms) {
+    int fails = 0;
+    #define CHECK(cond, msg) do { if (!(cond)) { printf("FAIL: %s\n", msg); fails++; } else printf("ok: %s\n", msg); } while (0)
+    static const uint8_t main_code[] = {0xF3, 0x31,0x00,0x80, 0x06,0x05, 0xCD,0x00,0x41, 0x3A,0x00,0x60, 0x3C, 0x32,0x00,0x60, 0x10,0xF4, 0x18,0xFE};
+    static const uint8_t sub[] = {0x0E,0x10, 0x0D, 0x20,0xFD, 0xC9};
+    CPC *c = cpc_create(CPC_MODEL_6128); load_roms(c, roms, CPC_MODEL_6128); cpc_reset(c, true);
+    for (size_t i = 0; i < sizeof main_code; i++) cpc_poke(c, 0x4000 + i, main_code[i]);
+    for (size_t i = 0; i < sizeof sub; i++) cpc_poke(c, 0x4100 + i, sub[i]);
+    cpc_poke(c, 0x6000, 0);
+    c->z80.pc = 0x4000;
+    Debugger *d = dbg_attach(c); d->hist_on = false;
+    char err[128];
+    /* break on change */
+    int ba = dbg_add_change_bp(c, "a", err, sizeof err), bm = dbg_add_change_bp(c, "peek(#6000)", err, sizeof err), bg = dbg_add_change_bp(c, "a*2", err, sizeof err);
+    CHECK(ba >= 0 && bm >= 0 && bg >= 0 && d->bp[ba].ckind == 1 && d->bp[bm].ckind == 2 && d->bp[bg].ckind == 0, "register, memory and general expressions are classified");
+    CHECK(dbg_add_change_bp(c, "nonsense(", err, sizeof err) < 0, "an invalid expression is refused");
+    d->bp[bg].enabled = false; dbg_rebuild_watch(d);
+    int hits = 0; uint16_t first_pc = 0, mem_pc = 0; int guard = 100000;
+    while (guard-- && c->z80.pc != 0x4012) {
+        cpc_step(c);
+        if (d->hit) { hits++; if (!first_pc) first_pc = c->z80.pc; if (d->hit_index == bm && !mem_pc) mem_pc = c->z80.pc; d->hit = false; d->skip_once = true; }
+    }
+    CHECK(hits > 0 && first_pc == 0x400C, "a register change stops the machine right after the instruction that changed it");
+    CHECK(mem_pc == 0x4010, "a byte in memory is noticed right after the instruction that changed it");
+    d->bp[ba].count = 0; d->bp[bm].count = 0;
+    /* access map */
+    c->z80.pc = 0x4000; cpc_poke(c, 0x6000, 0);
+    dbg_access_enable(c, true); dbg_access_clear(c);
+    d->bp[ba].enabled = d->bp[bm].enabled = false; dbg_rebuild_watch(d);
+    dbg_prof_enable(c, true); dbg_prof_clear(c);
+    guard = 100000; while (guard-- && c->z80.pc != 0x4012) cpc_step(c);
+    const DbgAccess *a = d->acc_store;
+    CHECK(a->w[0x6000] == 5 && a->r[0x6000] == 5, "five reads and five writes of the counter");
+    CHECK(a->x[0x4006] == 5 && a->x[0x4007] == 5 && a->r[0x4006] == 0 && a->w[0x4006] == 0, "instruction bytes count as executed, not as read");
+    CHECK(a->w[0x7FFE] == 5 && a->w[0x7FFF] == 5 && a->x[0x4102] == 5 * 16, "stack pushes and the inner loop are counted");
+    /* profiler */
+    DbgProfEntry e[64]; int n = dbg_prof_entries(d, e, 64);
+    uint64_t self_sum = 0; const DbgProfEntry *sub_e = NULL, *top = NULL;
+    for (int i = 0; i < n; i++) { self_sum += e[i].own; if (e[i].addr == 0x4100) sub_e = &e[i]; if (e[i].addr == DBG_PROF_TOP) top = &e[i]; }
+    CHECK(sub_e && sub_e->calls == 5, "the routine was called five times");
+    CHECK(sub_e && sub_e->incl == sub_e->own && sub_e->own > 5 * 16 * 3, "a routine with no callees: inclusive = self");
+    CHECK(top && top->own > 0 && self_sum == dbg_prof_total(d), "every microsecond is attributed to something");
+    uint16_t hp[4]; uint32_t hs[4]; int nh = dbg_prof_hotspots(d, hp, hs, 4);
+    CHECK(nh == 4 && (hp[0] == 0x4103 || hp[0] == 0x4102) && hs[0] >= hs[1], "the busiest addresses are the inner loop");
+    /* interrupts are calls */
+    cpc_reset(c, true); dbg_prof_clear(c);
+    for (int i = 0; i < 100; i++) cpc_run_frame(c);
+    n = dbg_prof_entries(d, e, 64); uint32_t isr = 0; for (int i = 0; i < n; i++) if (e[i].addr == 0x38) isr = e[i].calls;
+    CHECK(isr > 50, "the firmware interrupt handler shows up as a routine");
+    CHECK(dbg_prof_frames(d) >= 99, "frames are counted");
+    { /* cost of the tools, informational: emulated frames per second of host time */
+      const char *names[] = {"no debugger", "debugger attached", "+ change bps (register, byte, expression)", "+ access map", "+ profiler"};
+      for (int mode = 0; mode < 5; mode++) {
+          cpc_reset(c, true); dbg_prof_enable(c, false); dbg_access_enable(c, false); dbg_clear_bps(c);
+          if (mode == 0) dbg_detach(c); else { d = dbg_attach(c); d->hist_on = false; }
+          if (mode >= 2) { dbg_add_change_bp(c, "a", err, sizeof err); dbg_add_change_bp(c, "peek(#6000)", err, sizeof err); dbg_add_change_bp(c, "hl+1", err, sizeof err); }
+          if (mode >= 3) dbg_access_enable(c, true);
+          if (mode >= 4) dbg_prof_enable(c, true);
+          clock_t t0 = clock(); uint64_t f0 = c->frames; while (c->frames - f0 < 300) { cpc_run_frame(c); if (c->dbg) { c->dbg->hit = false; c->dbg->skip_once = true; } }
+          printf("  %-44s %6.0f frames/s\n", names[mode], 300.0 / ((double)(clock() - t0) / CLOCKS_PER_SEC));
+      }
+      d = dbg_attach(c); }
+    /* seeks and reverse debugging do not count */
+    dbg_prof_enable(c, false); dbg_access_enable(c, false);
+    CHECK(!dbg_prof_running(d) && !dbg_access_running(d) && dbg_prof_total(d) > 0, "switching off keeps the data");
+    cpc_destroy(c);
+    printf("%d failure(s)\n", fails);
+    return fails ? 1 : 0;
+}
+
 static int run_amxtest(const char *roms) {
     int fails = 0;
     CPC *c = cpc_create(CPC_MODEL_6128); load_roms(c, roms, CPC_MODEL_6128); cpc_reset(c, true);
@@ -785,6 +858,7 @@ int main(int argc, char **argv) {
     if (argc >= 3 && !strcmp(argv[1], "mftest")) return run_mftest(argv[2]);
     if (argc >= 3 && !strcmp(argv[1], "steptest")) return run_steptest(argv[2], argc >= 4 ? argv[3] : NULL);
     if (argc >= 4 && !strcmp(argv[1], "logtest")) return run_logtest(argv[2], argv[3]);
+    if (argc >= 3 && !strcmp(argv[1], "tracetest")) return run_tracetest(argv[2]);
     if (argc >= 3 && !strcmp(argv[1], "sotest")) return run_sotest(argv[2]);
     if (argc >= 4 && !strcmp(argv[1], "disctest")) return run_disctest(argv[2], argv[3]);
     if (argc >= 4 && !strcmp(argv[1], "rectest")) return run_rectest(argv[2], argv[3]);

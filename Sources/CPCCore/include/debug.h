@@ -2,7 +2,7 @@
 #define CPC_DEBUG_H
 #include "cpc.h"
 
-typedef enum { BP_CODE, BP_MEM_READ, BP_MEM_WRITE, BP_IO } BpType;
+typedef enum { BP_CODE, BP_MEM_READ, BP_MEM_WRITE, BP_IO, BP_CHANGE } BpType;
 
 typedef struct {
     BpType type;
@@ -15,6 +15,14 @@ typedef struct {
     bool on_in, on_out;
     char cond[160];
     char log[160];                 /* logpoint: when set, the message is logged and the machine keeps running */
+    /* BP_CHANGE: stops when the value of `expr` differs from the last time it was looked at. Registers and peek/word of a
+     * constant address are read directly (cheap); anything else is evaluated before every instruction. `cond` is an
+     * extra condition, where `value` is the new and `previous` the old value. */
+    char expr[160];
+    uint8_t ckind;                 /* 0 generic expression, 1 register, 2 byte in memory, 3 word in memory */
+    uint8_t csize;                 /* register size in bytes */
+    uint16_t cwhere;               /* register: offset inside Z80; memory: address */
+    int32_t last; bool have_last;
     int pass_count, hits, count;   /* hits = times valid, count = times condition true */
 } DbgBreakpoint;
 
@@ -38,6 +46,12 @@ typedef struct Debugger {
     DbgSymbol *syms; int nsyms, syms_cap;
     DbgTimer timers[DBG_MAX_TIMERS];
     int temp_bp;                   /* run-to address, -1 when unused */
+    int nchange;                   /* enabled BP_CHANGE breakpoints */
+    bool quiet;                    /* re-simulating (seek, reverse debugging): no profile, access counts or change checks */
+    bool fetching;                 /* inside an instruction fetch (memory events there are execution, not data reads) */
+    struct DbgProfile *prof;       /* function profiler while it runs, else NULL (the data lives in prof_store) */
+    struct DbgAccess *acc;         /* memory access counters while they count, else NULL (data in acc_store) */
+    struct DbgProfile *prof_store; struct DbgAccess *acc_store;
     bool scanning;                 /* reverse search re-simulating: conditions only, no counters, pass counts or logpoints */
     bool step_out; uint16_t step_out_sp;
     bool hist_on; int hist_pos, hist_count;  /* execution history ring (last DBG_HISTORY instructions) */
@@ -59,6 +73,8 @@ static inline uint8_t dbg_watch_bits(const Debugger *d, uint16_t addr) { return 
 int dbg_add_code_bp(CPC *c, uint16_t addr);                    /* returns index or -1 */
 int dbg_add_mem_bp(CPC *c, uint16_t start, uint16_t end, bool read, bool write);
 int dbg_add_io_bp(CPC *c, uint16_t port, uint16_t mask, bool in, bool out);
+int dbg_add_change_bp(CPC *c, const char *expr, char *err, size_t errsize);   /* -1: the expression is not valid (err says why) */
+void dbg_changes_rebase(CPC *c);               /* the current values become the reference (after the user edited registers or memory) */
 void dbg_remove_bp(CPC *c, int index);
 void dbg_clear_bps(CPC *c);
 void dbg_toggle_code_bp(CPC *c, uint16_t addr);
@@ -84,6 +100,31 @@ void dbg_step_out(CPC *c);
 void dbg_history_record(CPC *c);
 int dbg_history_count(const Debugger *d);
 DbgHistory dbg_history_get(const Debugger *d, int back);   /* back = 0: most recent instruction */                         /* run until the current function returns */
+
+/* ---- Memory access map: how many times each address was read, written and executed since it was cleared ---- */
+typedef struct DbgAccess { uint32_t r[65536], w[65536], x[65536]; } DbgAccess;
+void dbg_access_enable(CPC *c, bool on);       /* counters are kept when switched off; dbg_access_clear resets them */
+void dbg_access_clear(CPC *c);
+void dbg_access_copy(const Debugger *d, int kind, uint32_t *out);   /* kind 0 reads, 1 writes, 2 executions: 65536 counters (zeros when none) */
+static inline bool dbg_access_running(const Debugger *d) { return d->acc != NULL; }
+void dbg_access_fetch(Debugger *d, uint16_t addr);   /* called by the core for every instruction byte */
+
+/* ---- Function profiler ----
+ * Time (emulated microseconds) is attributed to the routine on top of a shadow call stack kept from CALL/RST/interrupts
+ * and RET: self = inside it, inclusive = including what it called. Routines are identified by their entry address. */
+#define DBG_PROF_TOP 0x10000            /* pseudo entries: code running outside any call seen since the profiler started */
+#define DBG_PROF_HALT 0x10001           /* waiting in HALT */
+typedef struct { int32_t addr; uint32_t calls; uint64_t own, incl; } DbgProfEntry;   /* own = time inside the routine itself */
+void dbg_prof_enable(CPC *c, bool on);         /* data is kept when switched off */
+void dbg_prof_clear(CPC *c);
+bool dbg_prof_running(const Debugger *d);
+uint64_t dbg_prof_total(const Debugger *d);    /* microseconds measured */
+uint64_t dbg_prof_frames(const Debugger *d);   /* frames elapsed while measuring */
+int dbg_prof_entries(const Debugger *d, DbgProfEntry *out, int max);   /* routines with any time, unsorted; open calls included */
+int dbg_prof_hotspots(const Debugger *d, uint16_t *addr, uint32_t *own, int max);   /* busiest instruction addresses, most first */
+typedef struct { uint16_t pc, sp; uint8_t op, op2; bool halted, nmi; } DbgProfPre;
+void dbg_prof_before(CPC *c, DbgProfPre *pre);
+void dbg_prof_after(CPC *c, const DbgProfPre *pre, int us);
 
 /* Symbols & data areas */
 void dbg_symbol_set(CPC *c, const char *name, int32_t value);

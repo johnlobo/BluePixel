@@ -35,6 +35,8 @@
     <li><a href="#logpoints">Logpoints</a></li>
     <li><a href="#watch">Watch</a></li>
     <li><a href="#history">Historial de ejecución</a></li>
+    <li><a href="#profiler">Profiler</a></li>
+    <li><a href="#accessmap">Mapa de accesos</a></li>
     <li><a href="#windows">Otras ventanas</a></li>
     <li><a href="#screen">Pantalla en pausa y raster</a></li>
     <li><a href="#reverse">Depuración inversa</a></li>
@@ -274,6 +276,7 @@
   <tr><td>Code</td><td><kbd>F5</kbd>, franja gris, <em>Add</em> en la pestaña Code, o desde la ventana de símbolos</td><td>Al ejecutar esa dirección.</td></tr>
   <tr><td>Memory read / write</td><td>Menú del panel de memoria, o <em>Add</em> con un rango y <code>r</code>/<code>w</code> (<code>#C000,#FFFF w</code>)</td><td>Al leer o escribir en el rango.</td></tr>
   <tr><td>I/O</td><td><em>Add</em> en la pestaña I/O: puerto, máscara, IN/OUT</td><td>Al acceder a ese puerto (p. ej. <code>#7F00</code> con máscara <code>#C000</code> para el Gate Array).</td></tr>
+  <tr><td>Change</td><td>Pestaña <em>Change</em> → <em>Add</em>, o «Break on Change» en el menú del volcado de memoria</td><td>Cuando cambia el valor de una expresión (ver abajo).</td></tr>
   <tr><td>BRK</td><td>Instrucción <code>ED FF</code> en tu código, con <em>Break Instructions</em> marcado</td><td>Al ejecutar el <code>ED FF</code>.</td></tr>
 </table>
 </div>
@@ -282,6 +285,16 @@
   <li><strong>Condition:</strong> el breakpoint solo para si la <a href="#expressions">expresión</a> no vale 0, p. ej. <code>A==#0D</code>, <code>HL&gt;#C000</code>, <code>peek(#B8B4)==3</code>.</li>
   <li><strong>Pass:</strong> para solo cada N veces que se cumple. <em>Count</em> muestra cuántas veces se ha cumplido; <em>Reset</em> lo pone a cero.</li>
   <li><strong>Log message:</strong> convierte el breakpoint en <a href="#logpoints">logpoint</a>. Vaciarlo lo devuelve a breakpoint normal.</li>
+</ul>
+<h3>Break on Change</h3>
+<p>Para cuando un valor <strong>cambia</strong>, no cuando se escribe: un juego que reescribe el mismo número no te interrumpe.</p>
+<ul>
+  <li><strong>Pestaña Change → Add:</strong> escribe un registro (<code>A</code>, <code>HL</code>…), <code>peek(dirección)</code>, <code>word(dirección)</code> o cualquier <a href="#expressions">expresión</a>. La máquina se para <em>justo después</em> de la instrucción que lo cambió; el desensamblado queda en la instrucción siguiente (usa <a href="#reverse">Step Back</a> en una reproducción para ver la responsable).</li>
+  <li><strong>En el volcado de memoria:</strong> selecciona bytes → clic derecho → <strong>Break on Change</strong>. Es un breakpoint de escritura con la condición <code>value&lt;&gt;previous</code> sobre toda la selección, y no frena el emulador.</li>
+  <li><strong>Coste:</strong> registros y direcciones fijas son prácticamente gratis. Una expresión general se evalúa antes de cada instrucción y puede frenar el emulador unas 4 veces; sigue yendo más rápido que el tiempo real.</li>
+  <li><strong>Condición y mensaje:</strong> en la columna <em>Condition</em>, <code>value</code> es el valor nuevo y <code>previous</code> el anterior (solo el byte bajo). También admite <em>Pass</em> y <em>Log message</em> (logpoint).</li>
+  <li>Al editar a mano un registro, los flags o la memoria, el valor de referencia se reinicia para que la edición no cuente como cambio.</li>
+  <li>La búsqueda inversa (<em>Reverse Continue</em>) ignora estos breakpoints.</li>
 </ul>
 <p><em>Load</em> y <em>Save</em> guardan la lista en un fichero de texto, incluidos condiciones y mensajes.</p>
 
@@ -315,6 +328,37 @@
 <figure>
   <img src="img/history.png" alt="Ventana de historial de ejecución">
 </figure>
+
+<h2 id="profiler">Profiler</h2>
+<p><strong>Debug → Profiler…</strong>: en qué se va el tiempo del emulador, por rutina. Pulsa <em>Start</em>, deja correr el programa y mira la tabla (se actualiza dos veces por segundo).</p>
+<figure>
+  <img src="img/profiler.png" alt="Ventana del profiler con la tabla de rutinas">
+  <figcaption>El profiler midiendo un juego: las rutinas ordenadas por tiempo propio.</figcaption>
+</figure>
+<ul>
+  <li><strong>Cómo mide:</strong> mantiene una pila de llamadas a partir de <code>CALL</code>, <code>RST</code>, interrupciones y <code>RET</code>. El tiempo (microsegundos emulados) se atribuye a la rutina que está arriba de la pila.</li>
+  <li><strong>Self</strong> = dentro de la propia rutina; <strong>Incl.</strong> = incluyendo lo que llama. Ambos se dan en µs por frame y en % del total medido; <strong>µs/call</strong> es el tiempo propio por llamada.</li>
+  <li>Los nombres salen de los <a href="#symbols">símbolos</a> cargados; sin ellos, la dirección de entrada.</li>
+  <li><strong>(top level)</strong> es el código que corre fuera de cualquier llamada vista desde que empezó la medida (por ejemplo, el bucle principal si ya estaba en marcha). <strong>(waiting in HALT)</strong> es tiempo ocioso.</li>
+  <li><strong>Resumen inferior:</strong> µs ocupados por frame frente al presupuesto de un frame (19968 µs, 312 líneas de 64 µs). Si pasa del 100 % el juego no llega a 50 fps.</li>
+  <li><strong>Hot spots:</strong> las direcciones de instrucción más costosas, con su símbolo y desensamblado. Doble clic en cualquier fila lleva al código.</li>
+  <li><strong>Ordenar</strong> por tiempo propio, inclusivo o número de llamadas. <em>Copy</em> copia la tabla como texto (para pegarla en una hoja de cálculo); <em>Clear</em> pone todo a cero; <em>Stop</em> congela los datos.</li>
+</ul>
+<p>Limitaciones: un salto con <code>JP</code> a otra rutina no abre un frame nuevo (su tiempo cuenta como de quien llamó), y una rutina que se sale de la pila con trucos (<code>POP</code> de la dirección de retorno, <code>PUSH</code>+<code>RET</code> como salto) puede quedar mal medida hasta que la pila se resincroniza. Los saltos en una reproducción (seek, Step Back) no cuentan.</p>
+
+<h2 id="accessmap">Mapa de accesos a memoria</h2>
+<p><strong>Debug → Memory Access Map…</strong>: los 64K como una imagen de 256×256 (cada píxel es un byte; cada fila, un byte alto: la fila 0x40 es <code>4000–40FF</code>). Pulsa <em>Start</em> para empezar a contar y <em>Clear</em> para empezar de cero.</p>
+<figure>
+  <img src="img/accessmap.png" alt="Mapa de accesos a memoria con los 64K coloreados" style="max-width: 34rem">
+  <figcaption>Un juego cargado: verde = escrito, rojo/naranja = ejecutado, azul = leído.</figcaption>
+</figure>
+<ul>
+  <li><strong>Colores:</strong> <span style="color:#e44">rojo = ejecutado</span>, <span style="color:#3c5">verde = escrito</span>, <span style="color:#38f">azul = leído</span>; se mezclan (ejecutado y leído → magenta…). Más brillo = más veces (escala logarítmica). Gris oscuro = nunca tocado. Las casillas <em>Executed / Written / Read</em> eligen qué canales se ven.</li>
+  <li>Los bytes de una instrucción (código de operación y operandos) cuentan como ejecutados, no como leídos.</li>
+  <li><strong>Pasar el ratón</strong> por un píxel da la dirección, su símbolo y cuántas veces se ejecutó, escribió y leyó. <strong>Clic</strong> lo muestra en el volcado de memoria; <strong>doble clic</strong>, en el desensamblado.</li>
+  <li>Sirve para ver qué parte de la memoria usa realmente el juego, localizar código que nunca se ejecuta, variables muy escritas o buffers a medio usar.</li>
+  <li>Mientras cuenta, cada acceso a memoria pasa por el depurador y el emulador va unas 10 veces más lento (sigue por encima del tiempo real).</li>
+</ul>
 
 <h2 id="windows">Otras ventanas</h2>
 <div class="table-scroll">
@@ -399,7 +443,7 @@
   <li><strong>Historial:</strong> solo guarda las últimas 4096 instrucciones; en una rutina larga puede no llegar al origen.</li>
   <li><strong>Depuración inversa</strong> solo funciona durante una reproducción.</li>
   <li><strong>Step Back Over</strong> tras volver de una interrupción (el <code>RET</code> de una ISR) no tiene <code>CALL</code> al que volver: retrocede una sola instrucción, y para saberlo recorre toda la grabación hacia atrás.</li>
-  <li><strong>Aún no disponible:</strong> profiler por funciones, depuración a nivel de código fuente C y el ensamblador integrado.</li>
+  <li><strong>Aún no disponible:</strong> protocolo DeZog / VS Code, visor de canales del AY, depuración a nivel de código fuente C y el ensamblador integrado.</li>
 </ul>
 </main>
 </div>

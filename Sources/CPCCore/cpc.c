@@ -66,7 +66,7 @@ CPC *cpc_create(CPCModel model) {
     c->audio = calloc(AUDIO_CAP * 2, sizeof(float));
     c->fdc = fdc_create(c);
     c->z80.ctx = c;
-    c->z80.rd = cpc_mem_read; c->z80.wr = cpc_mem_write;
+    c->z80.rd = cpc_mem_read; c->z80.fetch = cpc_mem_fetch; c->z80.wr = cpc_mem_write;
     c->z80.in = cpc_io_read; c->z80.out = cpc_io_write;
     build_palette(c);
     cpc_reset(c, true);
@@ -216,8 +216,26 @@ void cpc_mem_write(void *ctx, uint16_t a, uint8_t v) {
     if (__builtin_expect(c->asic.page_visible, 0) && (a & 0xC000) == 0x4000) { asic_write(c, a & 0x3FFF, v); return; }
     c->wr_map[a >> 14][a & 0x3FFF] = v;
 }
-uint8_t cpc_peek(CPC *c, uint16_t a) { return cpc_mem_read(c, a); }
+/* Instruction stream: a read as far as breakpoints go, but counted as execution by the access map. */
+uint8_t cpc_mem_fetch(void *ctx, uint16_t a) {
+    CPC *c = ctx;
+    if (__builtin_expect(c->asic.page_visible, 0) && (a & 0xC000) == 0x4000) return asic_read(c, a & 0x3FFF);
+    uint8_t v = c->rd_map[a >> 14][a & 0x3FFF];
+    if (__builtin_expect(c->dbg != NULL, 0)) {
+        Debugger *d = c->dbg;
+        if (d->acc) dbg_access_fetch(d, a);
+        if (d->watch[a] & 1) { d->fetching = true; dbg_mem_event(c, a, v, false); d->fetching = false; }
+    }
+    return v;
+}
+/* For the host and the debugger: no breakpoints, no counters. */
+uint8_t cpc_peek(CPC *c, uint16_t a) {
+    if (c->asic.page_visible && (a & 0xC000) == 0x4000) return asic_read(c, a & 0x3FFF);
+    return c->rd_map[a >> 14][a & 0x3FFF];
+}
 void cpc_poke(CPC *c, uint16_t a, uint8_t v) { if (c->recorder) cpc_record_taint(c, "memory was edited"); cpc_mem_write(c, a, v); }
+
+uint8_t cpc_mem_peek(void *ctx, uint16_t a) { return cpc_peek(ctx, a); }   /* callback form of cpc_peek */
 
 /* RAM access through an arbitrary gate array RAM configuration (0xC0-0xFF), ignoring ROMs. */
 static uint8_t *cpc_bank_ptr(CPC *c, uint8_t ram_cfg, uint16_t a) {
@@ -651,10 +669,13 @@ int cpc_step(CPC *c) {
     if (c->dbg && c->dbg->hist_on) dbg_history_record(c);
     bool ret_op = false;          /* Step Out: is this a RET/RETcc/RETI/RETN? */
     if (c->dbg && c->dbg->step_out) {
-        uint8_t op = cpc_mem_read(c, c->z80.pc), op2 = cpc_mem_read(c, (uint16_t)(c->z80.pc + 1));
+        uint8_t op = cpc_peek(c, c->z80.pc), op2 = cpc_peek(c, (uint16_t)(c->z80.pc + 1));
         ret_op = op == 0xC9 || (op & 0xC7) == 0xC0 || (op == 0xED && (op2 & 0xC7) == 0x45);
     }
+    DbgProfPre pre; Debugger *dp = c->dbg && c->dbg->prof && !c->dbg->quiet && !c->dbg->scanning ? c->dbg : NULL;
+    if (dp) dbg_prof_before(c, &pre);
     int n = z80_step(&c->z80, c->irq_line);
+    if (dp) dbg_prof_after(c, &pre, n);
     if (ret_op && !c->z80.int_ack && c->z80.sp.w > c->dbg->step_out_sp) { c->dbg->step_out = false; c->dbg->hit = true; c->dbg->hit_index = -1; }
     if (c->z80.int_ack) { c->irq_line = false; c->ga_irq_counter &= 0x1F; }
     if (c->z80.retn_hit && c->mf_running) c->mf_running = false;

@@ -355,12 +355,12 @@ bool cpc_player_goto_cycles(CPC *c, uint64_t target, bool history) {
     bool active = false, brk = false, hist = false; int temp = -1;
     if (d) {
         active = d->active; brk = d->break_instructions; hist = d->hist_on; temp = d->temp_bp;
-        d->active = false; d->break_instructions = false; d->temp_bp = -1; d->hist_on = history; d->skip_once = false;
+        d->active = false; d->break_instructions = false; d->temp_bp = -1; d->hist_on = history; d->skip_once = false; d->quiet = true;
         if (history) { d->hist_count = 0; d->hist_pos = 0; }
     }
     uint64_t guard = 20000000;
     while (c->cycles < target && guard--) cpc_step(c);
-    if (d) { d->active = active; d->break_instructions = brk; d->hist_on = hist; d->temp_bp = temp; d->hit = false; d->skip_once = false; }
+    if (d) { d->active = active; d->break_instructions = brk; d->hist_on = hist; d->temp_bp = temp; d->hit = false; d->skip_once = false; d->quiet = false; }
     return c->cycles == target;
 }
 

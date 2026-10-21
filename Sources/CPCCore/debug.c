@@ -19,21 +19,22 @@ Debugger *dbg_attach(CPC *c) {
 
 void dbg_detach(CPC *c) {
     if (!c->dbg) return;
-    free(c->dbg->syms); free(c->dbg); c->dbg = NULL; c->z80.brk_enabled = false;
+    free(c->dbg->syms); free(c->dbg->prof_store); free(c->dbg->acc_store); free(c->dbg); c->dbg = NULL; c->z80.brk_enabled = false;
 }
 
 bool cpc_dbg_break(const CPC *c) { return c->dbg && c->dbg->hit; }
 
 void dbg_rebuild_watch(Debugger *d) {
-    memset(d->watch, 0, sizeof d->watch);
-    d->io_bps = 0;
+    memset(d->watch, d->acc ? W_READ | W_WRITE : 0, sizeof d->watch);     /* the access map sees every access */
+    d->io_bps = 0; d->nchange = 0;
     for (int i = 0; i < DBG_MAX_BP; i++) {
         DbgBreakpoint *b = &d->bp[i];
         if (!b->used || !b->enabled) continue;
         if (b->type == BP_CODE) d->watch[b->start] |= W_CODE;
         else if (b->type == BP_MEM_READ || b->type == BP_MEM_WRITE) {
             for (uint32_t a = b->start; a <= b->end; a++) d->watch[a] |= b->type == BP_MEM_READ ? W_READ : W_WRITE;
-        } else d->io_bps++;
+        } else if (b->type == BP_CHANGE) d->nchange++;
+        else d->io_bps++;
     }
 }
 
@@ -140,7 +141,7 @@ static int32_t call_function(P *p, const char *name, int32_t *a, int n) {
     if (IS("word")) return n ? a[0] & 0xFFFF : 0;
     if (IS("hibyte")) return n ? (a[0] >> 8) & 0xFF : 0;
     if (IS("hiword")) return n ? (int32_t)(((uint32_t)a[0] >> 16) & 0xFFFF) : 0;
-    if (IS("peek")) return n ? cpc_mem_read(c, (uint16_t)a[0]) : 0;
+    if (IS("peek")) return n ? cpc_peek(c, (uint16_t)a[0]) : 0;
     if (IS("poke")) { for (int i = 1; i < n; i++) { DbgView v = {1, 0, 0, 0, 0, 0, 0}; dbg_view_current(c, &v); v.mode = 1; dbg_view_write(c, &v, (uint16_t)(a[0] + i - 1), (uint8_t)a[i]); } return 0; }
     if (IS("ay") || IS("psg")) return c->psg.regs[(n ? a[0] : c->psg.sel) & 15];
     if (IS("crtc")) return c->crtc.r[(n ? a[0] : c->crtc.sel) & 31];
@@ -306,12 +307,94 @@ static bool bp_fires(CPC *c, Debugger *d, int i) {
     return true;
 }
 
+/* ---------------- Break on change ---------------- */
+static bool reg_ref(CPC *c, const char *n, uint16_t *where, uint8_t *size) {
+    Z80 *z = &c->z80;
+    struct { const char *n; const void *p; uint8_t sz; } t[] = {
+        {"a", &z->af.h, 1}, {"f", &z->af.l, 1}, {"b", &z->bc.h, 1}, {"c", &z->bc.l, 1}, {"d", &z->de.h, 1}, {"e", &z->de.l, 1}, {"h", &z->hl.h, 1}, {"l", &z->hl.l, 1},
+        {"af", &z->af.w, 2}, {"bc", &z->bc.w, 2}, {"de", &z->de.w, 2}, {"hl", &z->hl.w, 2}, {"ix", &z->ix.w, 2}, {"iy", &z->iy.w, 2}, {"sp", &z->sp.w, 2}, {"pc", &z->pc, 2},
+        {"ixh", &z->ix.h, 1}, {"hx", &z->ix.h, 1}, {"ixl", &z->ix.l, 1}, {"lx", &z->ix.l, 1}, {"iyh", &z->iy.h, 1}, {"hy", &z->iy.h, 1}, {"iyl", &z->iy.l, 1}, {"ly", &z->iy.l, 1},
+        {"af'", &z->af2.w, 2}, {"bc'", &z->bc2.w, 2}, {"de'", &z->de2.w, 2}, {"hl'", &z->hl2.w, 2}, {"i", &z->i, 1}, {"r", &z->r, 1}, {"im", &z->im, 1},
+    };
+    for (size_t i = 0; i < sizeof t / sizeof t[0]; i++) if (!strcasecmp(n, t[i].n)) { *where = (uint16_t)((const uint8_t *)t[i].p - (const uint8_t *)z); *size = t[i].sz; return true; }
+    return false;
+}
+
+/* Is the text only numbers, operators and symbols (no registers, variables or functions)? Then it has one fixed value. */
+static bool constant_text(CPC *c, const char *s) {
+    for (const char *p = s; *p; ) {
+        if (is_id_start((unsigned char)*p) && !(p > s && isalnum((unsigned char)p[-1]))) {
+            char id[64]; size_t n = 0; while (is_id((unsigned char)*p) && n < sizeof id - 1) id[n++] = *p++; id[n] = 0;
+            const char *q = p; while (*q == ' ') q++;
+            int32_t v; uint16_t w; uint8_t sz;
+            if (*q == '(' || reg_ref(c, id, &w, &sz) || !dbg_symbol_lookup(c->dbg, id, &v)) return false;
+        } else if (isdigit((unsigned char)*p) || *p == '#' || *p == '&' || *p == '$' || *p == '%') {
+            while (isalnum((unsigned char)*p) || *p == '#' || *p == '&' || *p == '$' || *p == '%') p++;      /* a number, including 4000h and 0x4000 */
+        } else p++;
+    }
+    return true;
+}
+
+static void change_classify(CPC *c, DbgBreakpoint *b) {
+    char t[160]; size_t n = 0; for (const char *p = b->expr; *p && n < sizeof t - 1; p++) if (*p != ' ' && *p != '\t') t[n++] = *p; t[n] = 0;
+    b->ckind = 0; b->have_last = false;
+    uint16_t w; uint8_t sz;
+    if (reg_ref(c, t, &w, &sz)) { b->ckind = 1; b->cwhere = w; b->csize = sz; return; }
+    bool pk = !strncasecmp(t, "peek(", 5), wd = !strncasecmp(t, "word(", 5);
+    if ((pk || wd) && n > 6 && t[n - 1] == ')') {
+        char inner[160]; memcpy(inner, t + 5, n - 6); inner[n - 6] = 0;
+        int32_t v; char err[64];
+        if (constant_text(c, inner) && dbg_eval(c, inner, &v, err, sizeof err)) { b->ckind = pk ? 2 : 3; b->cwhere = (uint16_t)v; }
+    }
+}
+
+int dbg_add_change_bp(CPC *c, const char *expr, char *err, size_t errsize) {
+    Debugger *d = dbg_attach(c);
+    int32_t v; char e[128]; bool sv = d->ev_valid; d->ev_valid = true;
+    bool ok = expr && *expr && dbg_eval(c, expr, &v, e, sizeof e); d->ev_valid = sv;
+    if (!ok) { if (err && errsize) snprintf(err, errsize, "%s", expr && *expr ? e : "empty expression"); return -1; }
+    int i = alloc_bp(d); if (i < 0) { if (err && errsize) snprintf(err, errsize, "too many breakpoints"); return -1; }
+    DbgBreakpoint *b = &d->bp[i]; memset(b, 0, sizeof *b);
+    b->used = b->enabled = true; b->type = BP_CHANGE; snprintf(b->expr, sizeof b->expr, "%s", expr);
+    change_classify(c, b);
+    dbg_rebuild_watch(d); return i;
+}
+
+static bool change_value(CPC *c, DbgBreakpoint *b, int32_t *v) {
+    switch (b->ckind) {
+    case 1: { const uint8_t *p = (const uint8_t *)&c->z80 + b->cwhere; *v = b->csize == 1 ? *p : (int32_t)(p[0] | (p[1] << 8)); return true; }
+    case 2: *v = cpc_peek(c, b->cwhere); return true;
+    case 3: *v = cpc_peek(c, b->cwhere) | (cpc_peek(c, (uint16_t)(b->cwhere + 1)) << 8); return true;
+    default: { char err[64]; return dbg_eval(c, b->expr, v, err, sizeof err); }
+    }
+}
+
+void dbg_changes_rebase(CPC *c) {
+    Debugger *d = c->dbg; if (!d) return;
+    for (int i = 0; i < DBG_MAX_BP; i++) if (d->bp[i].used && d->bp[i].type == BP_CHANGE) d->bp[i].have_last = false;
+}
+
+static bool check_changes(CPC *c, Debugger *d) {
+    for (int i = 0; i < DBG_MAX_BP; i++) {
+        DbgBreakpoint *b = &d->bp[i];
+        if (!b->used || !b->enabled || b->type != BP_CHANGE) continue;
+        int32_t v; if (!change_value(c, b, &v)) continue;
+        if (!b->have_last) { b->last = v; b->have_last = true; continue; }
+        if (v == b->last) continue;
+        d->ev_addr = c->z80.pc; d->ev_value = (uint8_t)v; d->ev_prev = (uint8_t)b->last; d->ev_valid = true;
+        b->last = v;
+        if (bp_fires(c, d, i)) return true;
+    }
+    return false;
+}
+
 bool dbg_check_code(CPC *c) {
     Debugger *d = c->dbg;
     if (!d) return false;
     uint16_t pc = c->z80.pc;
     if (d->skip_once) { d->skip_once = false; return false; }
     if (d->temp_bp >= 0 && pc == d->temp_bp) { d->temp_bp = -1; d->hit = true; d->hit_index = -1; return true; }
+    if (d->nchange && d->active && !d->scanning && !d->quiet && check_changes(c, d)) return true;
     if (!d->active || !(d->watch[pc] & W_CODE)) return false;
     d->ev_addr = pc; d->ev_valid = true;
     for (int i = 0; i < DBG_MAX_BP; i++) {
@@ -325,6 +408,7 @@ bool dbg_check_code(CPC *c) {
 
 void dbg_mem_event(CPC *c, uint16_t addr, uint8_t value, bool write) {
     Debugger *d = c->dbg;
+    if (d && d->acc && !d->fetching && !d->scanning && !d->quiet) { if (write) d->acc->w[addr]++; else d->acc->r[addr]++; }
     if (!d || !d->active || d->hit) return;
     d->ev_addr = addr; d->ev_value = value; d->ev_prev = write ? c->wr_map[addr >> 14][addr & 0x3FFF] : value; d->ev_valid = true;
     for (int i = 0; i < DBG_MAX_BP; i++) {
@@ -359,12 +443,12 @@ void dbg_step_into(CPC *c) {
     d->hit = false;
 }
 
-static int insn_len(CPC *c, uint16_t pc) { char t[64]; return z80_disassemble(pc, (uint8_t (*)(void *, uint16_t))cpc_mem_read, c, t, sizeof t); }
+static int insn_len(CPC *c, uint16_t pc) { char t[64]; return z80_disassemble(pc, (uint8_t (*)(void *, uint16_t))cpc_mem_peek, c, t, sizeof t); }
 
 bool dbg_step_over(CPC *c) {
     Debugger *d = dbg_attach(c);
     uint16_t pc = c->z80.pc;
-    uint8_t op = cpc_mem_read(c, pc), op2 = cpc_mem_read(c, pc + 1);
+    uint8_t op = cpc_peek(c, pc), op2 = cpc_peek(c, pc + 1);
     bool call = op == 0xCD || (op & 0xC7) == 0xC4 || (op & 0xC7) == 0xC7;
     bool rep = op == 0xED && op2 >= 0xB0 && op2 <= 0xBB && (op2 & 4) == 0 && (op2 & 3) < 4 && op2 != 0xB4 && op2 != 0xB5 && op2 != 0xB6 && op2 != 0xB7;
     if (!call && !rep) { dbg_step_into(c); return false; }
@@ -474,6 +558,7 @@ uint8_t dbg_view_read(CPC *c, const DbgView *v, uint16_t addr) {
 }
 void dbg_view_write(CPC *c, const DbgView *v, uint16_t addr, uint8_t value) {
     if (c->recorder) cpc_record_taint(c, "memory was edited");
+    dbg_changes_rebase(c);
     uint8_t *rd[4], *wr[4]; view_maps(c, v, rd, wr);
     wr[addr >> 14][addr & 0x3FFF] = value;
 }

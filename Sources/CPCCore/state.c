@@ -19,7 +19,7 @@ struct CPCState {
 /* Fields of CPC that are NOT machine state: live pointers, host-side settings and debugger/recorder hooks.
  * They are zeroed in the saved image and kept from the live machine on restore. One list drives both. */
 #define LIVE_FIELDS(X) \
-    X(z80.ctx) X(z80.rd) X(z80.wr) X(z80.in) X(z80.out) X(z80.brk_enabled) X(z80.brk_hit) X(z80.turbo) \
+    X(z80.ctx) X(z80.rd) X(z80.fetch) X(z80.wr) X(z80.in) X(z80.out) X(z80.brk_enabled) X(z80.brk_hit) X(z80.turbo) \
     X(cfg) X(model) X(hw_rgb) \
     X(ram) X(ram_size) X(rom_lower) X(rom_upper) X(rom_multiface) X(cartridge) X(cartridge_banks) X(rd_map) X(wr_map) \
     X(frame) X(frame_done) X(frame_ready) X(audio) X(audio_cap) X(audio_w) X(audio_r) \

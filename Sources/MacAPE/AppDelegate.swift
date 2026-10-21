@@ -282,6 +282,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         main.window?.title = "MacAPE — " + URL(fileURLWithPath: path).lastPathComponent
     }
     @objc func debugStepBack(_ s: Any?) { let d = ensureDebugger(); d.show(); d.stepBack(s) }
+    @objc func debugShowProfiler(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showProfiler(s) }
+    @objc func debugShowAccessMap(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showAccessMap(s) }
     @objc func debugStepBackOver(_ s: Any?) { let d = ensureDebugger(); d.show(); d.stepBackOver(s) }
     @objc func debugReverseContinue(_ s: Any?) { let d = ensureDebugger(); d.show(); d.reverseContinue(s) }
     @objc func debugRunBackToCursor(_ s: Any?) { let d = ensureDebugger(); d.show(); d.reverseToCursor(s) }
@@ -422,6 +424,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             .separator(),
             item("Execution History…", #selector(debugShowHistory(_:))),
             item("Watch…", #selector(debugShowWatch(_:))), item("Log…", #selector(debugShowLog(_:))),
+            item("Profiler…", #selector(debugShowProfiler(_:))), item("Memory Access Map…", #selector(debugShowAccessMap(_:))),
             { let m = NSMenuItem(title: "Paused Screen", action: nil, keyEquivalent: ""); let sub = NSMenu(title: "Paused Screen")
               for (i, t) in ["Normal (last frame)", "Raster (beam position)", "Video Memory"].enumerated() { let it = NSMenuItem(title: t, action: #selector(debugScreenView(_:)), keyEquivalent: ""); it.tag = i; sub.addItem(it) }
               m.submenu = sub; return m }(),

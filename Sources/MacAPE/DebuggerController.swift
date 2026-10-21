@@ -41,6 +41,8 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     var symbolsWindow: SymbolsController?
     var historyWindow: HistoryController?
     var watchWindow: WatchController?
+    var profilerWindow: ProfilerController?
+    var accessMapWindow: AccessMapController?
     var logWindow: LogController?
     private let screenPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let beamLabel = makeLabel("")
@@ -313,14 +315,14 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     @objc func registerEdited(_ f: NSTextField) {
         guard let id = f.identifier?.rawValue, let r = Reg(rawValue: id) else { return }
         let (v, err) = model.eval(f.stringValue)
-        if let v = v { emu.noteUnreproducible("a register was edited"); emu.lock.lock(); r.set(&emu.cpc.pointee.z80, Int(v)); emu.lock.unlock() } else { NSSound.beep(); _ = err }
+        if let v = v { emu.noteUnreproducible("a register was edited"); emu.lock.lock(); r.set(&emu.cpc.pointee.z80, Int(v)); dbg_changes_rebase(emu.cpc); emu.lock.unlock() } else { NSSound.beep(); _ = err }
         refreshAll()
     }
     @objc func flagsEdited(_ f: NSTextField) {
         let t = f.stringValue.filter { $0 == "0" || $0 == "1" }
         guard t.count == 8, let v = UInt8(t, radix: 2) else { NSSound.beep(); refreshRegisters(); return }
         emu.noteUnreproducible("the flags were edited")
-        emu.lock.lock(); emu.cpc.pointee.z80.af.l = v; emu.lock.unlock(); refreshAll()
+        emu.lock.lock(); emu.cpc.pointee.z80.af.l = v; dbg_changes_rebase(emu.cpc); emu.lock.unlock(); refreshAll()
     }
     @objc func intsToggled(_ b: NSButton) {
         emu.noteUnreproducible("the interrupt flag was changed")
@@ -418,6 +420,8 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         flashTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: false) { [weak self] _ in self?.flashMessage = nil; self?.refreshAll() }
         refreshAll()
     }
+    @objc func showProfiler(_ s: Any?) { if profilerWindow == nil { profilerWindow = ProfilerController(debugger: self) }; profilerWindow?.show() }
+    @objc func showAccessMap(_ s: Any?) { if accessMapWindow == nil { accessMapWindow = AccessMapController(debugger: self) }; accessMapWindow?.show() }
     @objc func showWatch(_ s: Any?) { if watchWindow == nil { watchWindow = WatchController(debugger: self) }; watchWindow?.show() }
     @objc func showLog(_ s: Any?) { if logWindow == nil { logWindow = LogController(debugger: self) }; logWindow?.show() }
     @objc func addLogpoint(_ s: Any?) {
@@ -506,7 +510,7 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         menuItem(m, "Find…", #selector(findInPane(_:)), "f", .control); menuItem(m, "Find Again", #selector(findAgain(_:)), fkey(3)); m.addItem(.separator())
         menuItem(m, "Goto…", #selector(gotoAddress(_:)), "g", .control); menuItem(m, "Select Block…", #selector(selectBlock(_:))); m.addItem(.separator())
         menuItem(m, "Load…", #selector(loadData(_:)), fkey(5)); menuItem(m, "Save…", #selector(saveData(_:))); m.addItem(.separator())
-        menuItem(m, "Breakpoint on Read", #selector(memoryBreakRead(_:))); menuItem(m, "Breakpoint on Write", #selector(memoryBreakWrite(_:))); m.addItem(.separator())
+        menuItem(m, "Breakpoint on Read", #selector(memoryBreakRead(_:))); menuItem(m, "Breakpoint on Write", #selector(memoryBreakWrite(_:))); menuItem(m, "Break on Change", #selector(memoryBreakChange(_:))); m.addItem(.separator())
         if emu.replayActive { menuItem(m, "Who Wrote This? (Go Back)", #selector(memoryWhoWrote(_:))); menuItem(m, "Who Read This? (Go Back)", #selector(memoryWhoRead(_:))); m.addItem(.separator()) }
         menuItem(m, "Compare To…", #selector(compareTo(_:))); menuItem(m, "Fill…", #selector(fillMemory(_:))); menuItem(m, "Disassemble…", #selector(disassembleRange(_:))); m.addItem(.separator())
         menuItem(m, "Mark as Data", #selector(markData(_:))); menuItem(m, "Clear Data Area", #selector(clearData(_:)))
@@ -528,6 +532,15 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     }
     @objc func memoryBreakRead(_ s: Any?) { addMemoryBreak(read: true) }
     @objc func memoryBreakWrite(_ s: Any?) { addMemoryBreak(read: false) }
+    /// A write that actually changes the value (`value<>previous`), over the selected bytes.
+    @objc func memoryBreakChange(_ s: Any?) {
+        let r = memory.selection
+        emu.lock.lock()
+        let i = dbg_add_mem_bp(emu.cpc, UInt16(r.lowerBound), UInt16(r.upperBound), false, true)
+        if i >= 0 { _ = dbg_set_condition(emu.cpc, i, "value<>previous", 0) }
+        emu.lock.unlock()
+        refreshAll()
+    }
     private func addMemoryBreak(read: Bool) {
         let r = memory.selection
         emu.lock.lock(); _ = dbg_add_mem_bp(emu.cpc, UInt16(r.lowerBound), UInt16(r.upperBound), read, !read); emu.lock.unlock()

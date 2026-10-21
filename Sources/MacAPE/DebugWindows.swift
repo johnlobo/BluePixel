@@ -55,7 +55,7 @@ class TableWindowController: NSObject, NSTableViewDataSource, NSTableViewDelegat
 // MARK: - Breakpoints
 final class BreakpointsController: TableWindowController {
     let emu: Emulator; weak var debugger: DebuggerController?
-    private let segment = NSSegmentedControl(labels: ["Code", "Memory", "Input/Output"], trackingMode: .selectOne, target: nil, action: nil)
+    private let segment = NSSegmentedControl(labels: ["Code", "Memory", "Input/Output", "Change"], trackingMode: .selectOne, target: nil, action: nil)
     private var indices: [Int] = []
 
     init(emu: Emulator, debugger: DebuggerController) {
@@ -84,16 +84,17 @@ final class BreakpointsController: TableWindowController {
         var out: [[String]] = []; indices = []
         let list: [(Int, DbgBreakpoint)] = withBP { arr in (0..<Int(DBG_MAX_BP)).compactMap { arr[$0].used ? ($0, arr[$0]) : nil } }
         for (i, b) in list {
-            let group = b.type == BP_CODE ? 0 : (b.type == BP_IO ? 2 : 1)
+            let group = b.type == BP_CODE ? 0 : (b.type == BP_IO ? 2 : (b.type == BP_CHANGE ? 3 : 1))
             guard group == tab else { continue }
             indices.append(i)
             var addr: String
             switch b.type {
             case BP_CODE: addr = debugger?.model.describe(Int(b.start)) ?? String(format: "%04X", b.start)
             case BP_IO: addr = String(format: "%04X/%04X", b.port, b.mask)
+            case BP_CHANGE: addr = withUnsafePointer(to: b.expr) { $0.withMemoryRebound(to: CChar.self, capacity: 160) { String(cString: $0) } }
             default: addr = b.start == b.end ? String(format: "%04X", b.start) : String(format: "%04X-%04X", b.start, b.end)
             }
-            let type = b.type == BP_CODE ? "Code" : b.type == BP_MEM_READ ? "Read" : b.type == BP_MEM_WRITE ? "Write" : (b.on_in && b.on_out ? "In/Out" : b.on_in ? "In" : "Out")
+            let type = b.type == BP_CHANGE ? "Change" : b.type == BP_CODE ? "Code" : b.type == BP_MEM_READ ? "Read" : b.type == BP_MEM_WRITE ? "Write" : (b.on_in && b.on_out ? "In/Out" : b.on_in ? "In" : "Out")
             let cond = withUnsafePointer(to: b.cond) { $0.withMemoryRebound(to: CChar.self, capacity: 160) { String(cString: $0) } }
             let log = withUnsafePointer(to: b.log) { $0.withMemoryRebound(to: CChar.self, capacity: 160) { String(cString: $0) } }
             out.append([addr, log.isEmpty ? type : type + " (log)", b.pass_count > 0 ? "\(b.hits)/\(b.pass_count)" : "\(b.count)", cond, b.pass_count > 0 ? String(b.pass_count) : "", log])
@@ -133,7 +134,12 @@ final class BreakpointsController: TableWindowController {
             guard let s0 = rng.first ?? nil else { return }
             let e0 = rng.count > 1 ? (rng[1] ?? s0) : s0
             emu.lock.lock(); _ = dbg_add_mem_bp(emu.cpc, UInt16(truncatingIfNeeded: s0), UInt16(truncatingIfNeeded: e0), flags.isEmpty || flags.contains("r"), flags.isEmpty || flags.contains("w")); emu.lock.unlock()
-        default: addIO()
+        case 2: addIO()
+        default:
+            guard let t = promptText("Break on Change", "Stop when this changes — a register (A, HL…), peek(addr), word(addr) or any expression. Registers and fixed addresses are cheap; other expressions slow the emulation:", "A"), !t.isEmpty else { return }
+            var err = [CChar](repeating: 0, count: 128)
+            emu.lock.lock(); let i = dbg_add_change_bp(emu.cpc, t, &err, 128); emu.lock.unlock()
+            if i < 0 { NSSound.beep(); let a = NSAlert(); a.messageText = "Cannot watch this expression"; a.informativeText = String(cString: err); a.runModal() }
         }
         reload(); debugger?.refreshAll()
     }
@@ -167,7 +173,7 @@ final class BreakpointsController: TableWindowController {
             let f = line.split(separator: ";", omittingEmptySubsequences: false).map(String.init); guard f.count >= 9 else { continue }
             let t = f[0], a = UInt16(f[1], radix: 16) ?? 0, b = UInt16(f[2], radix: 16) ?? 0
             var idx: Int32 = -1
-            switch t { case "code": idx = dbg_add_code_bp(emu.cpc, a); case "read": idx = dbg_add_mem_bp(emu.cpc, a, b, true, false); case "write": idx = dbg_add_mem_bp(emu.cpc, a, b, false, true)
+            switch t { case "change": idx = dbg_add_change_bp(emu.cpc, f[1], nil, 0); case "code": idx = dbg_add_code_bp(emu.cpc, a); case "read": idx = dbg_add_mem_bp(emu.cpc, a, b, true, false); case "write": idx = dbg_add_mem_bp(emu.cpc, a, b, false, true)
             default: idx = dbg_add_io_bp(emu.cpc, UInt16(f[3], radix: 16) ?? 0, UInt16(f[4], radix: 16) ?? 0xFFFF, f[5] == "1", f[6] == "1") }
             if idx >= 0 {
                 _ = dbg_set_condition(emu.cpc, idx, f.count > 9 ? f[9] : "", Int32(f[8]) ?? 0)
@@ -181,10 +187,11 @@ final class BreakpointsController: TableWindowController {
         var out = ""
         let list: [DbgBreakpoint] = withBP { arr in (0..<Int(DBG_MAX_BP)).compactMap { arr[$0].used ? arr[$0] : nil } }
         for b in list {
-            let t = b.type == BP_CODE ? "code" : b.type == BP_MEM_READ ? "read" : b.type == BP_MEM_WRITE ? "write" : "io"
+            let t = b.type == BP_CHANGE ? "change" : b.type == BP_CODE ? "code" : b.type == BP_MEM_READ ? "read" : b.type == BP_MEM_WRITE ? "write" : "io"
             let cond = withUnsafePointer(to: b.cond) { $0.withMemoryRebound(to: CChar.self, capacity: 160) { String(cString: $0) } }
             let log = withUnsafePointer(to: b.log) { $0.withMemoryRebound(to: CChar.self, capacity: 160) { String(cString: $0) } }
-            out += "\(t);\(String(b.start, radix: 16));\(String(b.end, radix: 16));\(String(b.port, radix: 16));\(String(b.mask, radix: 16));\(b.on_in ? 1 : 0);\(b.on_out ? 1 : 0);1;\(b.pass_count);\(cond)" + (log.isEmpty ? "" : ";" + log) + "\n"
+            let expr = withUnsafePointer(to: b.expr) { $0.withMemoryRebound(to: CChar.self, capacity: 160) { String(cString: $0) } }
+            out += "\(t);\(b.type == BP_CHANGE ? expr : String(b.start, radix: 16));\(String(b.end, radix: 16));\(String(b.port, radix: 16));\(String(b.mask, radix: 16));\(b.on_in ? 1 : 0);\(b.on_out ? 1 : 0);1;\(b.pass_count);\(cond)" + (log.isEmpty ? "" : ";" + log) + "\n"
         }
         try? out.write(to: u, atomically: true, encoding: .utf8)
     }

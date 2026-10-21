@@ -23,9 +23,9 @@ void z80_reset(Z80 *z) {
     init_tables();
     uint8_t brk = z->brk_enabled, turbo = z->turbo;
     void *ctx = z->ctx;
-    typeof(z->rd) rd = z->rd; typeof(z->wr) wr = z->wr; typeof(z->in) in = z->in; typeof(z->out) out = z->out;
+    typeof(z->rd) rd = z->rd; typeof(z->fetch) fetch = z->fetch; typeof(z->wr) wr = z->wr; typeof(z->in) in = z->in; typeof(z->out) out = z->out;
     memset(z, 0, sizeof *z);
-    z->ctx = ctx; z->rd = rd; z->wr = wr; z->in = in; z->out = out;
+    z->ctx = ctx; z->rd = rd; z->fetch = fetch; z->wr = wr; z->in = in; z->out = out;
     z->brk_enabled = brk; z->turbo = turbo;
     z->af.w = 0xFFFF; z->sp.w = 0xFFFF; z->wz.w = 0; z->int_vector = 0xFF;
 }
@@ -35,7 +35,7 @@ void z80_reset(Z80 *z) {
 #define A z->af.h
 #define F z->af.l
 
-static inline uint8_t fetch8(Z80 *z) { uint8_t v = RD(z->pc); z->pc++; return v; }
+static inline uint8_t fetch8(Z80 *z) { uint8_t v = z->fetch(z->ctx, z->pc); z->pc++; return v; }
 static inline uint16_t fetch16(Z80 *z) { uint8_t l = fetch8(z); uint8_t h = fetch8(z); return (uint16_t)(l | (h << 8)); }
 static inline uint16_t rd16(Z80 *z, uint16_t a) { uint8_t l = RD(a); uint8_t h = RD(a + 1); return (uint16_t)(l | (h << 8)); }
 static inline void wr16(Z80 *z, uint16_t a, uint16_t v) { WR(a, v & 0xFF); WR(a + 1, v >> 8); }
