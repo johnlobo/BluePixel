@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <zlib.h>
 
 CPCDisc *dsk_new(void) { return calloc(1, sizeof(CPCDisc)); }
 
@@ -10,8 +11,80 @@ void dsk_track_clear(CPCTrack *t) {
     memset(t, 0, sizeof *t);
 }
 
+void dsk_track_copy(CPCTrack *dst, const CPCTrack *src) {
+    dsk_track_clear(dst);
+    *dst = *src;
+    for (int s = 0; s < DSK_MAX_SECTORS; s++) {
+        CPCSector *sec = &dst->sec[s];
+        if (s < src->nsectors && src->sec[s].data) { sec->data = malloc(sec->len ? sec->len : 1); memcpy(sec->data, src->sec[s].data, sec->len); }
+        else sec->data = NULL;
+    }
+}
+
+void dsk_touch(CPCDisc *d, const CPCTrack *t) {
+    ptrdiff_t i = t - &d->trk[0][0];
+    if (i < 0 || i >= DSK_MAX_TRACKS * 2) return;
+    CPCTrack **o = &d->orig[0][0] + i;
+    if (*o) return;
+    *o = calloc(1, sizeof **o); dsk_track_copy(*o, t);
+}
+
+void dsk_forget_origins(CPCDisc *d) {
+    for (int i = 0; i < DSK_MAX_TRACKS * 2; i++) {
+        CPCTrack **o = &d->orig[0][0] + i;
+        if (*o) { dsk_track_clear(*o); free(*o); *o = NULL; }
+    }
+}
+
+uint32_t dsk_content_crc(const CPCDisc *d) {
+    uLong crc = crc32(0L, Z_NULL, 0);
+    uint8_t g[2] = {(uint8_t)d->tracks, (uint8_t)d->sides}; crc = crc32(crc, g, 2);
+    for (int i = 0; i < DSK_MAX_TRACKS * 2; i++) {
+        const CPCTrack *t = &d->trk[0][0] + i;
+        if (!t->nsectors) continue;
+        uint8_t h[5] = {(uint8_t)i, t->size_code, t->gap3, t->filler, (uint8_t)t->nsectors}; crc = crc32(crc, h, 5);
+        for (int s = 0; s < t->nsectors; s++) {
+            const CPCSector *c = &t->sec[s];
+            uint8_t m[8] = {c->c, c->h, c->r, c->n, c->st1, c->st2, (uint8_t)c->len, (uint8_t)(c->len >> 8)};
+            crc = crc32(crc, m, 8);
+            if (c->data && c->len) crc = crc32(crc, c->data, c->len);
+        }
+    }
+    return (uint32_t)crc;
+}
+
+size_t dsk_track_pack_size(const CPCTrack *t) {
+    size_t n = 4;
+    for (int s = 0; s < t->nsectors; s++) n += 8 + (t->sec[s].data ? t->sec[s].len : 0);
+    return n;
+}
+uint8_t *dsk_track_pack(const CPCTrack *t, uint8_t *o) {
+    *o++ = t->size_code; *o++ = t->gap3; *o++ = t->filler; *o++ = (uint8_t)t->nsectors;
+    for (int s = 0; s < t->nsectors; s++) {
+        const CPCSector *c = &t->sec[s];
+        uint16_t len = c->data ? c->len : 0;               /* a sector without data is stored empty */
+        *o++ = c->c; *o++ = c->h; *o++ = c->r; *o++ = c->n; *o++ = c->st1; *o++ = c->st2; *o++ = (uint8_t)len; *o++ = (uint8_t)(len >> 8);
+        if (len) { memcpy(o, c->data, len); o += len; }
+    }
+    return o;
+}
+const uint8_t *dsk_track_unpack(CPCTrack *t, const uint8_t *p, const uint8_t *end) {
+    if (end - p < 4 || p[3] > DSK_MAX_SECTORS) return NULL;
+    t->size_code = p[0]; t->gap3 = p[1]; t->filler = p[2]; int ns = p[3]; p += 4;
+    for (int s = 0; s < ns; s++) {
+        if (end - p < 8) { dsk_track_clear(t); return NULL; }
+        CPCSector *c = &t->sec[s];
+        c->c = p[0]; c->h = p[1]; c->r = p[2]; c->n = p[3]; c->st1 = p[4]; c->st2 = p[5]; c->len = (uint16_t)(p[6] | (p[7] << 8)); p += 8;
+        if ((size_t)(end - p) < c->len) { t->nsectors = s; dsk_track_clear(t); return NULL; }
+        c->data = malloc(c->len ? c->len : 1); memcpy(c->data, p, c->len); p += c->len;
+        t->nsectors = s + 1;
+    }
+    return p;
+}
+
 void dsk_free(CPCDisc *d) {
     if (!d) return;
+    dsk_forget_origins(d);
     for (int t = 0; t < DSK_MAX_TRACKS; t++) for (int h = 0; h < 2; h++) dsk_track_clear(&d->trk[t][h]);
     free(d);
 }
@@ -167,6 +240,10 @@ bool dsk_is_cpm_boot(const CPCDisc *d) { return find_sector(d, 0, 0x41) != NULL;
 CPCDisc *dsk_clone(const CPCDisc *d) {
     CPCDisc *c = malloc(sizeof *c); if (!c) return NULL;
     memcpy(c, d, sizeof *c);
+    for (int i = 0; i < DSK_MAX_TRACKS * 2; i++) {
+        CPCTrack **o = &c->orig[0][0] + i;
+        if (*o) { const CPCTrack *src = *o; *o = calloc(1, sizeof **o); dsk_track_copy(*o, src); }
+    }
     for (int t = 0; t < DSK_MAX_TRACKS; t++) for (int h = 0; h < 2; h++) {
         CPCTrack *k = &c->trk[t][h];
         for (int s = 0; s < DSK_MAX_SECTORS; s++) {

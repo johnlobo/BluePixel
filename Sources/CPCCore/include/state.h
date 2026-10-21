@@ -10,7 +10,7 @@
 typedef struct CPCState CPCState;
 
 enum {
-    CPC_STATE_HAZARD_DISC = 1,     /* a disc was written since the state was taken (its contents differ) */
+    CPC_STATE_HAZARD_DISC = 1,     /* a drive has a disc now that had none when the state was taken, or the other way round */
     CPC_STATE_HAZARD_TAPE = 2,     /* the inserted tape is not the one the state was taken with */
     CPC_STATE_HAZARD_CONFIG = 4,   /* hardware configuration (model, RAM, CRTC type...) differs */
 };

@@ -100,12 +100,16 @@ extension Emulator {
         }
         var warnings: [String] = []
         let drives = obj["drives"] as? [Any] ?? []
-        for i in 0..<min(4, drives.count) {
-            guard let d = drives[i] as? [String: Any], let path = d["path"] as? String, let want = d["crc"] as? Int else { continue }
-            let have = discPaths[i].isEmpty ? nil : FileManager.default.contents(atPath: discPaths[i]).map { Int(crc($0)) }
-            if have == want { continue }
-            if let data = FileManager.default.contents(atPath: path), Int(crc(data)) == want, insertDisc(drive: i, url: URL(fileURLWithPath: path)) { continue }
-            warnings.append("Drive \(["A", "B", "C", "D"][i]): the session used \((path as NSString).lastPathComponent), which is not what is inserted.")
+        for i in 0..<4 {
+            if cpc_recording_disc_matches(rec, Int32(i), discs[i]) { continue }
+            // Not what is inserted: try the file the session used (it may have been saved after the session; the writes are undone on playback).
+            if i < drives.count, let d = drives[i] as? [String: Any], let path = d["path"] as? String, let disc = dsk_load_file(path) {
+                let ok = cpc_recording_disc_matches(rec, Int32(i), disc)
+                dsk_free(disc)
+                if ok, insertDisc(drive: i, url: URL(fileURLWithPath: path)) { continue }
+            }
+            let name = ((drives.count > i ? (drives[i] as? [String: Any])?["path"] as? String : nil).map { ($0 as NSString).lastPathComponent }) ?? "another disc"
+            warnings.append("Drive \(["A", "B", "C", "D"][i]): the session used \(name), which is not what is inserted.")
         }
         for (k, v) in (obj["roms"] as? [String: String] ?? [:]) where settings.string("ROMS", k) != v {
             warnings.append("ROM \(k): the session used \(v), now \(settings.string("ROMS", k).isEmpty ? "none" : settings.string("ROMS", k)).")
@@ -123,7 +127,6 @@ extension Emulator {
         guard cpc_player_begin(cpc, player, &hz) else { cpc_player_free(player); lock.unlock(); return nil }
         replayRecording = rec; replayPlayer = player; replayEndNotified = false; replayActive = true
         var notes: [String] = []
-        if hz & 1 != 0 { notes.append("A disc was written to since the recording started, so its contents may differ.") }
         if hz & 2 != 0 { notes.append("The inserted tape is not the one used in the recording.") }
         if hz & 4 != 0 { notes.append("The machine configuration (model, memory, CRTC...) differs from the recording.") }
         paused = false

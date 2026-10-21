@@ -26,6 +26,9 @@ typedef struct CPCDisc {
     bool extended, dirty, write_protect, temp_writes;
     uint32_t writes;       /* sectors written/formatted by the emulated FDC since the image was loaded (never reset) */
     CPCTrack trk[DSK_MAX_TRACKS][2];
+    /* Copy-on-write originals: the first time the emulated FDC changes a track, its previous content is kept here.
+     * Savestates embed the tracks that have one, so a session can go back and forth across disc writes. */
+    CPCTrack *orig[DSK_MAX_TRACKS][2];
 } CPCDisc;
 
 typedef enum { DSK_FORMAT_DATA, DSK_FORMAT_SYSTEM, DSK_FORMAT_IBM } DskFormat;
@@ -39,6 +42,14 @@ void dsk_free(CPCDisc *d);
 CPCDisc *dsk_clone(const CPCDisc *d);        /* deep copy (sector data included) */
 void dsk_format(CPCDisc *d, DskFormat f, int tracks, int sides);
 void dsk_track_clear(CPCTrack *t);
+void dsk_track_copy(CPCTrack *dst, const CPCTrack *src);   /* deep copy; dst is cleared first */
+void dsk_touch(CPCDisc *d, const CPCTrack *t);              /* t belongs to d: remember its content before it changes */
+void dsk_forget_origins(CPCDisc *d);                        /* the current content becomes the reference */
+uint32_t dsk_content_crc(const CPCDisc *d);                 /* geometry + sector ids and data; independent of the file format */
+/* Compact byte form of one track, for savestates and recordings. */
+size_t dsk_track_pack_size(const CPCTrack *t);
+uint8_t *dsk_track_pack(const CPCTrack *t, uint8_t *out);   /* returns the end of what it wrote */
+const uint8_t *dsk_track_unpack(CPCTrack *t, const uint8_t *p, const uint8_t *end);   /* t must be empty; NULL: malformed (t left empty) */
 int dsk_sector_size(const CPCSector *s);
 
 typedef struct { char name[9], ext[4]; uint8_t user; bool system, read_only; } DskFile;

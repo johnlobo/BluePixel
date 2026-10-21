@@ -35,6 +35,9 @@ const char *cpc_recording_taint(const CPCRecording *r);     /* why it ended earl
 const char *cpc_record_cut_reason(const CPC *c);            /* non-NULL: a recording was cut short and waits for cpc_record_stop */
 void cpc_recording_set_meta(CPCRecording *r, const char *meta);
 const char *cpc_recording_meta(const CPCRecording *r);
+/* Is `d` the disc that was in drive `unit` when recording began (always true when the drive was empty)? Tracks the session wrote to
+ * are compared as they were at the start, so a disc saved after the session still matches. */
+bool cpc_recording_disc_matches(const CPCRecording *r, int unit, const CPCDisc *d);
 void cpc_recording_free(CPCRecording *r);
 uint64_t cpc_recording_frames(const CPCRecording *r);       /* length in frames */
 uint64_t cpc_recording_events(const CPCRecording *r);

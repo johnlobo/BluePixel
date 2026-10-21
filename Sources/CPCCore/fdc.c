@@ -169,6 +169,7 @@ static void sector_done(FDC *f) {
     CPCSector *s = f->cur;
     bool stop = (f->st1 & 0x20) || (f->st2 & 0x40);
     if (f->write_mode) {
+        dsk_touch(f->disc[f->unit], f->curtrk);
         free(s->data); int len = f->buf_len; s->data = malloc(len); memcpy(s->data, f->buf, len); s->len = len;
         if (f->deleted_cmd) s->st2 |= 0x40; else s->st2 &= ~0x40;
         f->disc[f->unit]->dirty = true; f->disc[f->unit]->writes++;
@@ -237,6 +238,7 @@ static void do_command(FDC *f) {
         if (d->write_protect && !d->temp_writes) { end_rw(f, 0x40, 0x02, 0, 0, 0, 0, f->fmt_n); break; }
         CPCTrack *t = cur_track(f, f->unit, f->head);
         if (!t) { end_rw(f, 0x40, 0x01, 0, 0, 0, 0, f->fmt_n); break; }
+        dsk_touch(d, t);
         dsk_track_clear(t);
         t->size_code = f->fmt_n; t->gap3 = f->fmt_gap; t->filler = f->fmt_filler; t->nsectors = f->fmt_sc > 32 ? 32 : f->fmt_sc;
         f->fmt_track = t; f->fmt_count = 0; f->fmt_id_pos = 0;

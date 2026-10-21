@@ -319,7 +319,7 @@ extension Emulator {
 
     /// Writes a modified disc image back to its file.
     func commitDisc(drive: Int) {
-        guard let d = discs[drive], d.pointee.dirty, !d.pointee.temp_writes, !discPaths[drive].isEmpty else { return }
+        guard !replayActive, let d = discs[drive], d.pointee.dirty, !d.pointee.temp_writes, !discPaths[drive].isEmpty else { return }   // a replay never writes the user's image files
         _ = dsk_save_file(d, discPaths[drive])
     }
     func commitAllDiscs() { for i in 0..<4 { commitDisc(drive: i) } }

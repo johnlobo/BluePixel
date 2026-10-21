@@ -95,6 +95,11 @@ controls blank (tab strips, segmented controls); use `screencapture` when the re
   state are listed once in `LIVE_FIELDS` in `state.c` (zeroed on save, kept on restore) — **a new pointer or host
   setting in `struct CPC` must be added there**, or the state hash and restores break. Padding bytes are part of the
   hash; `rectest` step 0 checks two independent machines hash equal.
+- **Disc writes in sessions:** the first FDC write to a track keeps a copy (`CPCDisc.orig`, `dsk_touch`); a state embeds
+  the tracks that have one (geometry too), restoring puts tracks back from `orig` if the state lacks them. Recording
+  start clears `orig`; stop/taint stores the originals as pre-images in the file; `cpc_player_begin` applies them first
+  (so the disc ends up as at record start, whatever happened to it since) and `cpc_recording_disc_matches` compares by
+  `dsk_content_crc`. A replay must never commit the user's image (`commitDisc` skips while `replayActive`).
 - **Replay determinism rules:** host inputs go through `replay_input` (logged with the emulated µs, ignored while a
   replay runs); the `_raw` variants bypass it. Per-frame peripherals (auto-type, AMX) tick at the frame flyback, not
   on entry to `cpc_run_frame`, because the debugger slices execution. Keyframes/hashes are taken in
@@ -129,8 +134,7 @@ controls blank (tab strips, segmented controls); use `screencapture` when the re
 
 Session record/playback: core, File menu, the transport bar (`Transport.swift`) and reverse debugging
 (`ReverseDebug.swift`: Step Back ⌥F7, Reverse Continue ⌥F9, Run Back to Cursor ⌥F4, "Who Wrote/Read This?" in the memory
-menu) are done; still to do: disc writes during a recording (the disc contents are not part of the state; hazards are
-reported), reverse Step Over, and a way to mark moments on the time line. Integrated Maxam-compatible assembler
+menu) are done, and so are disc writes during a recording; still to do: reverse Step Over and a way to mark moments on the time line. Integrated Maxam-compatible assembler
 (menu item says "Not available yet"), disc/sector editor, Format Disc, Flip Disc, AVI/WAV/YM recording, Symbiface II (IDE/RTC/PS2 mouse), 4 MB Yarek RAM, printer, ZIP/RAR,
 tape CSV, DSC/HDR discs, gamepad joystick. Debugger ideas not built: profiler, DeZog/VS Code protocol, rewind,
 "who wrote this byte", memory access map, AY channel viewer, break on change. A web (WebAssembly) build was discussed:

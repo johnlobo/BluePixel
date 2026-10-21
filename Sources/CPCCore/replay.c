@@ -19,7 +19,12 @@ struct CPCRecording {
     Check *chk; size_t nchk, chk_cap;
     char taint[96];
     char *meta;                          /* free-form description of the media/config (set by the frontend) */
+    /* Discs: content CRC of each drive when recording began, and the content (at that moment) of every track the
+     * emulated FDC changed afterwards, so that a replay can start from the same discs whatever happened to them since. */
+    uint8_t disc_has[4]; uint32_t disc_crc[4];
+    struct Pre { uint32_t unit, idx; CPCTrack t; } *pre; size_t npre;
 };
+typedef struct Pre Pre;
 
 typedef struct { CPCState *s; size_t next; bool owned; } Keyframe;
 
@@ -52,6 +57,11 @@ bool replay_input(CPC *c, int type, int a, int b, int d, const char *text) {
 bool cpc_record_start(CPC *c) {
     if (c->recorder || c->player) return false;
     CPCRecording *r = calloc(1, sizeof *r);
+    for (int i = 0; i < 4; i++) {
+        CPCDisc *d = fdc_disc(c->fdc, i); if (!d) continue;
+        dsk_forget_origins(d);                         /* from now on, orig[] = what the disc was when recording began */
+        r->disc_has[i] = 1; r->disc_crc[i] = dsk_content_crc(d);
+    }
     r->start = cpc_state_save(c);
     if (!r->start) { free(r); return false; }
     r->start_frames = c->frames; r->start_cycles = c->cycles;
@@ -59,10 +69,22 @@ bool cpc_record_start(CPC *c) {
     return true;
 }
 
+static void collect_preimages(CPC *c, CPCRecording *r) {
+    for (int i = 0; i < 4; i++) {
+        const CPCDisc *d = fdc_disc(c->fdc, i); if (!d) continue;
+        for (int k = 0; k < DSK_MAX_TRACKS * 2; k++) {
+            const CPCTrack *o = *(&d->orig[0][0] + k); if (!o) continue;
+            r->pre = realloc(r->pre, (r->npre + 1) * sizeof *r->pre);
+            Pre *p = &r->pre[r->npre++]; p->unit = (uint32_t)i; p->idx = (uint32_t)k; memset(&p->t, 0, sizeof p->t); dsk_track_copy(&p->t, o);
+        }
+    }
+}
+
 CPCRecording *cpc_record_stop(CPC *c) {
     CPCRecording *r = c->recorder;
     if (!r) { r = c->stopped_recording; c->stopped_recording = NULL; return r; }   /* cut short by a taint */
     r->end_frames = c->frames; r->end_cycles = c->cycles; c->recorder = NULL;
+    collect_preimages(c, r);
     return r;
 }
 const char *cpc_record_cut_reason(const CPC *c) { return c->stopped_recording ? c->stopped_recording->taint : NULL; }
@@ -76,6 +98,7 @@ void cpc_record_taint(CPC *c, const char *reason) {
     snprintf(r->taint, sizeof r->taint, "%s", reason);
     r->end_frames = c->frames; r->end_cycles = c->cycles;
     c->recorder = NULL;
+    collect_preimages(c, r);
     cpc_recording_free(c->stopped_recording);              /* an earlier uncollected one is dropped */
     c->stopped_recording = r;
 }
@@ -85,6 +108,8 @@ uint64_t cpc_recording_events(const CPCRecording *r) { return r->nev; }
 
 void cpc_recording_free(CPCRecording *r) {
     if (!r) return;
+    for (size_t i = 0; i < r->npre; i++) dsk_track_clear(&r->pre[i].t);
+    free(r->pre);
     cpc_state_free(r->start); free(r->ev); free(r->pool); free(r->chk); free(r->meta); free(r);
 }
 
@@ -151,9 +176,30 @@ static void keys_clear(CPCPlayer *p) {
 }
 void cpc_player_free(CPCPlayer *p) { if (!p) return; keys_clear(p); free(p); }
 
+/* Sets the tracks the recording changed back to what they were when it began; that becomes the reference. */
+static void apply_preimages(CPC *c, const CPCRecording *r) {
+    for (size_t i = 0; i < r->npre; i++) {
+        CPCDisc *d = fdc_disc(c->fdc, (int)r->pre[i].unit); if (!d) continue;
+        dsk_track_copy(&d->trk[0][0] + r->pre[i].idx, &r->pre[i].t);
+    }
+    for (int i = 0; i < 4; i++) { CPCDisc *d = fdc_disc(c->fdc, i); if (d) dsk_forget_origins(d); }
+}
+
+bool cpc_recording_disc_matches(const CPCRecording *r, int unit, const CPCDisc *d) {
+    unit &= 3;
+    if (!r->disc_has[unit]) return true;               /* nothing recorded for this drive: anything goes */
+    if (!d) return false;
+    CPCDisc *copy = dsk_clone(d);
+    for (size_t i = 0; i < r->npre; i++) if ((int)r->pre[i].unit == unit) dsk_track_copy(&copy->trk[0][0] + r->pre[i].idx, &r->pre[i].t);
+    bool same = dsk_content_crc(copy) == r->disc_crc[unit];
+    dsk_free(copy);
+    return same;
+}
+
 bool cpc_player_begin(CPC *c, CPCPlayer *p, unsigned *hazards) {
     if (c->recorder || !p->rec->start) return false;
     c->player = NULL;
+    apply_preimages(c, p->rec);
     if (!cpc_state_restore(c, p->rec->start, hazards)) return false;
     keys_clear(p);
     p->nkeys = 16; p->keys = calloc(p->nkeys, sizeof *p->keys);
@@ -388,7 +434,7 @@ static void o_u32(Out *o, uint32_t v) { o_put(o, &v, 4); }
 static void o_u64(Out *o, uint64_t v) { o_put(o, &v, 8); }
 
 #define REC_MAGIC 0x52435043u        /* "CPCR" */
-#define REC_VERSION 1u
+#define REC_VERSION 2u
 
 uint8_t *cpc_recording_serialize(const CPCRecording *r, size_t *size) {
     Out o = {0};
@@ -402,6 +448,12 @@ uint8_t *cpc_recording_serialize(const CPCRecording *r, size_t *size) {
     o_u32(&o, (uint32_t)r->pool_n); o_put(&o, r->pool, r->pool_n);
     o_u32(&o, (uint32_t)r->nchk);
     for (size_t i = 0; i < r->nchk; i++) { o_u32(&o, r->chk[i].frame); o_u64(&o, r->chk[i].hash); }
+    for (int i = 0; i < 4; i++) { o_u32(&o, r->disc_has[i]); o_u32(&o, r->disc_crc[i]); }
+    o_u32(&o, (uint32_t)r->npre);
+    for (size_t i = 0; i < r->npre; i++) {
+        const Pre *p = &r->pre[i]; size_t sz = dsk_track_pack_size(&p->t); uint8_t *b = malloc(sz); dsk_track_pack(&p->t, b);
+        o_u32(&o, p->unit); o_u32(&o, p->idx); o_u32(&o, (uint32_t)sz); o_put(&o, b, sz); free(b);
+    }
     *size = o.n; return o.p;
 }
 
@@ -433,6 +485,16 @@ CPCRecording *cpc_recording_deserialize(const uint8_t *data, size_t size) {
         r->chk = malloc((nc ? nc : 1) * sizeof *r->chk); r->chk_cap = nc ? nc : 1;
         for (uint32_t k = 0; k < nc; k++) { r->chk[r->nchk].frame = i_u32(&in); r->chk[r->nchk].hash = i_u64(&in); r->nchk++; }
     } else in.bad = true;
+    for (int i = 0; i < 4; i++) { r->disc_has[i] = i_u32(&in) != 0; r->disc_crc[i] = i_u32(&in); }
+    uint32_t np = i_u32(&in);
+    for (uint32_t k = 0; !in.bad && k < np; k++) {
+        uint32_t unit = i_u32(&in), idx = i_u32(&in), sz = i_u32(&in); const uint8_t *b = i_take(&in, sz);
+        if (in.bad || unit > 3 || idx >= DSK_MAX_TRACKS * 2) { in.bad = true; break; }
+        r->pre = realloc(r->pre, (r->npre + 1) * sizeof *r->pre);
+        Pre *pp = &r->pre[r->npre]; pp->unit = unit; pp->idx = idx; memset(&pp->t, 0, sizeof pp->t);
+        if (!dsk_track_unpack(&pp->t, b, b + sz)) { in.bad = true; break; }
+        r->npre++;
+    }
     /* event text offsets must point inside the pool */
     for (size_t k = 0; !in.bad && k < r->nev; k++) if (r->ev[k].text && (r->ev[k].text > r->pool_n || r->pool[r->pool_n - 1] != 0)) in.bad = true;
     if (in.bad || !r->start) { cpc_recording_free(r); return NULL; }

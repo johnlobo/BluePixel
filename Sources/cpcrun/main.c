@@ -542,15 +542,71 @@ static int run_rectest(const char *roms, const char *disc) {
     cpc_player_end(b); cpc_key(b, CPCK_A, true); cpc_run_frame(b);
     CHECK(!cpc_player_active(b) && b->kbd[CPCK_A >> 3] != 0xFF, "after leaving the replay the machine takes input again");
     cpc_player_free(p); cpc_recording_free(rec); cpc_destroy(a); cpc_destroy(b);
-    /* disc writes must be reported as a hazard (the contents of the disc are not part of the state) */
-    { CPC *a = script_boot(roms, disc); for (int i = 0; i < 300; i++) script_frame(a, i);
-      CPCState *s = cpc_state_save(a); unsigned hz = 0;
-      CHECK(cpc_state_restore(a, s, &hz) && hz == 0, "no hazard when the disc is untouched");
-      fdc_disc(a->fdc, 0)->writes++;
-      CHECK(cpc_state_restore(a, s, &hz) && (hz & CPC_STATE_HAZARD_DISC), "a disc written since the state is reported as a hazard");
-      CPCDisc *gone = fdc_disc(a->fdc, 0); fdc_insert(a->fdc, 0, NULL);
-      CHECK(cpc_state_restore(a, s, &hz) && (hz & CPC_STATE_HAZARD_DISC), "a missing disc is reported as a hazard");
-      fdc_insert(a->fdc, 0, gone); cpc_state_free(s); cpc_destroy(a); }
+    printf("%d failure(s)\n", fails);
+    return fails ? 1 : 0;
+}
+
+
+/* Sessions that write to the disc: the written tracks travel with the states, replay starts from the recorded disc. */
+static int run_disctest(const char *roms, const char *disc) {
+    int fails = 0;
+    #define CHECK(cond, msg) do { if (!(cond)) { printf("FAIL: %s\n", msg); fails++; } else printf("ok: %s\n", msg); } while (0)
+    enum { START = 120, N = 700 };
+    static uint64_t href[N + 1], cref[N + 1];
+    CPC *a = script_boot(roms, disc);
+    for (int i = 0; i < START; i++) cpc_run_frame(a);
+    CPCDisc *da = fdc_disc(a->fdc, 0);
+    uint32_t crc0 = dsk_content_crc(da);
+    CHECK(cpc_record_start(a), "recording starts");
+    uint64_t base = a->frames; href[0] = cpc_state_hash(a); cref[0] = dsk_content_crc(da);
+    cpc_autotype(a, "openout\"t.tmp\":print#9,\"hello disc\":closeout\n");
+    for (int i = 0; i < N; i++) { cpc_run_frame(a); href[i + 1] = cpc_state_hash(a); cref[i + 1] = dsk_content_crc(da); }
+    CPCRecording *rec = cpc_record_stop(a);
+    CHECK(rec && !cpc_recording_taint(rec), "the recording is clean although the disc was written");
+    uint32_t crc1 = dsk_content_crc(da);
+    CHECK(da->writes > 0 && crc1 != crc0, "the program wrote a file on the disc");
+    CHECK(cpc_recording_disc_matches(rec, 0, da), "the disc after the session still matches the recording");
+    size_t fn; uint8_t *file = cpc_recording_serialize(rec, &fn); CPCRecording *rec2 = cpc_recording_deserialize(file, fn); free(file);
+    CHECK(rec2 != NULL, "a recording with disc pre-images survives the file round trip");
+    cpc_recording_free(rec); rec = rec2;
+    /* replay on the machine whose disc already holds the written file */
+    CPCPlayer *p = cpc_player_create(rec); unsigned hz = 99;
+    CHECK(cpc_player_begin(a, p, &hz) && hz == 0, "replay begins on the already written disc");
+    CHECK(dsk_content_crc(da) == crc0, "the disc is put back as it was when recording began");
+    int bad = -1;
+    for (int n = 1; n <= N && bad < 0; n++) { cpc_run_frame(a); if (cpc_state_hash(a) != href[n] || dsk_content_crc(da) != cref[n]) bad = n; }
+    CHECK(bad < 0, "forward replay reproduces the state and the disc at every frame");
+    if (bad >= 0) printf("  first mismatch at frame %d\n", bad);
+    uint64_t df; CHECK(!cpc_player_desync(a, &df), "no desync reported");
+    /* seeks across the write, forwards and backwards */
+    srand(7); int sbad = 0;
+    for (int k = 0; k < 40; k++) {
+        int f = rand() % (N + 1);
+        cpc_player_seek(a, (uint64_t)f);
+        if (cpc_state_hash(a) != href[f] || dsk_content_crc(da) != cref[f]) { sbad++; printf("  seek %d: hash %s disc %s\n", f, cpc_state_hash(a) == href[f] ? "ok" : "BAD", dsk_content_crc(da) == cref[f] ? "ok" : "BAD"); }
+    }
+    CHECK(!sbad, "40 random seeks restore the exact state and the exact disc");
+    cpc_player_seek(a, 0);
+    CHECK(dsk_content_crc(da) == crc0, "seeking to the start undoes the disc writes");
+    /* the clone used for indexing ends with the same disc */
+    { CPC *cl = cpc_clone_machine(a); CPCPlayer *cp = cpc_player_create(rec); unsigned h2;
+      CHECK(cpc_player_begin(cl, cp, &h2), "a clone starts the replay");
+      while (!cpc_player_finished(cl)) cpc_run_frame(cl);
+      CHECK(cpc_state_hash(cl) == href[N] && dsk_content_crc(fdc_disc(cl->fdc, 0)) == cref[N], "the clone reaches the same state and disc");
+      cpc_player_free(cp); cpc_clone_free(cl); }
+    /* a pristine copy of the disc matches too and replays the same */
+    { CPC *b = script_boot(roms, disc);
+      CHECK(cpc_recording_disc_matches(rec, 0, fdc_disc(b->fdc, 0)), "the pristine disc matches the recording");
+      for (int i = 0; i < 300; i++) cpc_run_frame(b);
+      CPCPlayer *pb = cpc_player_create(rec);
+      CHECK(cpc_player_begin(b, pb, &hz), "replay begins on a fresh machine");
+      while (!cpc_player_finished(b)) cpc_run_frame(b);
+      CHECK(cpc_state_hash(b) == href[N], "a fresh machine ends in the same state");
+      cpc_player_free(pb); cpc_destroy(b); }
+    /* taking control keeps the disc as it is at that point */
+    cpc_player_seek(a, 400); uint32_t cut = dsk_content_crc(da); cpc_player_end(a);
+    CHECK(dsk_content_crc(da) == cut, "leaving the replay leaves the disc as it was");
+    cpc_player_free(p); cpc_recording_free(rec); cpc_destroy(a);
     printf("%d failure(s)\n", fails);
     return fails ? 1 : 0;
 }
@@ -667,6 +723,7 @@ int main(int argc, char **argv) {
     if (argc >= 3 && !strcmp(argv[1], "mftest")) return run_mftest(argv[2]);
     if (argc >= 3 && !strcmp(argv[1], "steptest")) return run_steptest(argv[2], argc >= 4 ? argv[3] : NULL);
     if (argc >= 4 && !strcmp(argv[1], "logtest")) return run_logtest(argv[2], argv[3]);
+    if (argc >= 4 && !strcmp(argv[1], "disctest")) return run_disctest(argv[2], argv[3]);
     if (argc >= 4 && !strcmp(argv[1], "rectest")) return run_rectest(argv[2], argv[3]);
     if (argc >= 4 && !strcmp(argv[1], "statetest")) return run_statetest(argv[2], argv[3]);
     if (argc >= 3 && !strcmp(argv[1], "amxtest")) return run_amxtest(argv[2]);

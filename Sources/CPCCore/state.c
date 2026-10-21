@@ -2,12 +2,13 @@
 #include <stdio.h>
 #include "fdc.h"
 #include "tape.h"
+#include "dsk.h"
 #include <stdlib.h>
 #include <string.h>
 #include <zlib.h>
 
 #define STATE_MAGIC 0x53435043u        /* "CPCS" */
-#define STATE_VERSION 1u
+#define STATE_VERSION 2u
 
 struct CPCState {
     uint32_t magic, version, cpc_size, raw_size, zsize;
@@ -69,6 +70,24 @@ static void keep_live(CPC *dst, const CPC *live) {
 #undef X
 }
 
+/* Discs: geometry and every track the emulated FDC has changed since the reference point (CPCDisc.orig), so that
+ * a state can be restored after later disc writes, and a hash notices a difference in what was written. */
+static void put_discs(Sink *s, CPC *c) {
+    for (int i = 0; i < 4; i++) {
+        const CPCDisc *d = fdc_disc(c->fdc, i);
+        put_u32(s, d ? 1 : 0); if (!d) continue;
+        put_u32(s, (uint32_t)d->tracks); put_u32(s, (uint32_t)d->sides);
+        uint32_t n = 0; for (int k = 0; k < DSK_MAX_TRACKS * 2; k++) if (*(&d->orig[0][0] + k)) n++;
+        put_u32(s, n);
+        for (int k = 0; k < DSK_MAX_TRACKS * 2; k++) {
+            if (!*(&d->orig[0][0] + k)) continue;
+            const CPCTrack *t = &d->trk[0][0] + k;
+            size_t sz = dsk_track_pack_size(t); uint8_t *b = malloc(sz);
+            dsk_track_pack(t, b); put_u32(s, (uint32_t)k); put_u32(s, (uint32_t)sz); put(s, b, sz); free(b);
+        }
+    }
+}
+
 /* Writes the whole state image. Order is the file format; restore reads it back the same way. */
 static bool write_image(CPC *c, Sink *s) {
     StateCfg cfg = cfg_of(c); put(s, &cfg, sizeof cfg);
@@ -80,7 +99,7 @@ static bool write_image(CPC *c, Sink *s) {
     size_t n; uint8_t *b = fdc_state_save(c->fdc, &n); put_u32(s, (uint32_t)n); put(s, b, n); free(b);
     if (c->tape) { uint8_t t[256]; size_t tn = tape_state_size(); tape_state_save(c->tape, t); put_u32(s, (uint32_t)tn); put(s, t, tn); } else put_u32(s, 0);
     b = cpc_autotype_state_save(c, &n); put_u32(s, (uint32_t)n); put(s, b, n); free(b);
-    for (int i = 0; i < 4; i++) { const CPCDisc *d = fdc_disc(c->fdc, i); put_u32(s, d ? d->writes : 0xFFFFFFFFu); }   /* the FDC owns the discs */
+    put_discs(s, c);
     return true;
 }
 
@@ -120,6 +139,51 @@ typedef struct { const uint8_t *p; size_t n, pos; bool bad; } Src;
 static const uint8_t *take(Src *r, size_t n) { if (r->bad || n > r->n - r->pos) { r->bad = true; return NULL; } const uint8_t *p = r->p + r->pos; r->pos += n; return p; }
 static uint32_t take_u32(Src *r) { const uint8_t *p = take(r, 4); uint32_t v = 0; if (p) memcpy(&v, p, 4); return v; }
 
+typedef struct { int present; uint32_t tracks, sides; uint32_t n; uint32_t idx[DSK_MAX_TRACKS * 2]; CPCTrack *trk; } DiscImg;
+
+static void free_discs(DiscImg d[4]) { for (int i = 0; i < 4; i++) { for (uint32_t k = 0; k < d[i].n && d[i].trk; k++) dsk_track_clear(&d[i].trk[k]); free(d[i].trk); } }
+
+/* Puts the discs where the state was taken: tracks changed since then go back to their original, the saved ones are set. */
+static void apply_discs(CPC *c, DiscImg img[4]) {
+    for (int i = 0; i < 4; i++) {
+        CPCDisc *d = fdc_disc(c->fdc, i); if (!d) continue;
+        bool in[DSK_MAX_TRACKS * 2] = {false};
+        for (uint32_t k = 0; k < img[i].n; k++) in[img[i].idx[k]] = true;
+        for (int k = 0; k < DSK_MAX_TRACKS * 2; k++) {
+            CPCTrack **o = &d->orig[0][0] + k;
+            if (*o && !in[k]) { dsk_track_copy(&d->trk[0][0] + k, *o); dsk_track_clear(*o); free(*o); *o = NULL; }
+        }
+        if (!img[i].present) continue;
+        d->tracks = (int)img[i].tracks; d->sides = (int)img[i].sides;
+        for (uint32_t k = 0; k < img[i].n; k++) {
+            CPCTrack *dst = &d->trk[0][0] + img[i].idx[k];
+            dsk_touch(d, dst);
+            dsk_track_clear(dst); *dst = img[i].trk[k]; memset(&img[i].trk[k], 0, sizeof img[i].trk[k]);
+        }
+    }
+}
+
+
+/* Parses the disc section; false when malformed (nothing is left allocated). */
+static bool get_discs(Src *r, DiscImg out[4]) {
+    memset(out, 0, 4 * sizeof *out);
+    for (int i = 0; i < 4; i++) {
+        out[i].present = take_u32(r) != 0; if (!out[i].present) continue;
+        out[i].tracks = take_u32(r); out[i].sides = take_u32(r); uint32_t n = take_u32(r);
+        if (r->bad || n > DSK_MAX_TRACKS * 2) { r->bad = true; break; }
+        out[i].trk = calloc(n ? n : 1, sizeof(CPCTrack));
+        for (uint32_t k = 0; k < n; k++) {
+            uint32_t idx = take_u32(r), sz = take_u32(r); const uint8_t *b = take(r, sz);
+            if (r->bad || idx >= DSK_MAX_TRACKS * 2) { r->bad = true; break; }
+            if (!dsk_track_unpack(&out[i].trk[k], b, b + sz)) { r->bad = true; break; }
+            out[i].idx[k] = idx; out[i].n = k + 1;
+        }
+        if (r->bad) break;
+    }
+    if (r->bad) { free_discs(out); memset(out, 0, 4 * sizeof *out); return false; }
+    return true;
+}
+
 bool cpc_state_restore(CPC *c, const CPCState *st, unsigned *hazards) {
     unsigned hz = 0;
     if (hazards) *hazards = 0;
@@ -137,16 +201,14 @@ bool cpc_state_restore(CPC *c, const CPCState *st, unsigned *hazards) {
     uint32_t fdn = take_u32(&r); const uint8_t *fd = take(&r, fdn);
     uint32_t tn = take_u32(&r); const uint8_t *tp = take(&r, tn);
     uint32_t atn = take_u32(&r); const uint8_t *at = take(&r, atn);
-    uint32_t writes[4]; for (int i = 0; i < 4; i++) writes[i] = take_u32(&r);
-    bool ok = !r.bad && ru == ram_used(c);
+    DiscImg discs[4]; bool discs_ok = get_discs(&r, discs);
+    bool ok = !r.bad && discs_ok && ru == ram_used(c);
     if (ok) {
         StateCfg live = cfg_of(c), cmp = saved;
         cmp.amx_enabled = live.amx_enabled; memcpy(cmp.single_sided_read, live.single_sided_read, 4);   /* applied below, not a mismatch */
         if (memcmp(&cmp, &live, sizeof live) != 0) hz |= CPC_STATE_HAZARD_CONFIG;
-        for (int i = 0; i < 4; i++) {
-            const CPCDisc *d = fdc_disc(c->fdc, i); uint32_t now = d ? d->writes : 0xFFFFFFFFu;
-            if (now != writes[i]) hz |= CPC_STATE_HAZARD_DISC;
-        }
+        for (int i = 0; i < 4; i++) if ((fdc_disc(c->fdc, i) != NULL) != (discs[i].present != 0)) hz |= CPC_STATE_HAZARD_DISC;
+        apply_discs(c, discs);
         CPC *keep = malloc(sizeof *keep); memcpy(keep, c, sizeof *keep);
         memcpy(c, img, sizeof *c); keep_live(c, keep); free(keep);
         memcpy(c->ram, ram, ru); memcpy(c->frame, f0, FRAME_BYTES); memcpy(c->frame_done, f1, FRAME_BYTES);
@@ -159,6 +221,7 @@ bool cpc_state_restore(CPC *c, const CPCState *st, unsigned *hazards) {
         asic_refresh_palette(c);
         cpc_update_mapping(c);
     }
+    free_discs(discs);
     free(raw);
     if (hazards) *hazards = hz;
     return ok;

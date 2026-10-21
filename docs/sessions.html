@@ -123,8 +123,8 @@
 </ul>
 <p>Otras limitaciones:</p>
 <ul>
-  <li><strong>Escrituras en disco:</strong> si el juego escribe en el disco durante la grabación, la reproducción no las reproduce (aparece el aviso «A disc was written to since the recording started»). Úsalo con discos que no se modifican.</li>
-  <li><strong>Mismo disco:</strong> la sesión recuerda qué discos y ROMs usó; con otros distintos la reproducción puede desviarse.</li>
+  <li><strong>Escrituras en disco:</strong> si el juego guarda en el disco durante la grabación, la sesión lleva consigo las pistas originales y la reproducción (y cada salto) deja el disco como estaba en ese momento, así que puedes rebobinar a antes de guardar. Mientras reproduces, MacAPE <em>no escribe</em> en tu fichero <code>.dsk</code>; si tomas el control, el disco queda tal como esté en ese punto y se guardará como siempre.</li>
+  <li><strong>Mismo disco:</strong> la sesión recuerda qué discos y ROMs usó. Si el disco insertado es el de la grabación (aunque se haya guardado después con los cambios del juego), se reconoce; si no, se avisa y la reproducción puede desviarse.</li>
   <li><strong>Misma versión:</strong> una sesión solo sirve para la versión de MacAPE que la grabó. Si falla con «not a MacAPE session recording, or it was made by a different build», es por esto.</li>
   <li>Pausar y usar el depurador mientras grabas está permitido siempre que no modifiques nada.</li>
 </ul>
