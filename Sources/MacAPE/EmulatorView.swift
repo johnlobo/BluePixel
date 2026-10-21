@@ -8,6 +8,7 @@ final class EmulatorView: NSView {
     var numLock = true
     var keyTable: [UInt16: Int] = KeyMap.defaultMap
     var onFileDrop: ((URL) -> Void)?
+    var onTransportKey: ((NSEvent) -> Bool)?     // keyboard drives the transport bar during a replay
     var aspect: CGFloat { 768.0 / 540.0 }
 
     var hideMouse = false
@@ -76,6 +77,7 @@ final class EmulatorView: NSView {
 
     override func keyDown(with event: NSEvent) {
         if event.modifierFlags.contains(.command) { super.keyDown(with: event); return }
+        if emu?.replayActive == true, onTransportKey?(event) == true { return }
         if !event.isARepeat { setKey(event.keyCode, down: true) }
     }
     override func keyUp(with event: NSEvent) { setKey(event.keyCode, down: false) }

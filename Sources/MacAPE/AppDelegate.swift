@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var debugger: DebuggerController?
     var pokes: PokesController?
     var help: HelpController?
+    var transport: TransportController!
     var cutTimer: Timer?
     var askingAboutCut = false
     var symbolsURL: URL?            // last symbols file (from /SYM or Load Symbols), reloaded by ⌘R
@@ -39,13 +40,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if let p = settings["MacAPE", "Profile"] { currentProfile = p }
         emu = Emulator(settings: settings)
         main = MainWindowController(emulator: emu)
+        transport = TransportController(emu: emu, main: main)
+        transport.onTakeControl = { [weak self] in self?.stopPlayback(nil) }
+        main.view.onTransportKey = { [weak self] e in self?.transport.handleKey(e) ?? false }
         main.view.onFileDrop = { [weak self] in self?.openFile($0) }
         driveSetup = DriveSetupController(emu: emu); tapeControl = TapeController(emu: emu)
         settingsWindow = SettingsController(emu: emu); settingsWindow.currentProfile = currentProfile
         settingsWindow.onApply = { [weak self] in guard let self = self else { return }; self.currentProfile = self.settingsWindow.currentProfile; self.emu.applySettings(); self.main.view.keyTable = KeyMap.effectiveMap(settings: self.settings); self.applyDisplayOptions() }
         main.view.keyTable = KeyMap.effectiveMap(settings: settings)
         emu.onBreak = { [weak self] in guard let self = self else { return }; self.ensureDebugger().show() }
-        emu.onReplayEnd = { [weak self] in self?.replayEnded() }
         // a recording cut short by an action it cannot reproduce (inserting a disc, editing memory...) is offered for saving
         cutTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self = self, !self.askingAboutCut, let why = self.emu.cutReason else { return }

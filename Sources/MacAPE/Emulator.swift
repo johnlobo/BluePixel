@@ -36,6 +36,13 @@ final class Emulator {
     var replayRecording: OpaquePointer?, replayPlayer: OpaquePointer?
     var replayEndNotified = false
     var onReplayEnd: (() -> Void)?
+    var displayedFrame: UInt64?                       // frame on screen while reversing (the machine itself is parked)
+    var replayActive = false                         // mirrors cpc.player != nil, readable without the lock
+    var onReplayChanged: ((Bool) -> Void)?           // main thread: playback started / ended
+    var beforeResume: (() -> Void)?                  // main thread: the machine is about to run again
+    var indexThread: Thread?
+    var indexCancel = false
+    let indexDone = DispatchSemaphore(value: 0)
 
     init(settings: Settings) {
         self.settings = settings
@@ -199,17 +206,18 @@ final class Emulator {
         }
     }
 
-    func publish() {
+    /// Renders the current frame, or `picture` (768x270 pixels) when given, into the display buffer.
+    func publish(picture: UnsafePointer<UInt32>? = nil) {
         frameLock.lock()
         let half = halfSize
-        let view = paused ? screenView : .normal
+        let view = picture != nil ? .normal : (paused ? screenView : .normal)
         if view != .normal {
             lock.lock()
             viewBuffer.withUnsafeMutableBufferPointer { if view == .raster { cpc_render_raster(cpc, $0.baseAddress) } else { cpc_render_vram(cpc, $0.baseAddress) } }
             lock.unlock()
         }
         rendered.withUnsafeMutableBufferPointer { dst in
-            if view == .normal { cpc_render(cpc_frame(cpc), dst.baseAddress, renderPAL, renderBoth, half, Int32(brightness)) }
+            if view == .normal { cpc_render(picture ?? cpc_frame(cpc), dst.baseAddress, renderPAL, renderBoth, half, Int32(brightness)) }
             else { viewBuffer.withUnsafeBufferPointer { cpc_render($0.baseAddress, dst.baseAddress, false, true, half, 0) } }
         }
         renderedSize = half ? (384, 270) : (768, 540)
@@ -347,6 +355,7 @@ extension Emulator {
     }
 
     func debugResume() {
+        beforeResume?()
         lock.lock()
         let d = dbg_attach(cpc)!
         d.pointee.hit = false; d.pointee.skip_once = true; d.pointee.temp_bp = -1; d.pointee.step_out = false

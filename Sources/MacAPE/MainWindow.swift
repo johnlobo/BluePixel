@@ -14,6 +14,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var timer: Timer?
     private var lastFrames: UInt64 = 0, lastTime = Date()
     static let panelHeight: CGFloat = 30
+    private var transportBar: NSView?
     var panelHidden = false { didSet { panel.isHidden = panelHidden; layoutContent() } }
 
     init(emulator: Emulator) {
@@ -76,9 +77,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     func layoutContent() {
         guard let content = window?.contentView else { return }
         let ph = panelHidden ? 0 : MainWindowController.panelHeight
+        let th = transportBar == nil ? 0 : TransportBar.height
         let b = content.bounds
         panel.frame = NSRect(x: 0, y: 0, width: b.width, height: ph)
-        view.frame = NSRect(x: 0, y: ph, width: b.width, height: b.height - ph)
+        transportBar?.frame = NSRect(x: 0, y: ph, width: b.width, height: th)
+        view.frame = NSRect(x: 0, y: ph + th, width: b.width, height: b.height - ph - th)
         var x: CGFloat = 8
         for id in ["run", "step", "over", "pause", "regs", "asm", "disc", "cart", "tape", "snapL", "snapS"] {
             buttons[id]?.frame = NSRect(x: x, y: 4, width: 22, height: 22); x += 26
@@ -94,6 +97,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         for id in ["help", "full", "pokes", "setup"] { rx -= 26; buttons[id]?.frame = NSRect(x: rx, y: 4, width: 22, height: 22) }
         timing.frame = NSRect(x: x + 8, y: 7, width: max(40, rx - x - 12), height: 16)
         timing.alignment = .right
+    }
+
+    /// Shows the transport bar under the display (growing the window to make room) or removes it.
+    func setTransport(_ bar: NSView?) {
+        guard transportBar !== bar, let content = window?.contentView else { return }
+        let fullScreen = window?.styleMask.contains(.fullScreen) ?? false
+        if let old = transportBar { old.removeFromSuperview(); transportBar = nil; if !fullScreen, let w = window { w.setContentSize(NSSize(width: content.bounds.width, height: content.bounds.height - TransportBar.height)) } }
+        if let new = bar {
+            content.addSubview(new); transportBar = new
+            if !fullScreen, let w = window { w.setContentSize(NSSize(width: content.bounds.width, height: content.bounds.height + TransportBar.height)) }
+        }
+        layoutContent()
     }
 
     func windowDidResize(_ notification: Notification) { layoutContent() }

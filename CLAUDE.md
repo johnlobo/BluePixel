@@ -100,6 +100,11 @@ controls blank (tab strips, segmented controls); use `screencapture` when the re
   debugger. Anything that changes the machine otherwise (media, settings, register/memory edits) must call
   `noteUnreproducible` / `cpc_record_taint`, which ends the recording there. Recording files embed
   `sizeof(CPC)`: they only load with the build that wrote them.
+- **Transport bar design:** forward play/pause use the normal emulation thread. Reverse play never runs the machine
+  backwards: `cpc_player_capture` re-simulates one 50-frame interval from its keyframe and the pictures are shown
+  in reverse; stopping reverse does an exact seek. A clone of the machine (`cpc_clone_machine`, discs deep-copied)
+  indexes the whole recording on a background thread and hands its keyframes over with
+  `cpc_player_adopt_keyframes` (machine lock held); never call `stopIndexing()` with that lock held.
 - Frame counters can go backwards (restore/seek): never subtract them unsigned (this crashed the status bar once).
 - `DbgView` has `lower_base`/`cart_bank` (Plus secondary mapping); `Debugger.watch[]` is too large for Swift to import,
   use `dbg_watch_bits()`.
@@ -114,10 +119,9 @@ controls blank (tab strips, segmented controls); use `screencapture` when the re
 
 ## Not done yet
 
-Session record/playback is phase 1 only (core + File menu: Record Session, Playback Session…, Go to Time…, Stop
-Playback): still to do are a transport bar (play/pause/±frame/±second/speed/drag), reverse stepping and "who wrote this
-byte" in the debugger (re-simulate from the keyframe), indexing a recording in the background on a second machine,
-disc writes during a recording (the disc contents are not part of the state). Integrated Maxam-compatible assembler
+Session record/playback: core, File menu and the transport bar (`Transport.swift`) are done; still to do are reverse
+stepping and "who wrote this byte" in the debugger (re-simulate from the keyframe; `z80.instructions` is exact),
+and disc writes during a recording (the disc contents are not part of the state; hazards are reported). Integrated Maxam-compatible assembler
 (menu item says "Not available yet"), disc/sector editor, Format Disc, Flip Disc, AVI/WAV/YM recording, Symbiface II (IDE/RTC/PS2 mouse), 4 MB Yarek RAM, printer, ZIP/RAR,
 tape CSV, DSC/HDR discs, gamepad joystick. Debugger ideas not built: profiler, DeZog/VS Code protocol, rewind,
 "who wrote this byte", memory access map, AY channel viewer, break on change. A web (WebAssembly) build was discussed:

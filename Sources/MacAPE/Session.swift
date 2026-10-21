@@ -31,7 +31,7 @@ extension Emulator {
         lock.lock(); defer { lock.unlock() }
         if cpc.pointee.recorder != nil { return "● REC " + Emulator.clock(cpc.pointee.frames - recordStartFrame) }
         if cpc.pointee.player != nil {
-            var s = "▶ " + Emulator.clock(cpc_player_frame(cpc)) + " / " + Emulator.clock(cpc_player_length(cpc))
+            var s = "▶ " + Emulator.clock(displayedFrame ?? cpc_player_frame(cpc)) + " / " + Emulator.clock(cpc_player_length(cpc))
             var f: UInt64 = 0
             if cpc_player_desync(cpc, &f) { s += "  OUT OF SYNC at " + Emulator.clock(f) }
             return s
@@ -115,17 +115,21 @@ extension Emulator {
 
     /// Restores the starting state and plays. Returns notes about differences that may break the sync, or nil on failure.
     func startPlayback(_ rec: OpaquePointer) -> [String]? {
-        lock.lock(); defer { lock.unlock() }
+        stopIndexing()
+        lock.lock()
         if cpc.pointee.player != nil { endPlaybackLocked() }
-        guard let player = cpc_player_create(rec) else { return nil }
+        guard let player = cpc_player_create(rec) else { lock.unlock(); return nil }
         var hz: UInt32 = 0
-        guard cpc_player_begin(cpc, player, &hz) else { cpc_player_free(player); return nil }
-        replayRecording = rec; replayPlayer = player; replayEndNotified = false
+        guard cpc_player_begin(cpc, player, &hz) else { cpc_player_free(player); lock.unlock(); return nil }
+        replayRecording = rec; replayPlayer = player; replayEndNotified = false; replayActive = true
         var notes: [String] = []
         if hz & 1 != 0 { notes.append("A disc was written to since the recording started, so its contents may differ.") }
         if hz & 2 != 0 { notes.append("The inserted tape is not the one used in the recording.") }
         if hz & 4 != 0 { notes.append("The machine configuration (model, memory, CRTC...) differs from the recording.") }
         paused = false
+        lock.unlock()
+        startIndexing(rec)
+        DispatchQueue.main.async { self.onReplayChanged?(true) }
         return notes
     }
 
@@ -133,10 +137,14 @@ extension Emulator {
         cpc_player_end(cpc)
         if let p = replayPlayer { cpc_player_free(p) }
         if let r = replayRecording { cpc_recording_free(r) }
-        replayPlayer = nil; replayRecording = nil
+        replayPlayer = nil; replayRecording = nil; replayActive = false
     }
     /// Leaves the replay: the machine goes on from the current point, taking input again.
-    func endPlayback() { lock.lock(); endPlaybackLocked(); lock.unlock() }
+    func endPlayback() {
+        stopIndexing()
+        lock.lock(); let was = replayActive; endPlaybackLocked(); lock.unlock()
+        if was { DispatchQueue.main.async { self.onReplayChanged?(false) } }
+    }
 
     func seek(toFrame f: UInt64) -> Bool {
         lock.lock()
@@ -146,6 +154,50 @@ extension Emulator {
         publish()
         return ok
     }
+    /// Frames up to which seeking is instant (keyframes exist); the whole length once indexing has finished.
+    var indexedFrames: UInt64 { lock.lock(); defer { lock.unlock() }; return cpc_player_indexed(cpc) }
+
+    /// Pictures of frames from+1...from+count (as displayed), for reverse playback. Leaves the machine scratched:
+    /// call seek(toFrame:) afterwards to put it back on an exact frame.
+    func capturePictures(from: UInt64, count: Int) -> (pixels: [UInt32], count: Int) {
+        var buf = [UInt32](repeating: 0, count: count * Int(CPC_SCREEN_W) * Int(CPC_SCREEN_H))
+        lock.lock()
+        let n = buf.withUnsafeMutableBufferPointer { Int(cpc_player_capture(cpc, from, Int32(count), $0.baseAddress)) }
+        lock.unlock()
+        return (buf, n)
+    }
+
+    // MARK: background indexing
+    /// A clone of the machine replays the whole recording on another thread; the keyframes it takes are handed to
+    /// the visible player so that seeking anywhere is fast.
+    func startIndexing(_ rec: OpaquePointer) {
+        lock.lock(); let clone = cpc_clone_machine(cpc); lock.unlock()
+        guard let c2 = clone, let p2 = cpc_player_create(rec) else { if let c = clone { cpc_clone_free(c) }; return }
+        var hz: UInt32 = 0
+        guard cpc_player_begin(c2, p2, &hz) else { cpc_player_free(p2); cpc_clone_free(c2); return }
+        indexCancel = false
+        let t = Thread { [unowned self] in
+            while !self.indexCancel && !cpc_player_finished(c2) {
+                for _ in 0..<100 where !cpc_player_finished(c2) { cpc_run_frame(c2) }
+                self.lock.lock()
+                if self.replayRecording == rec { _ = cpc_player_adopt_keyframes(self.cpc, p2) } else { self.indexCancel = true }
+                self.lock.unlock()
+            }
+            cpc_player_free(p2); cpc_clone_free(c2)
+            self.indexDone.signal()
+        }
+        t.name = "MacAPE replay index"; t.qualityOfService = .utility
+        indexThread = t; t.start()
+    }
+
+    /// Stops the indexing thread and waits for it (never call with the machine lock held).
+    func stopIndexing() {
+        guard indexThread != nil else { return }
+        indexCancel = true
+        indexDone.wait()                       // the thread signals exactly once, even if it already finished
+        indexThread = nil
+    }
+
     var playbackFrame: UInt64 { lock.lock(); defer { lock.unlock() }; return cpc_player_frame(cpc) }
     var playbackLength: UInt64 { lock.lock(); defer { lock.unlock() }; return cpc_player_length(cpc) }
 }
@@ -194,6 +246,7 @@ extension AppDelegate {
         guard emu.isReplaying else { return }
         let len = Emulator.clock(emu.playbackLength)
         guard let t = promptText("Go to Time", "mm:ss, seconds, or f<number> for a frame (recording length \(len)):", Emulator.clock(emu.playbackFrame)) else { return }
+        transport.stopReverse(seek: false)
         let s = t.trimmingCharacters(in: .whitespaces).lowercased()
         var frame: Double?
         if s.hasPrefix("f") { frame = Double(s.dropFirst()) }
@@ -207,13 +260,5 @@ extension AppDelegate {
         guard emu.isReplaying else { return }
         emu.endPlayback()
         if emu.paused { emu.debugResume() }
-    }
-
-    /// Called when the machine plays to the end of a recording.
-    func replayEnded() {
-        let a = NSAlert(); a.messageText = "End of the recording"
-        a.informativeText = "Take control to carry on playing from here, or stay to go back with Go to Time."
-        a.addButton(withTitle: "Take Control"); a.addButton(withTitle: "Stay")
-        if a.runModal() == .alertFirstButtonReturn { stopPlayback(nil) }
     }
 }
