@@ -44,6 +44,8 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     var logWindow: LogController?
     private let screenPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let beamLabel = makeLabel("")
+    var flashMessage: String?
+    private var flashTimer: Timer?
     private let followPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let followRegs: [Reg?] = [nil, .hl, .de, .bc, .ix, .iy, .sp, .pc]
     private var history: [(top: Int, selected: Int)] = []        // disassembler navigation (Enter / Delete)
@@ -161,6 +163,8 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         let fileButtons2 = [symButton("tag", "Symbols", #selector(showSymbols(_:))), symButton("clock.arrow.circlepath", "Execution History", #selector(showHistory(_:))),
                             symButton("eye", "Watch", #selector(showWatch(_:)))]
         let logButton = symButton("text.alignleft", "Log (logpoints)", #selector(showLog(_:)))
+        let backButton = symButton("arrow.uturn.backward", "Step Back (⌥F7) — during a replay", #selector(stepBack(_:)), tint: .systemYellow)
+        let revButton = symButton("backward.fill", "Reverse Continue (⌥F9): back to the previous breakpoint", #selector(reverseContinue(_:)), tint: .systemYellow)
         screenPopup.addItems(withTitles: ["Screen: Normal", "Screen: Raster", "Screen: Video RAM"]); screenPopup.controlSize = .small; screenPopup.font = .systemFont(ofSize: 11)
         screenPopup.toolTip = "What the emulator display shows while paused: last frame, frame being drawn with the beam position, or video memory as it is now"
         screenPopup.target = self; screenPopup.action = #selector(screenViewChanged(_:)); root.addSubview(screenPopup)
@@ -193,7 +197,8 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
             for (i, b) in fileButtons2.enumerated() { b.frame = NSRect(x: x + 40, y: by + 4 + CGFloat(i) * 32, width: 32, height: 26) }
             var cx = gap; let oy = h - 30
             for b in [self.checkFollow, self.checkHide, self.checkBreaks, self.checkBRK] { let bw = b.fittingSize.width; b.frame = NSRect(x: cx, y: oy, width: bw, height: 22); cx += bw + 10 }
-            for b in tools + [logButton] { b.frame = NSRect(x: cx, y: oy - 2, width: 30, height: 26); cx += 33 }
+            for b in tools + [logButton, backButton, revButton] { b.frame = NSRect(x: cx, y: oy - 2, width: 30, height: 26); cx += 33 }
+            backButton.isHidden = !self.emu.replayActive; revButton.isHidden = !self.emu.replayActive
             self.screenPopup.frame = NSRect(x: gx + 406, y: by + 66, width: 148, height: 24)
             self.beamLabel.frame = NSRect(x: gap, y: self.memory.frame.maxY + 1, width: left - 132, height: 14)
             self.followPopup.frame = NSRect(x: gap + left - 128, y: self.memory.frame.maxY, width: 128, height: 16)
@@ -226,6 +231,7 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     func show() {
         window?.makeKeyAndOrderFront(nil); window?.makeFirstResponder(disasm)
         noteStop()
+        root.needsLayout = true                 // the reverse buttons only exist during a replay
         refreshAll()
         watchWindow?.noteStop()
         focusPC()
@@ -265,7 +271,8 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
             emu.lock.lock(); let z = emu.cpc.pointee.z80; emu.lock.unlock()
             memory.show(r.get(z)); memory.reload()
         }
-        beamLabel.stringValue = emu.paused ? emu.beamDescription + "   (⌥F8 next scanline, ⌥⇧F8 next frame)" : ""
+        beamLabel.stringValue = flashMessage ?? (emu.paused ? emu.beamDescription + "   (⌥F8 next scanline, ⌥⇧F8 next frame)" : "")
+        beamLabel.textColor = flashMessage == nil ? .secondaryLabelColor : .systemOrange
     }
 
     func refreshRegisters() {
@@ -404,6 +411,12 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         refreshAll(); symbolsWindow?.reload()
     }
     @objc func followChanged(_ s: Any?) { refreshAll() }
+    /// A message in the line under the memory pane, in orange, for a few seconds (results of reverse operations).
+    func flash(_ text: String) {
+        flashMessage = text; flashTimer?.invalidate()
+        flashTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: false) { [weak self] _ in self?.flashMessage = nil; self?.refreshAll() }
+        refreshAll()
+    }
     @objc func showWatch(_ s: Any?) { if watchWindow == nil { watchWindow = WatchController(debugger: self) }; watchWindow?.show() }
     @objc func showLog(_ s: Any?) { if logWindow == nil { logWindow = LogController(debugger: self) }; logWindow?.show() }
     @objc func addLogpoint(_ s: Any?) {
@@ -478,7 +491,9 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         let m = NSMenu()
         menuItem(m, "Find…", #selector(findInPane(_:)), "f", .control); menuItem(m, "Find Again", #selector(findAgain(_:)), fkey(3)); m.addItem(.separator())
         menuItem(m, "Goto…", #selector(gotoAddress(_:)), "g", .control); m.addItem(.separator())
-        menuItem(m, "Run to Cursor", #selector(runToCursor(_:)), fkey(4)); menuItem(m, "Toggle Breakpoint", #selector(toggleBP(_:)), fkey(5))
+        menuItem(m, "Run to Cursor", #selector(runToCursor(_:)), fkey(4))
+        if emu.replayActive { menuItem(m, "Run Back to Here", #selector(reverseToCursor(_:)), fkey(4), .option) }
+        menuItem(m, "Toggle Breakpoint", #selector(toggleBP(_:)), fkey(5))
         menuItem(m, "Add Logpoint…", #selector(addLogpoint(_:))); m.addItem(.separator())
         menuItem(m, "Disassemble…", #selector(disassembleRange(_:))); m.addItem(.separator())
         menuItem(m, "Mark as Data", #selector(markData(_:))); menuItem(m, "Clear Data Area", #selector(clearData(_:)))
@@ -491,6 +506,7 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         menuItem(m, "Goto…", #selector(gotoAddress(_:)), "g", .control); menuItem(m, "Select Block…", #selector(selectBlock(_:))); m.addItem(.separator())
         menuItem(m, "Load…", #selector(loadData(_:)), fkey(5)); menuItem(m, "Save…", #selector(saveData(_:))); m.addItem(.separator())
         menuItem(m, "Breakpoint on Read", #selector(memoryBreakRead(_:))); menuItem(m, "Breakpoint on Write", #selector(memoryBreakWrite(_:))); m.addItem(.separator())
+        if emu.replayActive { menuItem(m, "Who Wrote This? (Go Back)", #selector(memoryWhoWrote(_:))); menuItem(m, "Who Read This? (Go Back)", #selector(memoryWhoRead(_:))); m.addItem(.separator()) }
         menuItem(m, "Compare To…", #selector(compareTo(_:))); menuItem(m, "Fill…", #selector(fillMemory(_:))); menuItem(m, "Disassemble…", #selector(disassembleRange(_:))); m.addItem(.separator())
         menuItem(m, "Mark as Data", #selector(markData(_:))); menuItem(m, "Clear Data Area", #selector(clearData(_:)))
         menuItem(m, memory.asciiMode ? "Edit Hex" : "Edit ASCII", #selector(toggleASCII(_:)), "\t", .control)

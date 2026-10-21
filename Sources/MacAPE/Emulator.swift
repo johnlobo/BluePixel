@@ -43,6 +43,10 @@ final class Emulator {
     var indexThread: Thread?
     var indexCancel = false
     let indexDone = DispatchSemaphore(value: 0)
+    var searchThread: Thread?                        // reverse search in progress (ReverseDebug.swift)
+    var searchCancel = false
+    let searchDone = DispatchSemaphore(value: 0)
+    var isSearching: Bool { searchThread != nil }
 
     init(settings: Settings) {
         self.settings = settings
@@ -355,6 +359,7 @@ extension Emulator {
     }
 
     func debugResume() {
+        cancelReverseSearch()
         beforeResume?()
         lock.lock()
         let d = dbg_attach(cpc)!

@@ -281,6 +281,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         debugger?.symbolsReloaded(note); debugger?.symbolsWindow?.reload()
         main.window?.title = "MacAPE — " + URL(fileURLWithPath: path).lastPathComponent
     }
+    @objc func debugStepBack(_ s: Any?) { let d = ensureDebugger(); d.show(); d.stepBack(s) }
+    @objc func debugReverseContinue(_ s: Any?) { let d = ensureDebugger(); d.show(); d.reverseContinue(s) }
+    @objc func debugRunBackToCursor(_ s: Any?) { let d = ensureDebugger(); d.show(); d.reverseToCursor(s) }
     @objc func debugStepScanline(_ s: Any?) { let d = ensureDebugger(); emu.debugStepRaster(frame: false); d.show() }
     @objc func debugStepFrame(_ s: Any?) { let d = ensureDebugger(); emu.debugStepRaster(frame: true); d.show() }
     @objc func debugStepOut(_ s: Any?) { let d = ensureDebugger(); emu.debugStepOut(); if d.hideOnRun { d.window?.orderOut(nil) } }
@@ -305,7 +308,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if item.action == #selector(amxMouse(_:)) { item.state = emu.amxEnabled ? .on : .off }
         if item.action == #selector(recordSession(_:)) { item.title = emu.isRecording ? "Stop Recording…" : "Record Session"; return !emu.isReplaying }
         if item.action == #selector(playSession(_:)) { return !emu.isRecording }
-        if item.action == #selector(goToTime(_:)) || item.action == #selector(stopPlayback(_:)) { return emu.isReplaying }
+        if item.action == #selector(goToTime(_:)) || item.action == #selector(stopPlayback(_:)) { return emu.isReplaying && !emu.isSearching }
+        if item.action == #selector(debugStepBack(_:)) || item.action == #selector(debugReverseContinue(_:)) || item.action == #selector(debugRunBackToCursor(_:)) { return emu.replayActive && !emu.isSearching }
         if item.action == #selector(debugScreenView(_:)) { item.state = emu.screenView.rawValue == item.tag ? .on : .off }
         return true
     }
@@ -393,6 +397,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item("Data Areas", #selector(showDataAreas(_:))), item("Timers", #selector(showTimers(_:))), item("Find Graphics", #selector(showGraphics(_:))),
             .separator(),
             item("Reload Disc & Symbols", #selector(reloadDiscAndSymbols(_:)), "r", .command),
+            .separator(),
+            item("Step Back", #selector(debugStepBack(_:)), fkey(7), .option), item("Reverse Continue", #selector(debugReverseContinue(_:)), fkey(9), .option),
+            item("Run Back to Cursor", #selector(debugRunBackToCursor(_:)), fkey(4), .option),
             .separator(),
             item("Execution History…", #selector(debugShowHistory(_:))),
             item("Watch…", #selector(debugShowWatch(_:))), item("Log…", #selector(debugShowLog(_:))),

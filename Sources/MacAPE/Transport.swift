@@ -122,7 +122,7 @@ final class TransportController: NSObject {
     }
 
     func refresh() {
-        guard emu.replayActive else { return }
+        guard emu.replayActive, !emu.isSearching else { return }
         let len = length, pos = position
         if !dragging { bar.slider.maxValue = Double(max(len, 1)); bar.slider.doubleValue = Double(pos) }
         bar.time.stringValue = timeString(pos) + " / " + timeString(len)
@@ -136,6 +136,7 @@ final class TransportController: NSObject {
 
     // MARK: actions
     private func goTo(_ frame: UInt64) {
+        guard !emu.isSearching else { NSSound.beep(); return }
         stopReverse(seek: false)
         emu.debugPause()
         _ = emu.seek(toFrame: min(frame, length))
@@ -155,6 +156,7 @@ final class TransportController: NSObject {
     @objc func fwd10() { step(10 * 50) }
 
     @objc func playPause() {
+        guard !emu.isSearching else { NSSound.beep(); return }
         if reversing { stopReverse(); return }
         if emu.paused {
             if emu.playbackFrame >= length { _ = emu.seek(toFrame: 0) }      // at the end: start over
@@ -193,6 +195,7 @@ final class TransportController: NSObject {
 
     // MARK: reverse play
     @objc func reverse() {
+        guard !emu.isSearching else { NSSound.beep(); return }
         if reversing { stopReverse(); return }
         emu.debugPause()
         reversing = true; shown = emu.playbackFrame; emu.displayedFrame = shown; cache = nil
