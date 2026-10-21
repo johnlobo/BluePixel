@@ -3,6 +3,7 @@
 #include "fdc.h"
 #include "tape.h"
 #include "dsk.h"
+#include "debug.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -261,6 +262,123 @@ size_t cpc_player_adopt_keyframes(CPC *c, CPCPlayer *src) {
         src->keys[k].s = NULL; moved++;
     }
     return moved;
+}
+
+/* ---------------- reverse debugging ---------------- */
+/* Everything works by restoring the nearest keyframe before the target and re-simulating forwards: the core is
+ * deterministic and about 50x faster than real time. Time is c->cycles (emulated microseconds), which is unique
+ * per step. */
+static int key_before(const CPCPlayer *p, uint64_t cycles) {          /* latest keyframe strictly before `cycles` */
+    for (int k = (int)p->nkeys - 1; k >= 0; k--) if (p->keys[k].s && cpc_state_cycles(p->keys[k].s) < cycles) return k;
+    return -1;
+}
+static bool restore_key(CPC *c, CPCPlayer *p, int k) {
+    if (!cpc_state_restore(c, p->keys[k].s, NULL)) return false;
+    p->next = p->keys[k].next; return true;
+}
+
+bool cpc_player_goto_cycles(CPC *c, uint64_t target, bool history) {
+    CPCPlayer *p = c->player; if (!p) return false;
+    int k = key_before(p, target + 1);                                 /* a keyframe exactly at target is fine too */
+    if (history) { int earlier = key_before(p, target); if (earlier >= 0) k = earlier; }   /* leave steps to record */
+    if (k < 0 || !restore_key(c, p, k)) return false;
+    Debugger *d = c->dbg;
+    bool active = false, brk = false, hist = false; int temp = -1;
+    if (d) {
+        active = d->active; brk = d->break_instructions; hist = d->hist_on; temp = d->temp_bp;
+        d->active = false; d->break_instructions = false; d->temp_bp = -1; d->hist_on = history; d->skip_once = false;
+        if (history) { d->hist_count = 0; d->hist_pos = 0; }
+    }
+    uint64_t guard = 20000000;
+    while (c->cycles < target && guard--) cpc_step(c);
+    if (d) { d->active = active; d->break_instructions = brk; d->hist_on = hist; d->temp_bp = temp; d->hit = false; d->skip_once = false; }
+    return c->cycles == target;
+}
+
+bool cpc_player_step_back(CPC *c) {
+    CPCPlayer *p = c->player; if (!p) return false;
+    uint64_t here = c->cycles;
+    int k = key_before(p, here);
+    if (k < 0 || !restore_key(c, p, k)) return false;
+    Debugger *d = c->dbg; c->dbg = NULL;                               /* silent pass: find where the last step began */
+    uint64_t prev = c->cycles, guard = 20000000;
+    while (c->cycles < here && guard--) { prev = c->cycles; cpc_step(c); }
+    c->dbg = d;
+    if (c->cycles != here) { cpc_player_goto_cycles(c, here, true); return false; }
+    return cpc_player_goto_cycles(c, prev, true);
+}
+
+struct CPCReverseScan {
+    uint64_t origin, upper, lowest;
+    bool finished, found, was_active, was_brk, was_hist; int temp_bp, was_temp;
+    CPCReverseHit hit;
+    DbgBreakpoint *saved;
+};
+
+CPCReverseScan *cpc_reverse_begin(CPC *c, CPCReverseMode mode, uint16_t lo, uint16_t hi) {
+    CPCPlayer *p = c->player; if (!p) return NULL;
+    Debugger *d = dbg_attach(c);
+    CPCReverseScan *s = calloc(1, sizeof *s);
+    s->saved = malloc(sizeof d->bp); memcpy(s->saved, d->bp, sizeof d->bp);
+    s->origin = s->upper = c->cycles; s->lowest = p->rec->start_cycles; s->temp_bp = -1;
+    s->was_active = d->active; s->was_brk = d->break_instructions; s->was_hist = d->hist_on; s->was_temp = d->temp_bp;
+    if (mode != CPC_REV_BREAKPOINTS) {
+        for (int i = 0; i < DBG_MAX_BP; i++) d->bp[i].enabled = false;                 /* only the temporary watch */
+        s->temp_bp = mode == CPC_REV_CODE ? dbg_add_code_bp(c, lo) : dbg_add_mem_bp(c, lo, hi, mode == CPC_REV_READ, mode == CPC_REV_WRITE);
+        if (s->temp_bp < 0) { memcpy(d->bp, s->saved, sizeof d->bp); dbg_rebuild_watch(d); free(s->saved); free(s); return NULL; }
+        if (mode == CPC_REV_CODE) d->bp[s->temp_bp].block = NULL;                       /* any memory mapping */
+    }
+    d->active = true; d->break_instructions = false; d->hist_on = false; d->temp_bp = -1; d->scanning = true;
+    dbg_rebuild_watch(d);
+    return s;
+}
+
+bool cpc_reverse_slice(CPC *c, CPCReverseScan *s) {
+    CPCPlayer *p = c->player; Debugger *d = c->dbg;
+    if (s->finished) return true;
+    int k = key_before(p, s->upper);
+    if (k < 0 || !restore_key(c, p, k)) { s->finished = true; return true; }
+    d->hit = false; d->skip_once = false;
+    CPCReverseHit last = {0};
+    uint64_t upper = s->upper, guard = 40000000;
+    while (c->cycles < upper && guard--) {
+        uint64_t t0 = c->cycles; uint16_t pc0 = c->z80.pc;
+        int n = cpc_step(c);
+        if (d->hit) {
+            int bi = d->hit_index;
+            if (bi >= 0 && bi < DBG_MAX_BP) {
+                const DbgBreakpoint *b = &d->bp[bi];
+                last.found = true; last.cycles = t0; last.pc = pc0; last.bp_index = bi;
+                last.kind = b->type == BP_CODE ? 1 : b->type == BP_MEM_READ ? 2 : b->type == BP_MEM_WRITE ? 3 : 4;
+                last.addr = d->ev_addr; last.value = d->ev_value; last.previous = d->ev_prev;
+            }
+            d->hit = false;
+            if (n == 0) d->skip_once = true;                          /* stopped before executing: let this instruction run */
+        }
+    }
+    if (last.found) { s->hit = last; s->found = true; s->finished = true; return true; }
+    s->upper = cpc_state_cycles(p->keys[k].s);
+    if (s->upper <= s->lowest) s->finished = true;
+    return s->finished;
+}
+
+double cpc_reverse_progress(const CPCReverseScan *s) {
+    if (s->origin <= s->lowest) return 1;
+    return (double)(s->origin - s->upper) / (double)(s->origin - s->lowest);
+}
+uint64_t cpc_reverse_cycles(const CPCReverseScan *s) { return s->upper; }
+
+bool cpc_reverse_end(CPC *c, CPCReverseScan *s, bool keep, CPCReverseHit *hit) {
+    Debugger *d = c->dbg;
+    memcpy(d->bp, s->saved, sizeof d->bp);                            /* also restores the user's counters */
+    d->active = s->was_active; d->break_instructions = s->was_brk; d->hist_on = s->was_hist; d->temp_bp = s->was_temp;
+    d->scanning = false; d->hit = false; d->skip_once = false;
+    dbg_rebuild_watch(d);
+    bool found = s->found;
+    if (hit) *hit = s->hit;
+    cpc_player_goto_cycles(c, keep && found ? s->hit.cycles : s->origin, true);
+    free(s->saved); free(s);
+    return found;
 }
 
 /* ---------------- file format ---------------- */

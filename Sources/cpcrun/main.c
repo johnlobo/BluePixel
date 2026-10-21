@@ -460,6 +460,83 @@ static int run_rectest(const char *roms, const char *disc) {
           if (!ok || cpc_state_hash(d) != ref[f]) badx++; }
       CHECK(!badx, "seeking on the indexed player is exact everywhere");
       printf("  worst seek on the indexed player: %.1f ms\n", worstx);
+      /* ---- reverse debugging on the indexed player ---- */
+      Debugger *dd = dbg_attach(d); int badr = 0; unsigned long long rs = 777;
+      for (int k = 0; k < 50; k++) {
+          rs = rs * 6364136223846793005ULL + 1442695040888963407ULL;
+          uint64_t f = k < 8 ? (uint64_t)(k * 150 + 50) : 5 + (rs >> 33) % (cpc_recording_frames(rec) - 10);    /* first ones sit exactly on keyframes */
+          cpc_player_seek(d, f);
+          int extra = k < 8 ? k % 3 : (int)((rs >> 20) % 30000); for (int s = 0; s < extra; s++) cpc_step(d);
+          uint64_t h0 = cpc_state_hash(d), t0 = d->cycles;
+          bool ok = cpc_player_step_back(d); uint64_t tb = d->cycles;
+          if (extra == 0 && f == 0) continue;
+          cpc_step(d);
+          if (!ok || !(tb < t0) || cpc_state_hash(d) != h0) { badr++; printf("  step back failed at frame %llu +%d (ok=%d, %llu -> %llu)\n", (unsigned long long)f, extra, ok, (unsigned long long)t0, (unsigned long long)tb); }
+      }
+      CHECK(!badr, "stepping forward after stepping back restores the exact state (50 positions, keyframe boundaries included)");
+      { uint64_t f0 = 900; cpc_player_seek(d, f0); size_t before = dbg_history_count(dd); (void)before;
+        cpc_player_goto_cycles(d, d->cycles + 5000, true);
+        CHECK(dbg_history_count(dd) > 100 && dbg_history_get(dd, 0).pc != 0, "positioning refills the execution history"); }
+      /* find bytes of game RAM that change often, to use as watch targets */
+      cpc_player_seek(d, 900); static uint8_t snap[65536]; static int changes[65536];
+      for (int f = 0; f < 80; f++) { for (int a = 0; a < 65536; a++) snap[a] = cpc_peek(d, (uint16_t)a); cpc_run_frame(d);
+                                     for (int a = 0x4000; a < 0xB000; a++) if (cpc_peek(d, (uint16_t)a) != snap[a]) changes[a]++; }
+      int targets[3], nt = 0; for (int a = 0x4000; a < 0xB000 && nt < 3; a += 1) if (changes[a] >= 3 && changes[a] <= 40) { targets[nt++] = a; a += 97; }
+      printf("  watch targets:"); for (int i = 0; i < nt; i++) printf(" %04X(%d changes)", targets[i], changes[targets[i]]); printf("\n");
+      int badw = 0, usedw = 0;
+      for (int i = 0; i < nt; i++) for (int mode = 0; mode < 2; mode++) for (int mid = 0; mid < 2; mid++) {
+          uint16_t a = (uint16_t)targets[i]; bool want_read = mode == 1;
+          /* ground truth: forward from frame 900 with a real watch, last hit before X */
+          cpc_player_seek(d, 900);
+          int bp = dbg_add_mem_bp(d, a, a, want_read, !want_read); CPCReverseHit truth = {0}; dd->active = true; dd->hit = false;
+          uint64_t X = 0; int steps_after = mid ? 1234 : 0;
+          for (int f = 0; f < 80; f++) { cpc_run_frame(d); dd->hit = false; }       /* run 80 frames, then stop on a frame boundary */
+          cpc_player_seek(d, 900);
+          { uint64_t end_frame = d->frames + 80; dd->hit = false;
+            while (d->frames < end_frame) { uint64_t t = d->cycles; uint16_t pc = d->z80.pc; cpc_step(d);
+                if (dd->hit) { truth = (CPCReverseHit){true, t, pc, 0, bp, dd->ev_addr, dd->ev_value, dd->ev_prev}; dd->hit = false; } }
+            for (int s = 0; s < steps_after; s++) { uint64_t t = d->cycles; uint16_t pc = d->z80.pc; cpc_step(d);
+                if (dd->hit) { truth = (CPCReverseHit){true, t, pc, 0, bp, dd->ev_addr, dd->ev_value, dd->ev_prev}; dd->hit = false; } }
+            X = d->cycles; }
+          dbg_remove_bp(d, bp); dd->hit = false; dd->active = true;
+          uint64_t hx = cpc_state_hash(d);
+          if (!truth.found) continue;
+          usedw++;
+          CPCReverseScan *sc = cpc_reverse_begin(d, mode == 1 ? CPC_REV_READ : CPC_REV_WRITE, a, a); CPCReverseHit got = {0};
+          int slices = 0; while (!cpc_reverse_slice(d, sc)) slices++;
+          bool found = cpc_reverse_end(d, sc, true, &got);
+          bool same = found && got.cycles == truth.cycles && got.pc == truth.pc && got.addr == a && d->cycles == truth.cycles && d->z80.pc == truth.pc;
+          if (!same) { badw++; printf("  watch %04X %s: expected t=%llu pc=%04X, got found=%d t=%llu pc=%04X (machine at %llu pc=%04X)\n", a, want_read ? "read" : "write", (unsigned long long)truth.cycles, truth.pc, found, (unsigned long long)got.cycles, got.pc, (unsigned long long)d->cycles, d->z80.pc); }
+          /* cancel path: back to where it started, exactly */
+          sc = cpc_reverse_begin(d, mode == 1 ? CPC_REV_READ : CPC_REV_WRITE, a, a); cpc_reverse_slice(d, sc); cpc_reverse_end(d, sc, false, NULL);
+          (void)hx; (void)slices;
+      }
+      CHECK(!badw && usedw >= 4, "reverse watch finds the latest write/read exactly where a forward watch says (and stops before the instruction)");
+      /* breakpoints: user counters, pass counts and logpoints are left alone */
+      { cpc_player_seek(d, 1000); for (int f = 0; f < 60; f++) cpc_run_frame(d);
+        int bp = dbg_add_code_bp(d, 0x6BB9); dd->bp[bp].pass_count = 7; dd->bp[bp].count = 3; dd->bp[bp].hits = 2;
+        int lg = dbg_add_code_bp(d, 0x6BB9 + 3); dbg_set_log(d, lg, "nope"); uint32_t logs0 = dbg_log_total(dd);
+        uint64_t X = d->cycles, hx = cpc_state_hash(d);
+        /* truth: where was PC at 6BB9 last? */
+        cpc_player_seek(d, 1000); dd->active = true; CPCReverseHit truth = {0};
+        int tb = dbg_add_code_bp(d, 0x6BB9); dd->bp[tb].block = NULL; dd->scanning = true;
+        while (d->cycles < X) { uint64_t t = d->cycles; uint16_t pc = d->z80.pc; int n = cpc_step(d); if (dd->hit) { truth = (CPCReverseHit){true, t, pc, 1, tb}; } dd->hit = false; if (n == 0) dd->skip_once = true; }
+        dd->scanning = false; dbg_remove_bp(d, tb); dbg_set_log(d, tb, ""); dd->skip_once = false;
+        cpc_player_goto_cycles(d, X, true);
+        CHECK(cpc_state_hash(d) == hx, "returned to the starting position");
+        CPCReverseScan *sc = cpc_reverse_begin(d, CPC_REV_BREAKPOINTS, 0, 0); CPCReverseHit got = {0}; while (!cpc_reverse_slice(d, sc)) {}
+        bool found = cpc_reverse_end(d, sc, true, &got);
+        CHECK(found && truth.found && got.cycles == truth.cycles && got.kind == 1 && d->z80.pc == 0x6BB9, "reverse continue finds the last time a code breakpoint was reached");
+        CHECK(dd->bp[bp].pass_count == 7 && dd->bp[bp].count == 3 && dd->bp[bp].hits == 2 && dbg_log_total(dd) == logs0, "the user's counters, pass counts and logpoints are untouched");
+        /* nothing earlier: stays put */
+        cpc_player_seek(d, 1000); for (int f = 0; f < 30; f++) cpc_run_frame(d); uint64_t hy = cpc_state_hash(d);
+        for (int i = 0; i < DBG_MAX_BP; i++) dd->bp[i].used = false; dbg_rebuild_watch(dd);
+        uint64_t co0 = d->cycles; int nsl = 0;
+        sc = cpc_reverse_begin(d, CPC_REV_CODE, 0x0010, 0); while (!cpc_reverse_slice(d, sc)) nsl++;
+        found = cpc_reverse_end(d, sc, true, NULL);
+
+
+        CHECK(!found && cpc_state_hash(d) == hy, "no earlier hit: the machine stays where it was"); }
       cpc_player_free(cp); cpc_clone_free(cl); cpc_player_free(dp); cpc_destroy(d); }
     /* take control: the machine continues live */
     cpc_player_end(b); cpc_key(b, CPCK_A, true); cpc_run_frame(b);

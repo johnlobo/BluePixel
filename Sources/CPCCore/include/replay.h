@@ -65,4 +65,28 @@ CPC *cpc_clone_machine(const CPC *src);                     /* same config, ROMs
 void cpc_clone_free(CPC *c);
 size_t cpc_player_adopt_keyframes(CPC *c, CPCPlayer *src);  /* moves keyframes c's player lacks; call with c's lock held */
 size_t cpc_player_keyframe_bytes(const CPC *c);
+
+/* --- reverse debugging (needs a replay; positions are emulated microseconds, c->cycles) --- */
+bool cpc_player_goto_cycles(CPC *c, uint64_t cycles, bool rebuild_history);   /* exact position; refills the execution history */
+bool cpc_player_step_back(CPC *c);                                           /* state before the last executed step; false at the start */
+
+typedef enum { CPC_REV_BREAKPOINTS, CPC_REV_WRITE, CPC_REV_READ, CPC_REV_CODE } CPCReverseMode;
+typedef struct {
+    bool found;
+    uint64_t cycles;          /* position just before the instruction that triggered */
+    uint16_t pc;              /* address of that instruction */
+    int kind;                 /* 1 code, 2 memory read, 3 memory write, 4 I/O */
+    int bp_index;
+    uint16_t addr; uint8_t value, previous;   /* memory events */
+} CPCReverseHit;
+typedef struct CPCReverseScan CPCReverseScan;
+
+/* Search backwards for the latest hit before the current position: breakpoints as the user set them (conditions
+ * honoured, pass counts and logpoints ignored), the last write/read of memory lo..hi, or the last time PC was at lo.
+ * The scan works one keyframe interval per slice so a frontend can keep its UI alive and offer cancel. */
+CPCReverseScan *cpc_reverse_begin(CPC *c, CPCReverseMode mode, uint16_t lo, uint16_t hi);   /* NULL: not replaying / no free breakpoint */
+bool cpc_reverse_slice(CPC *c, CPCReverseScan *s);                  /* true when the scan is over */
+double cpc_reverse_progress(const CPCReverseScan *s);               /* 0..1 of the way back to the start */
+uint64_t cpc_reverse_cycles(const CPCReverseScan *s);               /* position being scanned */
+bool cpc_reverse_end(CPC *c, CPCReverseScan *s, bool keep, CPCReverseHit *hit);   /* restores the debugger, positions the machine, frees s */
 #endif

@@ -1,4 +1,5 @@
 #include "state.h"
+#include <stdio.h>
 #include "fdc.h"
 #include "tape.h"
 #include <stdlib.h>
@@ -20,7 +21,7 @@ struct CPCState {
     X(z80.ctx) X(z80.rd) X(z80.wr) X(z80.in) X(z80.out) X(z80.brk_enabled) X(z80.brk_hit) X(z80.turbo) \
     X(cfg) X(model) X(hw_rgb) \
     X(ram) X(ram_size) X(rom_lower) X(rom_upper) X(rom_multiface) X(cartridge) X(cartridge_banks) X(rd_map) X(wr_map) \
-    X(frame) X(frame_done) X(audio) X(audio_cap) X(audio_w) X(audio_r) \
+    X(frame) X(frame_done) X(frame_ready) X(audio) X(audio_cap) X(audio_w) X(audio_r) \
     X(fdc) X(tape) X(rec_active) X(rec_buf) X(rec_len) X(rec_cap) X(rec_phase) X(t_counter) X(dbg) X(recorder) X(stopped_recording) X(player) \
     X(asic.pal_rgb) X(asic.spal_rgb)
 

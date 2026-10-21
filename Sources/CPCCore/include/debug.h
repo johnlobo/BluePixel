@@ -38,6 +38,7 @@ typedef struct Debugger {
     DbgSymbol *syms; int nsyms, syms_cap;
     DbgTimer timers[DBG_MAX_TIMERS];
     int temp_bp;                   /* run-to address, -1 when unused */
+    bool scanning;                 /* reverse search re-simulating: conditions only, no counters, pass counts or logpoints */
     bool step_out; uint16_t step_out_sp;
     bool hist_on; int hist_pos, hist_count;  /* execution history ring (last DBG_HISTORY instructions) */
     DbgHistory hist[DBG_HISTORY];

@@ -295,6 +295,10 @@ static bool bp_fires(CPC *c, Debugger *d, int i) {
         int32_t v; char err[64];
         if (!dbg_eval(c, b->cond, &v, err, sizeof err) || v == 0) return false;
     }
+    if (d->scanning) {                                    /* re-simulation: leave the user's counters and log alone */
+        if (b->log[0]) return false;
+        d->hit = true; d->hit_index = i; return true;
+    }
     b->count++;
     if (b->pass_count > 0) { if (++b->hits < b->pass_count) return false; b->hits = 0; }
     if (b->log[0]) { logpoint(c, b->log); return false; }
