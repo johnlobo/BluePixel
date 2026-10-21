@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manual de MacAPE</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="index.html">MacAPE</a>
+  <nav>
+    <a href="index.html" aria-current="page">Inicio</a>
+    <a href="command-line.html">Línea de comandos</a>
+    <a href="debugger.html">Depurador</a>
+    <a href="sessions.html">Grabar y reproducir</a>
+  </nav>
+</header>
+
+<div class="layout">
+<aside class="toc">
+  <h2>En esta página</h2>
+  <ol>
+    <li><a href="#what">Qué es MacAPE</a></li>
+    <li><a href="#manual">Contenido del manual</a></li>
+    <li><a href="#start">Primeros pasos</a></li>
+    <li><a href="#shortcuts">Atajos globales</a></li>
+    <li><a href="#status">Estado</a></li>
+  </ol>
+</aside>
+
+<main>
+<h1>Manual de MacAPE</h1>
+<p class="lead">Emulador Amstrad CPC / CPC+ para macOS, port nativo de WinAPE 2.0 beta 2, con depurador y grabación de partidas con rebobinado.</p>
+
+<h2 id="what">Qué es MacAPE</h2>
+<p>Emula CPC 464, 664, 6128 y las gamas Plus (con ASIC y cartuchos), con sonido AY-3-8912, discos, cintas, snapshots, Multiface 2 y ratón AMX. El núcleo está escrito en C portable y la interfaz en AppKit.</p>
+
+<h2 id="manual">Contenido del manual</h2>
+<ul class="cards">
+  <li><a href="command-line.html">Línea de comandos</a><p>Abrir discos, arrancar programas, cargar snapshots y símbolos.</p></li>
+  <li><a href="debugger.html">Depurador</a><p>Pasos, breakpoints, logpoints, watch, símbolos, raster y depuración inversa.</p></li>
+  <li><a href="sessions.html">Grabar y reproducir</a><p>Graba una partida, rebobínala como un vídeo y depúrala en cualquier instante.</p></li>
+</ul>
+<p>Este manual crece con el emulador: cada función nueva se documenta aquí. El inventario de funciones de WinAPE que faltan por portar está en <a href="FEATURES.md">FEATURES.md</a>.</p>
+
+<h2 id="start">Primeros pasos</h2>
+<ol>
+  <li>Compila y empaqueta: <code>swift build -c release &amp;&amp; tools/bundle.sh</code>. Se crea <code>build/MacAPE.app</code>.</li>
+  <li>Abre un disco con <strong>File → Drive A: → Insert Disc Image…</strong> (<kbd>Ctrl</kbd>+<kbd>F1</kbd>), arrastrándolo a la ventana, o desde la <a href="command-line.html">línea de comandos</a>.</li>
+  <li>Escribe <code>RUN"</code> y pulsa Enter, o arranca con <code>/A</code> para ejecutar el primer programa.</li>
+  <li>Ajusta modelo, memoria, pantalla, sonido y teclado en el menú <strong>Settings</strong> (<kbd>F12</kbd> abre General).</li>
+</ol>
+<div class="note">
+  <p>En el teclado del Mac las teclas F hacen funciones del sistema por defecto: usa <kbd>fn</kbd>+tecla, o activa «Usar F1, F2, etc. como teclas de función estándar» en Ajustes del Sistema → Teclado.</p>
+</div>
+
+<h2 id="shortcuts">Atajos globales</h2>
+<div class="table-scroll">
+<table>
+  <tr><th>Atajo</th><th>Acción</th></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>F1</kbd> / <kbd>Ctrl</kbd>+<kbd>F2</kbd></td><td>Insertar disco en la unidad A / B</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>⇧</kbd>+<kbd>F3</kbd></td><td>Intercambiar discos A y B</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>F3</kbd></td><td>Cargar cartucho</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>F4</kbd></td><td>Insertar cinta</td></tr>
+  <tr><td><kbd>F5</kbd> / <kbd>F6</kbd></td><td>Cargar / guardar snapshot</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>F6</kbd></td><td>Actualizar snapshot</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>F7</kbd></td><td>Guardar captura de pantalla</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>F8</kbd></td><td>Pokes</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>F5</kbd></td><td>Auto Type</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>F11</kbd></td><td>Pegar texto como si se tecleara</td></tr>
+  <tr><td><kbd>F10</kbd></td><td>Pantalla completa</td></tr>
+  <tr><td><kbd>⌘1</kbd> <kbd>⌘2</kbd> <kbd>⌘3</kbd></td><td>Ventana a 1×, 1,5× o 2×</td></tr>
+  <tr><td><kbd>⇧F3</kbd> / <kbd>⇧F4</kbd></td><td>Velocidad normal (100 %) / alta (1000 %)</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>F9</kbd> / <kbd>Ctrl</kbd>+<kbd>⇧</kbd>+<kbd>F9</kbd></td><td>Reset / reset en frío</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>F12</kbd></td><td>Ratón AMX</td></tr>
+  <tr><td><kbd>F11</kbd></td><td>Multiface Stop</td></tr>
+  <tr><td><kbd>⌘⌥G</kbd></td><td>Ir a un instante (reproducción de sesión)</td></tr>
+  <tr><td><kbd>F7</kbd> <kbd>F8</kbd> <kbd>F9</kbd> …</td><td>Depurador: ver <a href="debugger.html#shortcuts">atajos del depurador</a></td></tr>
+</table>
+</div>
+
+<h2 id="status">Estado</h2>
+<p>Funciona: emulación de CPC/CPC+, sonido, discos (lectura/escritura), cintas, snapshots, cartuchos, Multiface, AMX, auto-type, pokes, perfiles, línea de comandos, depurador completo y grabación/reproducción de sesiones con depuración inversa.</p>
+<p class="status-todo">Pendiente: grabación AVI/WAV/YM, editor de discos, ensamblador integrado, Symbiface II, ZIP/RAR, impresora, joystick/gamepad, profiler. Ver <a href="FEATURES.md">FEATURES.md</a>.</p>
+</main>
+</div>
+
+<footer>Manual de MacAPE — port a macOS de WinAPE 2.0 beta 2</footer>
+</body>
+</html>

@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>El depurador — Manual de MacAPE</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="index.html">MacAPE</a>
+  <nav>
+    <a href="index.html">Inicio</a>
+    <a href="command-line.html">Línea de comandos</a>
+    <a href="debugger.html" aria-current="page">Depurador</a>
+    <a href="sessions.html">Grabar y reproducir</a>
+  </nav>
+</header>
+
+<div class="layout">
+<aside class="toc">
+  <h2>En esta página</h2>
+  <ol>
+    <li><a href="#intro">Introducción</a></li>
+    <li><a href="#window">La ventana</a></li>
+    <li><a href="#execution">Control de ejecución</a></li>
+    <li><a href="#disassembly">Desensamblado</a></li>
+    <li><a href="#memory-pane">Volcado de memoria</a></li>
+    <li><a href="#registers">Registros, flags y pila</a></li>
+    <li><a href="#memory-selection">Selección de memoria</a></li>
+    <li><a href="#search">Buscar e ir a</a></li>
+    <li><a href="#expressions">Expresiones</a></li>
+    <li><a href="#symbols">Símbolos</a></li>
+    <li><a href="#breakpoints">Breakpoints</a></li>
+    <li><a href="#logpoints">Logpoints</a></li>
+    <li><a href="#watch">Watch</a></li>
+    <li><a href="#history">Historial de ejecución</a></li>
+    <li><a href="#windows">Otras ventanas</a></li>
+    <li><a href="#screen">Pantalla en pausa y raster</a></li>
+    <li><a href="#reverse">Depuración inversa</a></li>
+    <li><a href="#shortcuts">Atajos</a></li>
+    <li><a href="#limits">Limitaciones</a></li>
+  </ol>
+</aside>
+
+<main>
+<h1>El depurador</h1>
+<p class="lead">Depurador del Z80 integrado: pausa la máquina en cualquier instrucción, muestra y modifica registros, memoria y hardware, y usa los símbolos de tu propio código (CPCtelera/SDCC, RASM, sjasmplus). Sigue la ventana de WinAPE y añade navegación por el código, Step Out, raster, watch, logpoints, historial y depuración hacia atrás.</p>
+
+<h2 id="intro">Introducción</h2>
+<p>Se abre con <kbd>F7</kbd> (pausa), con el botón de pausa del panel de la ventana principal, con el menú <strong>Debug</strong> o automáticamente al saltar un breakpoint. <strong>Cerrar la ventana reanuda la emulación</strong>, igual que <kbd>F9</kbd>.</p>
+<p>El título de la ventana indica cuántos símbolos hay cargados: <code>MacAPE Debugger — 208 symbols from boop.noi</code>.</p>
+
+<figure>
+  <img src="img/debugger.png" alt="Ventana del depurador de MacAPE con desensamblado, volcado de memoria, registros y pila">
+  <figcaption>El depurador parado dentro de un juego CPCtelera con sus símbolos cargados.</figcaption>
+</figure>
+
+<h2 id="window">La ventana</h2>
+<ul>
+  <li><strong>Izquierda, arriba:</strong> panel de desensamblado.</li>
+  <li><strong>Izquierda, en medio:</strong> volcado de memoria, con el indicador del haz y el selector <em>Follow</em> debajo.</li>
+  <li><strong>Abajo:</strong> grupos Memory, ROM, RAM y Secondary ROM Mapping, selector <em>Screen</em>, botones de fichero, opciones y herramientas.</li>
+  <li><strong>Derecha:</strong> flags, registros, IM, Ints, contador T y pila.</li>
+</ul>
+<p>Tamaño mínimo: 980 × 600. Por debajo, los controles inferiores no caben.</p>
+
+<h2 id="execution">Control de ejecución</h2>
+<p>Cada parada (pausa, paso, breakpoint) lleva el desensamblado al PC y lo selecciona, aunque estuvieras mirando otra dirección. Los registros y flags que cambiaron desde la parada anterior se muestran en <strong>rojo</strong>.</p>
+<div class="table-scroll">
+<table>
+  <tr><th>Acción</th><th>Tecla</th><th>Qué hace</th></tr>
+  <tr><td>Pause / Step Into</td><td><kbd>F7</kbd></td><td>Si corre, pausa. En pausa, ejecuta una instrucción y entra en los <code>CALL</code>. Un <code>HALT</code> se completa hasta la interrupción.</td></tr>
+  <tr><td>Step Into</td><td><kbd>⇧F7</kbd></td><td>Igual que F7 en pausa (alias del menú).</td></tr>
+  <tr><td>Step Over</td><td><kbd>F8</kbd></td><td>Ejecuta una instrucción; los <code>CALL</code>, <code>RST</code> y las instrucciones de bloque (<code>LDIR</code>, <code>OTIR</code>…) se ejecutan enteros.</td></tr>
+  <tr><td>Step Out</td><td><kbd>⇧F8</kbd></td><td>Corre hasta que un <code>RET</code> sale de la función actual y para justo después del <code>CALL</code> que la llamó. Un <code>POP</code> no lo dispara.</td></tr>
+  <tr><td>Run to Cursor</td><td><kbd>F4</kbd></td><td>Corre hasta la línea seleccionada en el desensamblado.</td></tr>
+  <tr><td>Step Scanline</td><td><kbd>⌥F8</kbd></td><td>Corre hasta la siguiente línea del haz.</td></tr>
+  <tr><td>Step Frame</td><td><kbd>⌥⇧F8</kbd></td><td>Corre hasta el siguiente VSYNC.</td></tr>
+  <tr><td>Run</td><td><kbd>F9</kbd></td><td>Reanuda. Cerrar la ventana del depurador hace lo mismo.</td></tr>
+</table>
+</div>
+<p>Run to Cursor, Step Over sobre un <code>CALL</code>, Step Out y los pasos de raster se paran antes si encuentran un breakpoint. Pausar a mano o pulsar F9 cancela el objetivo pendiente.</p>
+<p><strong>Hide On Run</strong> oculta el depurador mientras la máquina corre; vuelve a aparecer en la siguiente parada.</p>
+<div class="note">
+  <p>En el teclado del Mac las teclas F hacen funciones del sistema por defecto: usa <kbd>fn</kbd>+<kbd>F7</kbd>, o activa «Usar F1, F2, etc. como teclas de función estándar» en Ajustes del Sistema → Teclado. <kbd>Ctrl</kbd>+<kbd>F8</kbd> está reservado por macOS, por eso el paso por línea usa <kbd>⌥</kbd>.</p>
+</div>
+<p>Con una grabación en reproducción también puedes ir <a href="#reverse">hacia atrás</a>.</p>
+
+<h2 id="disassembly">Desensamblado</h2>
+<p>Cada línea es una instrucción: <code>dirección  instrucción … bytes  caracteres  símbolo</code>.</p>
+<ul>
+  <li><strong>Colores:</strong> mnemónico en rojo, registros y condiciones en morado, números en azul, símbolos en naranja. La línea del PC va resaltada en azul.</li>
+  <li><strong>Operandos con nombre:</strong> <code>CALL #4DAF</code> se muestra como <code>CALL sys_sound_init</code> si hay símbolo. Si el operando es largo, se recorta con «…».</li>
+  <li><strong>Columna de símbolo:</strong> a la derecha, el nombre del símbolo cuyo valor es esa dirección.</li>
+  <li><strong>Caracteres:</strong> los bytes de la instrucción con la fuente CPC de WinAPE.</li>
+  <li><strong>Breakpoints:</strong> clic en la franja gris de la izquierda, doble clic en la línea o <kbd>F5</kbd>. Se marcan con un punto rojo.</li>
+  <li><strong>Selección de rango:</strong> arrastrando o con <kbd>⇧</kbd>+clic. La usan Disassemble y Mark as Data.</li>
+  <li><strong>Desplazamiento:</strong> rueda del ratón, flechas, Re Pág y Av Pág. Al desplazarte se desmarca <em>Follow PC</em>.</li>
+</ul>
+
+<h3>Navegar sin ejecutar</h3>
+<ul>
+  <li><kbd>Enter</kbd> sobre un <code>CALL</code>, <code>JP</code>, <code>JR</code>, <code>DJNZ</code> o <code>RST</code> lleva al destino. En <code>JP (HL)</code>, <code>(IX)</code> o <code>(IY)</code> usa el valor actual del registro.</li>
+  <li><kbd>Enter</kbd> sobre otra instrucción con una dirección de 16 bits (<code>LD HL,#6B88</code>, <code>LD A,(#49D9)</code>) abre esa dirección en el panel de memoria.</li>
+  <li><kbd>Retroceso</kbd> vuelve al punto anterior. El historial guarda 100 saltos e incluye Goto, Find, la ventana de símbolos y el doble clic en la pila.</li>
+</ul>
+
+<h3>Menú contextual</h3>
+<div class="table-scroll">
+<table>
+  <tr><th>Opción</th><th>Atajo</th><th>Qué hace</th></tr>
+  <tr><td>Find…</td><td><kbd>Ctrl</kbd>+<kbd>F</kbd> / <kbd>⌘F</kbd></td><td>Buscar (ver <a href="#search">Buscar e ir a</a>).</td></tr>
+  <tr><td>Find Again</td><td><kbd>F3</kbd></td><td>Siguiente coincidencia.</td></tr>
+  <tr><td>Goto…</td><td><kbd>Ctrl</kbd>+<kbd>G</kbd> / <kbd>⌘G</kbd></td><td>Ir a una dirección, símbolo o expresión.</td></tr>
+  <tr><td>Run to Cursor</td><td><kbd>F4</kbd></td><td>Correr hasta la línea seleccionada.</td></tr>
+  <tr><td>Run Back to Here</td><td><kbd>⌥F4</kbd></td><td>Solo en una reproducción: ir a la última vez que el PC estuvo ahí.</td></tr>
+  <tr><td>Toggle Breakpoint</td><td><kbd>F5</kbd></td><td>Poner o quitar un breakpoint.</td></tr>
+  <tr><td>Add Logpoint…</td><td>—</td><td>Breakpoint que escribe un mensaje y no para (ver <a href="#logpoints">Logpoints</a>).</td></tr>
+  <tr><td>Disassemble…</td><td>—</td><td>Exportar un rango a un fichero <code>.asm</code>.</td></tr>
+  <tr><td>Mark as Data</td><td>—</td><td>Marcar la selección como datos (se muestra como <code>DB</code>/<code>DW</code>).</td></tr>
+  <tr><td>Clear Data Area</td><td>—</td><td>Quitar el área de datos de esa dirección.</td></tr>
+</table>
+</div>
+
+<h2 id="memory-pane">Volcado de memoria</h2>
+<p>Cada fila muestra 16 bytes: dirección, valores en hex y su representación como caracteres CPC.</p>
+<ul>
+  <li><strong>Editar en hex:</strong> clic en un byte y escribe dígitos hex; el cursor avanza solo.</li>
+  <li><strong>Editar en ASCII:</strong> clic en la columna de caracteres, o <kbd>Ctrl</kbd>+<kbd>Tab</kbd> para alternar; lo que tecleas se escribe como carácter.</li>
+  <li><strong>Selección:</strong> arrastrar, <kbd>⇧</kbd>+clic o <kbd>⇧</kbd>+flechas.</li>
+  <li><strong>Breakpoints de memoria:</strong> fondo verde = lectura, rojo = escritura, amarillo = ambos.</li>
+  <li><strong>Follow</strong> (selector bajo el volcado): engancha el volcado a HL, DE, BC, IX, IY, SP o PC; en cada paso salta a la dirección del registro.</li>
+  <li><strong>Desplazamiento:</strong> rueda, flechas, Re Pág y Av Pág.</li>
+</ul>
+
+<h3>Menú contextual</h3>
+<div class="table-scroll">
+<table>
+  <tr><th>Opción</th><th>Atajo</th><th>Qué hace</th></tr>
+  <tr><td>Find… / Find Again</td><td><kbd>Ctrl</kbd>+<kbd>F</kbd> / <kbd>F3</kbd></td><td>Buscar desde el cursor.</td></tr>
+  <tr><td>Goto…</td><td><kbd>Ctrl</kbd>+<kbd>G</kbd></td><td>Mover el cursor a una dirección o símbolo.</td></tr>
+  <tr><td>Select Block…</td><td>—</td><td>Seleccionar un rango escribiendo inicio y fin.</td></tr>
+  <tr><td>Load…</td><td><kbd>F5</kbd></td><td>Cargar un fichero a partir del cursor.</td></tr>
+  <tr><td>Save…</td><td>—</td><td>Guardar la selección en un fichero.</td></tr>
+  <tr><td>Breakpoint on Read / Write</td><td>—</td><td>Breakpoint de memoria sobre la selección.</td></tr>
+  <tr><td>Who Wrote This? / Who Read This?</td><td>—</td><td>Solo en una reproducción: ir a la última escritura o lectura de los bytes seleccionados (<a href="#reverse">depuración inversa</a>).</td></tr>
+  <tr><td>Compare To…</td><td>—</td><td>Comparar la selección con otra dirección o con un fichero; lista las diferencias.</td></tr>
+  <tr><td>Fill…</td><td>—</td><td>Rellenar la selección con bytes hex repetidos o con un texto.</td></tr>
+  <tr><td>Disassemble…</td><td>—</td><td>Exportar la selección desensamblada.</td></tr>
+  <tr><td>Mark as Data / Clear Data Area</td><td>—</td><td>Marcar la selección como datos o quitar la marca.</td></tr>
+  <tr><td>Edit ASCII / Edit Hex</td><td><kbd>Ctrl</kbd>+<kbd>Tab</kbd></td><td>Cambiar el modo de edición.</td></tr>
+</table>
+</div>
+<p>Los botones de la carpeta y del disco (abajo) hacen Load y Save; el de la flecha hace Goto en el último panel que pulsaste.</p>
+
+<h2 id="registers">Registros, flags y pila</h2>
+<p>Todo lo de la columna derecha se puede editar en pausa.</p>
+<ul>
+  <li><strong>Flags:</strong> los 8 bits de F en binario, bajo <code>SZ-H-VNC</code>. Edita el campo y pulsa <kbd>Enter</kbd>.</li>
+  <li><strong>Registros en pares:</strong> AF/AF', HL/HL', DE/DE', BC/BC', IX/SP, IY/I, PC/R. Acepta un valor hex, un símbolo o una <a href="#expressions">expresión</a>; cambiar PC mueve la ejecución.</li>
+  <li><strong>IM:</strong> modo de interrupción (0, 1, 2).</li>
+  <li><strong>Ints:</strong> activa o desactiva las interrupciones (IFF1/IFF2).</li>
+  <li><strong>T:</strong> microsegundos transcurridos; la ✕ roja lo pone a cero. Sirve para medir cuánto tarda una rutina.</li>
+</ul>
+<h3>Pila</h3>
+<ul>
+  <li>La entrada de SP sale en azul; la rueda del ratón se desplaza por la pila.</li>
+  <li><strong>Pila de llamadas:</strong> una entrada que es dirección de retorno real (justo detrás de un <code>CALL</code> o <code>RST</code>) se marca con la función llamante, p. ej. <code>BFF8: 2BE5 ← _main+5</code>.</li>
+  <li>Si el valor coincide con un símbolo, se muestra su nombre.</li>
+  <li><strong>Doble clic</strong> en una entrada lleva el desensamblado a esa dirección.</li>
+</ul>
+
+<h2 id="memory-selection">Selección de memoria</h2>
+<p>Los grupos de abajo eligen qué memoria ven el desensamblado, el volcado y la pila. Por defecto siguen la configuración actual de la máquina; al tocarlos se fija la vista, y <strong>Current</strong> vuelve a seguir a la máquina.</p>
+<div class="table-scroll">
+<table>
+  <tr><th>Grupo</th><th>Opción</th><th>Efecto</th></tr>
+  <tr><td>Memory</td><td>Read</td><td>Lo que lee el Z80: ROM donde está activa, RAM en el resto.</td></tr>
+  <tr><td>Memory</td><td>Write</td><td>Lo que escribe el Z80: siempre RAM.</td></tr>
+  <tr><td>Memory</td><td>Any</td><td>Mapeo según Lower/Upper ROM y RAM Bank elegidos.</td></tr>
+  <tr><td>ROM</td><td>Lower</td><td>Ver la ROM inferior en <code>0000–3FFF</code>.</td></tr>
+  <tr><td>ROM</td><td>Upper ROM</td><td>Ver una ROM superior en <code>C000–FFFF</code>; muestra número y nombre (<code>00 - BASIC1-1</code>).</td></tr>
+  <tr><td>RAM</td><td>RAM Bank</td><td>Configuración de RAM del Gate Array, <code>C0–FF</code> (bancos de 128K y ampliaciones).</td></tr>
+  <tr><td>Secondary ROM Mapping</td><td>Lower ROM</td><td>Solo Plus: dónde se mapea la ROM baja (<code>#0000</code>, <code>#4000</code>, <code>#8000</code>).</td></tr>
+  <tr><td>Secondary ROM Mapping</td><td>Cart Bank</td><td>Solo Plus: banco del cartucho mapeado como ROM baja.</td></tr>
+</table>
+</div>
+
+<h2 id="search">Buscar e ir a</h2>
+<p>Ambos actúan en el último panel que pulsaste (desensamblado o memoria). La búsqueda empieza tras el cursor y da la vuelta a los 64K; <kbd>F3</kbd> salta a la siguiente coincidencia.</p>
+<p><strong>Goto</strong> (<kbd>Ctrl</kbd>+<kbd>G</kbd>) acepta una dirección (<code>#4000</code>, <code>&amp;4000</code>, <code>4000h</code>), un símbolo (<code>sys_sound_init</code>) o una expresión (<code>HL+3</code>, <code>_char_buffer+16</code>).</p>
+<p><strong>Find</strong> (<kbd>Ctrl</kbd>+<kbd>F</kbd> o la lupa):</p>
+<div class="table-scroll">
+<table>
+  <tr><th>Modo</th><th>Qué escribes</th><th>Comodines</th><th>Ejemplo</th></tr>
+  <tr><td>Find Text</td><td>Texto</td><td><code>?</code> = un carácter</td><td><code>GAME ?OADED</code></td></tr>
+  <tr><td>Find Hex Data</td><td>Bytes hex separados por espacios</td><td><code>??</code> = un byte</td><td><code>ED 49 ?? 0E</code></td></tr>
+  <tr><td>Find Assembler</td><td>Instrucciones Z80</td><td><code>?</code> = un carácter, <code>*</code> = cualquier cosa</td><td><code>LD (#B7C4),*</code>, <code>CALL sys_*</code></td></tr>
+  <tr><td>Find Symbol</td><td>Nombre de símbolo</td><td><code>?</code> y <code>*</code>; sin comodines busca por subcadena</td><td><code>sound</code>, <code>_PLY_AKG_*</code></td></tr>
+</table>
+</div>
+<ul>
+  <li>La casilla <strong>Case sensitive</strong> distingue mayúsculas en Find Text.</li>
+  <li>Find Assembler compara la instrucción tal cual y también con los símbolos sustituidos.</li>
+  <li>En el panel de memoria, la coincidencia queda seleccionada.</li>
+</ul>
+
+<h2 id="expressions">Expresiones</h2>
+<p>Se usan en Goto, en los registros, en las condiciones de los breakpoints, en los mensajes de logpoint y en la ventana Watch.</p>
+<div class="warn">
+  <p><strong>Los paréntesis solo agrupan.</strong> Para leer un byte de memoria usa <code>peek(dirección)</code>: <code>(_snd_music_active)</code> no lee memoria, <code>peek(_snd_music_active)</code> sí. Un símbolo suelto vale su dirección.</p>
+</div>
+<div class="table-scroll">
+<table>
+  <tr><th>Elemento</th><th>Detalle</th></tr>
+  <tr><td>Números</td><td><code>#4000</code>, <code>&amp;4000</code>, <code>$4000</code>, <code>0x4000</code>, <code>4000h</code> (hex), <code>%1010</code> (binario), <code>1234</code> (decimal).</td></tr>
+  <tr><td>Aritmética</td><td><code>+ - * /</code>, <code>mod</code>, signo <code>-</code> y <code>+</code>.</td></tr>
+  <tr><td>Comparación</td><td><code>=</code> o <code>==</code>, <code>&lt;&gt;</code> (distinto, <strong>no</strong> <code>!=</code>), <code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&gt;=</code>. Verdadero vale −1, falso 0.</td></tr>
+  <tr><td>Lógicos</td><td><code>and</code>, <code>or</code>, <code>xor</code>, <code>not</code> (no <code>&amp;&amp;</code> ni <code>||</code>).</td></tr>
+  <tr><td>Registros</td><td><code>a f b c d e h l</code>, <code>af bc de hl ix iy sp pc</code>, <code>ixh ixl iyh iyl</code> (también <code>hx lx hy ly</code>), <code>af' bc' de' hl'</code>, <code>i r im</code>.</td></tr>
+  <tr><td>Símbolos</td><td>Cualquier símbolo cargado, por su nombre.</td></tr>
+  <tr><td>Variables</td><td><code>address</code>, <code>value</code>, <code>previous</code> (último acceso a memoria que disparó un breakpoint), <code>mode</code>, <code>ram_bank</code>, <code>upper_rom</code>, <code>lower_enabled</code>, <code>upper_enabled</code>, <code>secondary_rom</code>, <code>cartridge_bank</code>, <code>ppi_a</code>, <code>ppi_b</code>, <code>ppi_c</code>, <code>ppi_control</code>, <code>ay_select</code>, <code>crtc_select</code>, <code>palette_select</code>, <code>fdc_motor</code>, <code>tape_motor</code>, <code>true</code>, <code>false</code>.</td></tr>
+  <tr><td>Funciones</td>
+      <td><code>peek(a)</code> lee un byte; <code>poke(a, v, …)</code> escribe; <code>byte(x)</code>, <code>word(x)</code>, <code>hibyte(x)</code>, <code>hiword(x)</code>; <code>ay(n)</code> / <code>psg(n)</code> registro del PSG; <code>crtc(n)</code> registro del CRTC; <code>ga_palette(pen[, v])</code>, <code>palette(pen[, v])</code>; <code>reset_cycles()</code>; <code>timer_start(n)</code> y <code>timer_stop(n)</code>.</td></tr>
+</table>
+</div>
+<p>Ejemplos: <code>A==#0D</code>, <code>HL&gt;#C000</code>, <code>peek(#B8B4)==3</code>, <code>(A and #0F)&lt;&gt;0</code>, <code>peek(_snd_music_active) and A=2</code>.</p>
+<p class="status-todo">Las variables del ratón (<code>mouse_x</code>…) y del reloj (<code>rtc</code>) existen pero valen siempre 0: ni el ratón PS/2 ni el reloj de Symbiface están emulados.</p>
+
+<h2 id="symbols">Símbolos</h2>
+<p>Los símbolos ponen nombre a direcciones en el desensamblado, la pila, el historial, Goto, Find, Watch y las expresiones.</p>
+<h3>Cargarlos</h3>
+<ul>
+  <li>Desde la <a href="command-line.html">línea de comandos</a>: <code>macape juego.dsk /A /SYM obj/juego.noi</code> (también <code>/SYM:fichero</code>).</li>
+  <li><strong>Debug → Load Symbols…</strong> o el botón <em>Load…</em> de la ventana de símbolos.</li>
+  <li><strong>Debug → Clear Symbols</strong> los borra todos.</li>
+</ul>
+<h3>Formatos que se leen</h3>
+<div class="table-scroll">
+<table>
+  <tr><th>Formato</th><th>Ejemplo de línea</th></tr>
+  <tr><td>NoICE <code>.noi</code> (CPCtelera/SDCC)</td><td><code>DEF sys_sound_init 0x4DAF</code></td></tr>
+  <tr><td><code>.map</code> de SDCC/ASxxxx</td><td><code>00004DAF  sys_sound_init  sound</code></td></tr>
+  <tr><td>RASM <code>.sym</code></td><td><code>main #4000 B0</code></td></tr>
+  <tr><td>sjasmplus <code>.sym</code></td><td><code>main: EQU 0x00004000</code></td></tr>
+  <tr><td>Maxam/WinAPE, listas</td><td><code>main EQU #4000</code>, <code>main = 4000h</code>, <code>al 4000 .main</code></td></tr>
+</table>
+</div>
+<p>Los símbolos de sección del enlazador (<code>s__*</code>, <code>l__*</code>) se ignoran.</p>
+
+<h3>Ventana de símbolos</h3>
+<p>Se abre con <strong>Debug → Symbols…</strong> o con el botón de la etiqueta.</p>
+<figure>
+  <img src="img/symbols.png" alt="Ventana de símbolos con filtro y lista de nombres y direcciones" style="max-width: 24rem">
+</figure>
+<ul>
+  <li>Filtro mientras escribes, con <code>?</code> y <code>*</code>; sin comodines busca por subcadena.</li>
+  <li>Ordena por nombre o por dirección pulsando la cabecera de la columna.</li>
+  <li>Doble clic o <strong>Go To</strong> lleva al código; <strong>Breakpoint</strong> pone o quita un breakpoint (los símbolos con breakpoint salen en rojo).</li>
+</ul>
+
+<h3>Recargar tras recompilar</h3>
+<p><kbd>⌘R</kbd> (<strong>Debug → Reload Disc &amp; Symbols</strong>) vuelve a leer del disco el <code>.dsk</code> de la unidad A y el último fichero de símbolos, hace un reset en frío y ejecuta como <code>/A</code>.</p>
+<div class="warn">
+  <p>El <code>.dsk</code> y los símbolos tienen que salir del mismo build; si no, las etiquetas no coinciden con el código.</p>
+</div>
+
+<h2 id="breakpoints">Breakpoints</h2>
+<p>La ventana <strong>Breakpoints</strong> (Debug → Breakpoints o el botón rojo) tiene tres pestañas: Code, Memory e I/O. La casilla <strong>Breakpoints</strong> de la ventana principal los activa o desactiva todos a la vez.</p>
+<div class="table-scroll">
+<table>
+  <tr><th>Tipo</th><th>Cómo se crea</th><th>Cuándo para</th></tr>
+  <tr><td>Code</td><td><kbd>F5</kbd>, franja gris, <em>Add</em> en la pestaña Code, o desde la ventana de símbolos</td><td>Al ejecutar esa dirección.</td></tr>
+  <tr><td>Memory read / write</td><td>Menú del panel de memoria, o <em>Add</em> con un rango y <code>r</code>/<code>w</code> (<code>#C000,#FFFF w</code>)</td><td>Al leer o escribir en el rango.</td></tr>
+  <tr><td>I/O</td><td><em>Add</em> en la pestaña I/O: puerto, máscara, IN/OUT</td><td>Al acceder a ese puerto (p. ej. <code>#7F00</code> con máscara <code>#C000</code> para el Gate Array).</td></tr>
+  <tr><td>BRK</td><td>Instrucción <code>ED FF</code> en tu código, con <em>Break Instructions</em> marcado</td><td>Al ejecutar el <code>ED FF</code>.</td></tr>
+</table>
+</div>
+<h3>Columnas editables (doble clic)</h3>
+<ul>
+  <li><strong>Condition:</strong> el breakpoint solo para si la <a href="#expressions">expresión</a> no vale 0, p. ej. <code>A==#0D</code>, <code>HL&gt;#C000</code>, <code>peek(#B8B4)==3</code>.</li>
+  <li><strong>Pass:</strong> para solo cada N veces que se cumple. <em>Count</em> muestra cuántas veces se ha cumplido; <em>Reset</em> lo pone a cero.</li>
+  <li><strong>Log message:</strong> convierte el breakpoint en <a href="#logpoints">logpoint</a>. Vaciarlo lo devuelve a breakpoint normal.</li>
+</ul>
+<p><em>Load</em> y <em>Save</em> guardan la lista en un fichero de texto, incluidos condiciones y mensajes.</p>
+
+<h2 id="logpoints">Logpoints</h2>
+<p>Un logpoint escribe una línea en la ventana <strong>Log</strong> cada vez que se cumple, y la máquina sigue corriendo.</p>
+<ul>
+  <li><strong>Crear:</strong> clic derecho en una línea del desensamblado → <strong>Add Logpoint…</strong>, o escribe en la columna <em>Log message</em> de un breakpoint.</li>
+  <li><strong>Mensaje:</strong> texto con <code>{expr}</code> (hex) y <code>{expr:d}</code> (decimal), p. ej. <code>music={peek(_snd_music_active)} A={A} vidas={peek(#7000):d}</code>.</li>
+  <li><strong>Salida:</strong> cada línea empieza por <code>[frame] PC</code>. La ventana guarda las últimas 512 líneas; <em>Clear</em> la vacía.</li>
+  <li>La condición y el contador Pass también se aplican a los logpoints.</li>
+</ul>
+<p>Para leer un byte de memoria usa <code>peek(…)</code>: <code>{_snd_music_active}</code> da la dirección de la variable, <code>{peek(_snd_music_active)}</code> su valor.</p>
+
+<h2 id="watch">Watch</h2>
+<p><strong>Debug → Watch…</strong> (o el botón del ojo): lista de expresiones que se recalculan en cada parada, y unas 3 veces por segundo mientras el juego corre. Lo que cambió desde la parada anterior sale en rojo. La lista se guarda entre sesiones.</p>
+<ul>
+  <li><strong>Add…</strong> pide la expresión; si es un símbolo suelto propone <em>Byte at</em>. Doble clic en la expresión para editarla; <strong>Remove</strong> borra la fila.</li>
+</ul>
+<div class="table-scroll">
+<table>
+  <tr><th>Formato</th><th>Muestra</th></tr>
+  <tr><td>Hex / Decimal / Binary</td><td>El valor de la expresión.</td></tr>
+  <tr><td>Byte at / Word at</td><td>El byte o la palabra (little-endian) en esa dirección, en hex y decimal.</td></tr>
+  <tr><td>8 bytes at</td><td>8 bytes desde esa dirección.</td></tr>
+  <tr><td>Text at (16)</td><td>16 caracteres desde esa dirección.</td></tr>
+</table>
+</div>
+
+<h2 id="history">Historial de ejecución</h2>
+<p><strong>Debug → Execution History…</strong> (o el botón del reloj): las últimas 4096 instrucciones ejecutadas antes de parar, de la más reciente a la más antigua. Cada fila: número, dirección, función+desplazamiento, instrucción y AF, BC, DE, HL, IX, IY, SP en ese momento. Doble clic lleva al código; <em>Clear</em> lo vacía. Los bucles de <code>HALT</code> no se guardan.</p>
+<figure>
+  <img src="img/history.png" alt="Ventana de historial de ejecución">
+</figure>
+
+<h2 id="windows">Otras ventanas</h2>
+<div class="table-scroll">
+<table>
+  <tr><th>Ventana</th><th>Dónde</th><th>Para qué</th></tr>
+  <tr><td>Data Areas</td><td>Debug → Data Areas, botón de la lista</td><td>Zonas marcadas como datos (<code>DB</code>/<code>DW</code>) en el desensamblado.</td></tr>
+  <tr><td>Timers</td><td>Debug → Timers, botón del cronómetro</td><td>Tiempos medidos con <code>timer_start(n)</code> / <code>timer_stop(n)</code> en condiciones de breakpoints.</td></tr>
+  <tr><td>Registers</td><td>Debug → Registers, botón del chip</td><td>Registros de Gate Array, PSG, CRTC (VCC, VLC, HCC…) y ASIC del Plus.</td></tr>
+  <tr><td>Find Graphics</td><td>Debug → Find Graphics, botón de la imagen</td><td>Ver y editar memoria como gráficos en modo 0, 1 o 2.</td></tr>
+  <tr><td>Log</td><td>Debug → Log…, botón de las líneas</td><td>Salida de los logpoints.</td></tr>
+</table>
+</div>
+
+<h2 id="screen">Pantalla en pausa y raster</h2>
+<p>El selector <strong>Screen</strong> (abajo, junto a Secondary ROM Mapping) o <strong>Debug → Paused Screen</strong> elige qué muestra la ventana del emulador mientras está en pausa. Se actualiza en cada paso.</p>
+<div class="table-scroll">
+<table>
+  <tr><th>Vista</th><th>Qué muestra</th></tr>
+  <tr><td>Normal</td><td>El último frame completo.</td></tr>
+  <tr><td>Raster</td><td>Lo que el haz ya dibujó en este frame, a color normal; lo que falta, atenuado con el frame anterior. Una línea roja marca la fila del haz y una marca amarilla su posición horizontal. Si el haz está en el borde superior o en el retrazo, la línea roja sale arriba.</td></tr>
+  <tr><td>Video RAM</td><td>La pantalla entera reconstruida desde la memoria de vídeo actual, con los registros del CRTC (R1, R6, R9, R12, R13), el modo y la paleta de ese momento, aunque el haz no haya pasado.</td></tr>
+</table>
+</div>
+<p><strong>Indicador del haz</strong> (bajo el volcado de memoria): dice dónde está el haz, p. ej. <code>Beam: VSYNC</code>, <code>Beam: top border / flyback (35 lines above screen)</code> o <code>Beam: picture row 120 (screen line 155), char 20</code>, con VCC, VLC y HCC.</p>
+<p>Tras <code>cpct_waitVSYNC</code> el haz pasa unas 72 líneas (4,6 ms) en el retrazo antes de la primera línea de imagen, y cada línea son 15–20 instrucciones. Por eso con <kbd>F7</kbd>/<kbd>F8</kbd> la línea roja parece no moverse; usa <kbd>⌥F8</kbd> (siguiente línea) o <kbd>⌥⇧F8</kbd> (siguiente frame). Para ver cómo un juego dibuja la pantalla frame a frame, elige <em>Video RAM</em> y pulsa <kbd>⌥⇧F8</kbd>.</p>
+
+<h2 id="reverse">Depuración inversa</h2>
+<p>Con una <a href="sessions.html">grabación</a> en reproducción, el depurador puede ir <strong>hacia atrás</strong>: la máquina se vuelve a calcular desde el punto de restauración anterior, así que todo lo demás (registros, memoria, desensamblado, Watch, historial) es el de ese momento.</p>
+<div class="table-scroll">
+<table>
+  <tr><th>Acción</th><th>Dónde</th><th>Qué hace</th></tr>
+  <tr><td>Step Back</td><td><kbd>⌥F7</kbd>, menú Debug, botón de la flecha amarilla</td><td>Vuelve al estado anterior a la última instrucción ejecutada.</td></tr>
+  <tr><td>Reverse Continue</td><td><kbd>⌥F9</kbd>, menú Debug, botón amarillo de rebobinar</td><td>Va hacia atrás hasta el último breakpoint que se habría activado (código, memoria o E/S; se respetan las condiciones).</td></tr>
+  <tr><td>Run Back to Cursor</td><td><kbd>⌥F4</kbd>, menú Debug, clic derecho «Run Back to Here»</td><td>Va a la última vez que el PC estuvo en la línea seleccionada.</td></tr>
+  <tr><td>Who Wrote This? / Who Read This?</td><td>Clic derecho en el volcado de memoria</td><td>Va a la última escritura o lectura de los bytes seleccionados.</td></tr>
+</table>
+</div>
+<ul>
+  <li><strong>Dónde para:</strong> siempre justo <strong>antes de la instrucción responsable</strong>, con sus registros intactos; pulsa <kbd>F7</kbd> para ejecutarla.</li>
+  <li><strong>Resultado:</strong> una línea naranja bajo el volcado lo cuenta, p. ej. <code>Last write of #5AD6 by #5AA1 — value #FF (was #FF) — 0:12</code>, con el símbolo si lo hay.</li>
+  <li><strong>Tus breakpoints:</strong> la búsqueda no toca sus contadores, sus conteos de paso ni sus logpoints (y los ignora en la búsqueda).</li>
+  <li><strong>Búsquedas largas:</strong> corren en segundo plano. Si tardan más de un instante aparece un panel de progreso con <strong>Cancel</strong>, que devuelve la máquina a donde estaba. Pulsar <kbd>F9</kbd> mientras buscas también cancela.</li>
+  <li>Si no hay nada anterior, la máquina se queda donde estaba y se avisa.</li>
+</ul>
+
+<h2 id="shortcuts">Atajos</h2>
+<div class="table-scroll">
+<table>
+  <tr><th>Atajo</th><th>Dónde</th><th>Acción</th></tr>
+  <tr><td><kbd>F7</kbd></td><td>Global</td><td>Pausa / Step Into</td></tr>
+  <tr><td><kbd>⇧F7</kbd></td><td>Global</td><td>Step Into</td></tr>
+  <tr><td><kbd>F8</kbd></td><td>Global</td><td>Step Over</td></tr>
+  <tr><td><kbd>⇧F8</kbd></td><td>Global</td><td>Step Out</td></tr>
+  <tr><td><kbd>⌥F8</kbd></td><td>Global</td><td>Step Scanline</td></tr>
+  <tr><td><kbd>⌥⇧F8</kbd></td><td>Global</td><td>Step Frame</td></tr>
+  <tr><td><kbd>F4</kbd></td><td>Global</td><td>Run to Cursor</td></tr>
+  <tr><td><kbd>F9</kbd></td><td>Global</td><td>Run</td></tr>
+  <tr><td><kbd>⌘R</kbd></td><td>Global</td><td>Reload Disc &amp; Symbols</td></tr>
+  <tr><td><kbd>⌥F7</kbd></td><td>Reproducción</td><td>Step Back</td></tr>
+  <tr><td><kbd>⌥F9</kbd></td><td>Reproducción</td><td>Reverse Continue</td></tr>
+  <tr><td><kbd>⌥F4</kbd></td><td>Reproducción</td><td>Run Back to Cursor</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>F</kbd> / <kbd>⌘F</kbd></td><td>Panel activo</td><td>Find</td></tr>
+  <tr><td><kbd>F3</kbd></td><td>Panel activo</td><td>Find Again</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>G</kbd> / <kbd>⌘G</kbd></td><td>Panel activo</td><td>Goto</td></tr>
+  <tr><td><kbd>F5</kbd></td><td>Desensamblado</td><td>Toggle Breakpoint</td></tr>
+  <tr><td><kbd>F5</kbd></td><td>Memoria</td><td>Load</td></tr>
+  <tr><td><kbd>Enter</kbd></td><td>Desensamblado</td><td>Ir al destino del salto</td></tr>
+  <tr><td><kbd>Retroceso</kbd></td><td>Desensamblado</td><td>Volver al punto anterior</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>Tab</kbd></td><td>Memoria</td><td>Alternar edición hex / ASCII</td></tr>
+  <tr><td>Flechas, Re Pág, Av Pág</td><td>Paneles</td><td>Desplazarse (<kbd>⇧</kbd> amplía la selección en memoria)</td></tr>
+</table>
+</div>
+
+<h2 id="limits">Limitaciones</h2>
+<ul>
+  <li><strong>Video RAM</strong> dibuja la pantalla como un único bloque: no reproduce cambios de paleta o de modo a mitad de pantalla, split screen ni sprites del Plus. Para eso usa la vista <em>Raster</em>.</li>
+  <li><strong>Símbolos desfasados:</strong> si el <code>.dsk</code> y el fichero de símbolos no son del mismo build, las etiquetas no coinciden. Recompila y usa <kbd>⌘R</kbd>.</li>
+  <li><strong>Step Over</strong> sobre un <code>CALL</code> que no vuelve a la instrucción siguiente (p. ej. porque saca la dirección de retorno de la pila) deja la máquina corriendo hasta que pauses. Igual que en WinAPE.</li>
+  <li><strong>Bucles cortos</strong> (<code>DJNZ</code>, esperas de VSYNC): cada F8 da una vuelta. Selecciona la línea de salida y pulsa <kbd>F4</kbd>.</li>
+  <li><strong>Historial:</strong> solo guarda las últimas 4096 instrucciones; en una rutina larga puede no llegar al origen.</li>
+  <li><strong>Depuración inversa</strong> solo funciona durante una reproducción, y no hay «Step Over» hacia atrás.</li>
+  <li><strong>Aún no disponible:</strong> profiler por funciones, depuración a nivel de código fuente C y el ensamblador integrado.</li>
+</ul>
+</main>
+</div>
+
+<footer>Manual de MacAPE — port a macOS de WinAPE 2.0 beta 2</footer>
+</body>
+</html>

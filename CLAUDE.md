@@ -5,6 +5,8 @@ REA/Ghidra to recover timing tables, formats and behaviour; the emulator itself 
 The owner writes Spanish: answer in Spanish, keep code, comments, UI strings and commit messages in English.
 [docs/FEATURES.md](docs/FEATURES.md) is the feature inventory taken from WinAPE (what is and is not ported).
 
+User manual (Spanish, HTML, start at [docs/index.html](docs/index.html)): living documentation — when a user-visible feature is added or changed, update the matching page (`debugger.html`, `sessions.html`, `command-line.html`, shortcuts table in `index.html`).
+
 ## Layout
 
 - `Sources/CPCCore/` — the emulator, plain C, **no Apple dependencies** (keep it portable: a WebAssembly/Linux build

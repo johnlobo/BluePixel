@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grabar y reproducir — Manual de MacAPE</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="index.html">MacAPE</a>
+  <nav>
+    <a href="index.html">Inicio</a>
+    <a href="command-line.html">Línea de comandos</a>
+    <a href="debugger.html">Depurador</a>
+    <a href="sessions.html" aria-current="page">Grabar y reproducir</a>
+  </nav>
+</header>
+
+<div class="layout">
+<aside class="toc">
+  <h2>En esta página</h2>
+  <ol>
+    <li><a href="#intro">Qué es una sesión</a></li>
+    <li><a href="#record">Grabar</a></li>
+    <li><a href="#play">Reproducir</a></li>
+    <li><a href="#transport">Barra de transporte</a></li>
+    <li><a href="#goto">Ir a un instante</a></li>
+    <li><a href="#indexing">Indexado</a></li>
+    <li><a href="#control">Tomar el control</a></li>
+    <li><a href="#debug">Depurar una sesión</a></li>
+    <li><a href="#limits">Qué no se puede reproducir</a></li>
+    <li><a href="#files">Ficheros</a></li>
+  </ol>
+</aside>
+
+<main>
+<h1>Grabar y reproducir</h1>
+<p class="lead">Graba una partida y reprodúcela como un vídeo: avanza, rebobina, salta a cualquier instante y para el depurador donde quieras, incluso yendo hacia atrás en la ejecución del Z80.</p>
+
+<h2 id="intro">Qué es una sesión</h2>
+<p>Una sesión (<code>.cpcrec</code>) no es un vídeo: guarda el <strong>estado exacto de la máquina</strong> al empezar y todo lo que hiciste (teclas, joystick, ratón AMX, auto-type), con la hora exacta en que lo hiciste. Al reproducirla, el emulador vuelve a ejecutar la partida y obtiene el mismo resultado, instrucción a instrucción. Por eso:</p>
+<ul>
+  <li>ocupa pocos KB por minuto de juego;</li>
+  <li>puedes parar en cualquier instrucción y ver registros y memoria <em>de ese momento</em>;</li>
+  <li>puedes ir hacia atrás con la <a href="debugger.html#reverse">depuración inversa</a>.</li>
+</ul>
+<figure>
+  <img src="img/transport.png" alt="Barra de transporte bajo la pantalla del emulador durante una reproducción">
+  <figcaption>Barra de transporte durante una reproducción.</figcaption>
+</figure>
+
+<h2 id="record">Grabar</h2>
+<ol>
+  <li>Deja la máquina como quieras que empiece la grabación (disco insertado, juego cargado o en el menú).</li>
+  <li><strong>File → Record Session</strong>. El título de la ventana muestra <code>● REC 0:12</code>.</li>
+  <li>Juega.</li>
+  <li>Vuelve a elegir <strong>File → Record Session</strong> para parar. Se pide dónde guardar el fichero; el nombre propuesto lleva la fecha.</li>
+</ol>
+<div class="warn">
+  <p><strong>Una acción que no se puede reproducir termina la grabación</strong> en ese punto (ver <a href="#limits">más abajo</a>). Todo lo anterior sigue siendo exacto y se puede guardar: el aviso dice qué la cortó y cuánto dura lo guardable.</p>
+</div>
+
+<h2 id="play">Reproducir</h2>
+<ol>
+  <li><strong>File → Playback Session…</strong> y elige un <code>.cpcrec</code>.</li>
+  <li>MacAPE comprueba qué discos y ROMs usó la grabación. Si no coinciden con los actuales, avisa («The session may not play back exactly») y te deja continuar o cancelar.</li>
+  <li>La máquina arranca desde el estado guardado y aparece la barra de transporte.</li>
+</ol>
+<p>El título muestra <code>▶ 0:12 / 1:30</code>. Si la reproducción se desvía de la grabación aparece <code>OUT OF SYNC</code>: fíate de los datos solo hasta ese punto.</p>
+<p>Durante una reproducción <strong>el teclado de la máquina no responde</strong>: las teclas controlan la barra de transporte (ver abajo).</p>
+<p><strong>File → Stop Playback</strong> sale de la reproducción y deja la máquina en marcha donde estaba.</p>
+
+<h2 id="transport">Barra de transporte</h2>
+<div class="table-scroll">
+<table>
+  <tr><th>Control</th><th>Tecla</th><th>Efecto</th></tr>
+  <tr><td>Play / Pausa</td><td><kbd>Espacio</kbd></td><td>Reproduce o pausa.</td></tr>
+  <tr><td>Reproducir hacia atrás</td><td><kbd>R</kbd></td><td>Muestra la partida marcha atrás, imagen a imagen.</td></tr>
+  <tr><td>±1 imagen</td><td><kbd>←</kbd> <kbd>→</kbd></td><td>Un frame (1/50 s).</td></tr>
+  <tr><td>±1 segundo</td><td><kbd>⇧←</kbd> <kbd>⇧→</kbd></td><td>50 frames.</td></tr>
+  <tr><td>±10 segundos</td><td><kbd>⌥←</kbd> <kbd>⌥→</kbd></td><td>500 frames.</td></tr>
+  <tr><td>Al principio / al final</td><td><kbd>Inicio</kbd> <kbd>Fin</kbd></td><td>Salta al extremo.</td></tr>
+  <tr><td>Velocidad</td><td><kbd>[</kbd> <kbd>]</kbd></td><td>0,1× · 0,25× · 0,5× · 1× · 2× · 5× · 10×.</td></tr>
+  <tr><td>Línea de tiempo</td><td>arrastrar</td><td>Salta a cualquier instante.</td></tr>
+  <tr><td>Mano</td><td>—</td><td><a href="#control">Tomar el control</a>.</td></tr>
+</table>
+</div>
+<p>Una raya verde sobre la línea de tiempo marca hasta dónde llega el <a href="#indexing">indexado</a>: ahí los saltos son instantáneos.</p>
+
+<h2 id="goto">Ir a un instante</h2>
+<p><strong>File → Go to Time…</strong> (<kbd>⌘⌥G</kbd>) acepta:</p>
+<ul>
+  <li><code>1:30</code> — minutos y segundos;</li>
+  <li><code>90</code> — segundos;</li>
+  <li><code>f4500</code> — número de frame.</li>
+</ul>
+
+<h2 id="indexing">Indexado</h2>
+<p>Para saltar rápido, MacAPE reproduce la sesión en segundo plano con una copia de la máquina y guarda puntos de restauración cada pocos segundos. La barra lo muestra como progreso. Mientras no llegue a un punto, saltar allí obliga a reproducir desde el punto indexado más cercano, y tarda un poco. Después es instantáneo, también hacia atrás.</p>
+
+<h2 id="control">Tomar el control</h2>
+<p>El botón de la <strong>mano</strong> (a la derecha de la barra) abandona la grabación en el instante que estés viendo y te deja jugar desde ahí. La grabación no se modifica.</p>
+
+<h2 id="debug">Depurar una sesión</h2>
+<p>Todo el <a href="debugger.html">depurador</a> funciona durante una reproducción, y además puedes ir hacia atrás: <em>Step Back</em>, <em>Reverse Continue</em>, <em>Run Back to Cursor</em>, <em>Who Wrote / Read This?</em>. Ejemplo típico: quieres saber qué código cambia las vidas.</p>
+<ol>
+  <li>Reproduce la sesión hasta un momento en que ya se han perdido vidas y pausa con <kbd>F7</kbd>.</li>
+  <li>En el volcado de memoria selecciona la dirección de las vidas.</li>
+  <li>Clic derecho → <strong>Who Wrote This?</strong>.</li>
+  <li>La máquina vuelve a justo antes de la escritura; el desensamblado muestra la instrucción responsable.</li>
+</ol>
+
+<h2 id="limits">Qué no se puede reproducir</h2>
+<p>Estas acciones <strong>terminan la grabación</strong> en ese punto, porque no se pueden repetir al reproducir:</p>
+<ul>
+  <li>insertar, quitar o intercambiar discos;</li>
+  <li>insertar una cinta;</li>
+  <li>cargar un snapshot;</li>
+  <li>cambiar ajustes de la máquina (modelo, memoria, CRTC…) o las opciones de las unidades;</li>
+  <li>activar o desactivar el ratón AMX;</li>
+  <li>editar memoria (pokes, edición en el volcado) o registros, flags e interrupciones en el depurador.</li>
+</ul>
+<p>Otras limitaciones:</p>
+<ul>
+  <li><strong>Escrituras en disco:</strong> si el juego escribe en el disco durante la grabación, la reproducción no las reproduce (aparece el aviso «A disc was written to since the recording started»). Úsalo con discos que no se modifican.</li>
+  <li><strong>Mismo disco:</strong> la sesión recuerda qué discos y ROMs usó; con otros distintos la reproducción puede desviarse.</li>
+  <li><strong>Misma versión:</strong> una sesión solo sirve para la versión de MacAPE que la grabó. Si falla con «not a MacAPE session recording, or it was made by a different build», es por esto.</li>
+  <li>Pausar y usar el depurador mientras grabas está permitido siempre que no modifiques nada.</li>
+</ul>
+
+<h2 id="files">Ficheros</h2>
+<p><code>.cpcrec</code>: estado inicial comprimido (20–40 KB), entradas con su instante, puntos de control cada 50 frames para detectar desvíos, y metadatos (CRC de discos, nombres de ROM, duración). Se pueden copiar y archivar como cualquier otro fichero.</p>
+</main>
+</div>
+
+<footer>Manual de MacAPE — port a macOS de WinAPE 2.0 beta 2</footer>
+</body>
+</html>

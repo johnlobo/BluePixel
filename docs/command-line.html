@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Línea de comandos — Manual de MacAPE</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="index.html">MacAPE</a>
+  <nav>
+    <a href="index.html">Inicio</a>
+    <a href="command-line.html" aria-current="page">Línea de comandos</a>
+    <a href="debugger.html">Depurador</a>
+    <a href="sessions.html">Grabar y reproducir</a>
+  </nav>
+</header>
+
+<div class="layout">
+<aside class="toc">
+  <h2>En esta página</h2>
+  <ol>
+    <li><a href="#launch">Lanzar desde el terminal</a></li>
+    <li><a href="#options">Opciones</a></li>
+    <li><a href="#examples">Ejemplos</a></li>
+  </ol>
+</aside>
+
+<main>
+<h1>Línea de comandos</h1>
+<p class="lead">MacAPE acepta las mismas opciones que WinAPE: ficheros a abrir, arranque automático de un programa, auto-type, snapshot y símbolos.</p>
+
+<h2 id="launch">Lanzar desde el terminal</h2>
+<p>Un <code>.app</code> no se ejecuta directamente (da <code>permission denied</code>). Usa <code>open</code> o el script del proyecto:</p>
+<pre><code>tools/macape juego.dsk /A
+open -a build/MacAPE.app --args juego.dsk /A</code></pre>
+<p><code>tools/macape</code> ejecuta el binario dentro del bundle, por lo que las opciones y los mensajes de error salen en el terminal.</p>
+
+<h2 id="options">Opciones</h2>
+<div class="table-scroll">
+<table>
+  <tr><th>Opción</th><th>Efecto</th></tr>
+  <tr><td><em>fichero</em></td><td>Se abre según su tipo: <code>.dsk</code> en la unidad A (un segundo disco, en B), <code>.cdt/.tzx/.voc/.wav</code> cinta, <code>.sna</code> snapshot, <code>.cpr/.crt</code> cartucho, <code>.wpf</code> perfil.</td></tr>
+  <tr><td><code>/A</code></td><td>Ejecuta el primer programa del disco de la unidad A.</td></tr>
+  <tr><td><code>/A:nombre</code></td><td>Ejecuta <code>nombre</code>. <code>/A:|CPM</code> arranca CP/M.</td></tr>
+  <tr><td><code>/T:fichero</code></td><td>Escribe el contenido de un fichero de texto de auto-type.</td></tr>
+  <tr><td><code>/SN:fichero</code></td><td>Carga y arranca un snapshot.</td></tr>
+  <tr><td><code>/SYM:fichero</code></td><td>Carga símbolos (<code>.noi</code>, <code>.map</code>, <code>.sym</code>, listas Maxam/WinAPE). Ver <a href="debugger.html#symbols">símbolos</a>.</td></tr>
+  <tr><td><code>--type texto</code></td><td>Teclea el texto (<code>~</code> es Return).</td></tr>
+  <tr><td><code>-h</code>, <code>--help</code></td><td>Muestra la ayuda.</td></tr>
+</table>
+</div>
+<p><code>/T</code>, <code>/SN</code> y <code>/SYM</code> aceptan el fichero con dos puntos (<code>/SYM:x.noi</code>) o como siguiente argumento (<code>/SYM x.noi</code>). También valen los estilos <code>-A</code>, <code>--a</code> y <code>/a=prog</code>. Una barra inicial solo se toma como opción si es un nombre conocido, así que las rutas absolutas siguen funcionando.</p>
+<p>Si un fichero no existe, se avisa y se ignora; el resto de opciones se aplican.</p>
+
+<h2 id="examples">Ejemplos</h2>
+<pre><code># Probar un juego de CPCtelera con sus símbolos
+tools/macape obj/juego.dsk /A /SYM obj/juego.noi
+
+# Arrancar CP/M con dos discos
+tools/macape cpm.dsk datos.dsk /A:|CPM
+
+# Cargar un snapshot
+tools/macape /SN partida.sna</code></pre>
+</main>
+</div>
+
+<footer>Manual de MacAPE — port a macOS de WinAPE 2.0 beta 2</footer>
+</body>
+</html>
