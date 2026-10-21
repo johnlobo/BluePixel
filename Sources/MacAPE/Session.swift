@@ -170,6 +170,44 @@ extension Emulator {
         return (buf, n)
     }
 
+    // MARK: markers
+    struct Marker { var frame: UInt64; var text: String }
+
+    /// Markers of the recording being played, in time order.
+    var markers: [Marker] {
+        lock.lock(); defer { lock.unlock() }
+        guard let r = replayRecording else { return [] }
+        return (0..<cpc_recording_mark_count(r)).compactMap { i in
+            var f: UInt32 = 0; var t: UnsafePointer<CChar>?
+            return cpc_recording_mark_get(r, i, &f, &t) ? Marker(frame: UInt64(f), text: t.map { String(cString: $0) } ?? "") : nil
+        }
+    }
+
+    /// Marks the current moment: while recording, at the current frame; while playing, at the frame shown (and the file is updated).
+    @discardableResult func addMarker(_ name: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if cpc.pointee.recorder != nil { return name.withCString { cpc_record_mark(cpc, $0) } }
+        guard let r = replayRecording else { return false }
+        let frame = displayedFrame ?? cpc_player_frame(cpc)
+        _ = name.withCString { cpc_recording_mark_add(r, UInt32(frame), $0) }
+        saveMarkersLocked()
+        return true
+    }
+    func removeMarker(at index: Int) {
+        lock.lock(); defer { lock.unlock() }
+        guard let r = replayRecording else { return }
+        cpc_recording_mark_remove(r, index)
+        saveMarkersLocked()
+    }
+    private func saveMarkersLocked() {
+        guard let r = replayRecording, let url = replayURL else { return }
+        var n = 0
+        guard let p = cpc_recording_serialize(r, &n) else { return }
+        defer { free(p) }
+        try? Data(bytes: p, count: n).write(to: url, options: .atomic)
+    }
+    var markerCount: Int { lock.lock(); defer { lock.unlock() }; return replayRecording.map { cpc_recording_mark_count($0) } ?? 0 }
+
     // MARK: background indexing
     /// A clone of the machine replays the whole recording on another thread; the keyframes it takes are handed to
     /// the visible player so that seeking anywhere is fast.
@@ -234,6 +272,7 @@ extension AppDelegate {
         guard let u = chooseFile(title: "Playback Session", types: ["cpcrec"]) else { return }
         let (rec, error) = emu.openRecording(url: u)
         guard let r = rec else { alert("Cannot play this session", error ?? ""); return }
+        emu.replayURL = u
         let warnings = emu.prepareMedia(for: r)
         if !warnings.isEmpty {
             let a = NSAlert(); a.messageText = "The session may not play back exactly"
@@ -244,6 +283,26 @@ extension AppDelegate {
         guard let notes = emu.startPlayback(r) else { cpc_recording_free(r); alert("Cannot start the playback", "The starting state could not be restored."); return }
         if !notes.isEmpty { alert("Note", notes.joined(separator: "\n")) }
     }
+
+    /// While recording: marks the moment silently. While playing: asks for a name.
+    @objc func addMarker(_ s: Any?) {
+        let n = emu.isReplaying ? emu.markerCount + 1 : 1
+        if emu.isReplaying {
+            guard let name = promptText("Add Marker", "Name for this moment (\(Emulator.clock(emu.playbackFrame))):", "Marker \(n)") else { return }
+            emu.addMarker(String(name.prefix(Int(CPC_MARK_TEXT) - 1)))
+        } else if emu.isRecording {
+            emu.addMarker("Marker at " + Emulator.clock(emu.cpc.pointee.frames - emu.recordStartFrame)); NSSound(named: "Pop")?.play()
+        }
+        transport.refresh()
+    }
+    @objc func goToMarker(_ s: NSMenuItem) {
+        let list = emu.markers
+        guard emu.isReplaying, s.tag < list.count else { return }
+        transport.stopReverse(seek: false)
+        _ = emu.seek(toFrame: list[s.tag].frame)
+        transport.refresh()
+    }
+    @objc func removeMarker(_ s: NSMenuItem) { emu.removeMarker(at: s.tag); transport.refresh() }
 
     @objc func goToTime(_ s: Any?) {
         guard emu.isReplaying else { return }

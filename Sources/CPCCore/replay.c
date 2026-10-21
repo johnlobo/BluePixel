@@ -23,6 +23,7 @@ struct CPCRecording {
      * emulated FDC changed afterwards, so that a replay can start from the same discs whatever happened to them since. */
     uint8_t disc_has[4]; uint32_t disc_crc[4];
     struct Pre { uint32_t unit, idx; CPCTrack t; } *pre; size_t npre;
+    struct Mark { uint32_t frame; char text[CPC_MARK_TEXT]; } *marks; size_t nmarks;    /* sorted by frame */
 };
 typedef struct Pre Pre;
 
@@ -91,6 +92,28 @@ const char *cpc_record_cut_reason(const CPC *c) { return c->stopped_recording ? 
 void cpc_recording_set_meta(CPCRecording *r, const char *meta) { free(r->meta); r->meta = meta ? strdup(meta) : NULL; }
 const char *cpc_recording_meta(const CPCRecording *r) { return r->meta; }
 
+/* ---- markers: named moments on the time line (frames relative to the start) ---- */
+bool cpc_recording_mark_add(CPCRecording *r, uint32_t frame, const char *text) {
+    r->marks = realloc(r->marks, (r->nmarks + 1) * sizeof *r->marks);
+    size_t i = r->nmarks;
+    while (i > 0 && r->marks[i - 1].frame > frame) { r->marks[i] = r->marks[i - 1]; i--; }
+    r->marks[i].frame = frame; snprintf(r->marks[i].text, sizeof r->marks[i].text, "%s", text ? text : "");
+    r->nmarks++; return true;
+}
+size_t cpc_recording_mark_count(const CPCRecording *r) { return r->nmarks; }
+bool cpc_recording_mark_get(const CPCRecording *r, size_t i, uint32_t *frame, const char **text) {
+    if (i >= r->nmarks) return false;
+    if (frame) *frame = r->marks[i].frame; if (text) *text = r->marks[i].text; return true;
+}
+void cpc_recording_mark_remove(CPCRecording *r, size_t i) {
+    if (i >= r->nmarks) return;
+    memmove(&r->marks[i], &r->marks[i + 1], (r->nmarks - i - 1) * sizeof *r->marks); r->nmarks--;
+}
+bool cpc_record_mark(CPC *c, const char *text) {
+    CPCRecording *r = c->recorder; if (!r) return false;
+    return cpc_recording_mark_add(r, (uint32_t)(c->frames - r->start_frames), text);
+}
+
 bool cpc_recording_active(const CPC *c) { return c->recorder != NULL; }
 /* Called before an action that replay cannot reproduce: the recording ends here (everything before is valid). */
 void cpc_record_taint(CPC *c, const char *reason) {
@@ -109,7 +132,7 @@ uint64_t cpc_recording_events(const CPCRecording *r) { return r->nev; }
 void cpc_recording_free(CPCRecording *r) {
     if (!r) return;
     for (size_t i = 0; i < r->npre; i++) dsk_track_clear(&r->pre[i].t);
-    free(r->pre);
+    free(r->pre); free(r->marks);
     cpc_state_free(r->start); free(r->ev); free(r->pool); free(r->chk); free(r->meta); free(r);
 }
 
@@ -501,7 +524,7 @@ static void o_u32(Out *o, uint32_t v) { o_put(o, &v, 4); }
 static void o_u64(Out *o, uint64_t v) { o_put(o, &v, 8); }
 
 #define REC_MAGIC 0x52435043u        /* "CPCR" */
-#define REC_VERSION 2u
+#define REC_VERSION 3u
 
 uint8_t *cpc_recording_serialize(const CPCRecording *r, size_t *size) {
     Out o = {0};
@@ -521,6 +544,8 @@ uint8_t *cpc_recording_serialize(const CPCRecording *r, size_t *size) {
         const Pre *p = &r->pre[i]; size_t sz = dsk_track_pack_size(&p->t); uint8_t *b = malloc(sz); dsk_track_pack(&p->t, b);
         o_u32(&o, p->unit); o_u32(&o, p->idx); o_u32(&o, (uint32_t)sz); o_put(&o, b, sz); free(b);
     }
+    o_u32(&o, (uint32_t)r->nmarks);
+    for (size_t i = 0; i < r->nmarks; i++) { o_u32(&o, r->marks[i].frame); uint32_t l = (uint32_t)strlen(r->marks[i].text); o_u32(&o, l); o_put(&o, r->marks[i].text, l); }
     *size = o.n; return o.p;
 }
 
@@ -561,6 +586,12 @@ CPCRecording *cpc_recording_deserialize(const uint8_t *data, size_t size) {
         Pre *pp = &r->pre[r->npre]; pp->unit = unit; pp->idx = idx; memset(&pp->t, 0, sizeof pp->t);
         if (!dsk_track_unpack(&pp->t, b, b + sz)) { in.bad = true; break; }
         r->npre++;
+    }
+    uint32_t nm = i_u32(&in);
+    for (uint32_t k = 0; !in.bad && k < nm; k++) {
+        uint32_t fr = i_u32(&in), l = i_u32(&in); const uint8_t *tx = i_take(&in, l);
+        if (in.bad || l >= CPC_MARK_TEXT) { in.bad = true; break; }
+        char buf[CPC_MARK_TEXT]; memcpy(buf, tx, l); buf[l] = 0; cpc_recording_mark_add(r, fr, buf);
     }
     /* event text offsets must point inside the pool */
     for (size_t k = 0; !in.bad && k < r->nev; k++) if (r->ev[k].text && (r->ev[k].text > r->pool_n || r->pool[r->pool_n - 1] != 0)) in.bad = true;

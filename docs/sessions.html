@@ -26,6 +26,7 @@
     <li><a href="#play">Reproducir</a></li>
     <li><a href="#transport">Barra de transporte</a></li>
     <li><a href="#goto">Ir a un instante</a></li>
+    <li><a href="#markers">Marcadores</a></li>
     <li><a href="#indexing">Indexado</a></li>
     <li><a href="#control">Tomar el control</a></li>
     <li><a href="#debug">Depurar una sesión</a></li>
@@ -82,6 +83,7 @@
   <tr><td>±10 segundos</td><td><kbd>⌥←</kbd> <kbd>⌥→</kbd></td><td>500 frames.</td></tr>
   <tr><td>Al principio / al final</td><td><kbd>Inicio</kbd> <kbd>Fin</kbd></td><td>Salta al extremo.</td></tr>
   <tr><td>Velocidad</td><td><kbd>[</kbd> <kbd>]</kbd></td><td>0,1× · 0,25× · 0,5× · 1× · 2× · 5× · 10×.</td></tr>
+  <tr><td>Marcadores</td><td><kbd>M</kbd> <kbd>,</kbd> <kbd>.</kbd></td><td>Añadir uno aquí · ir al anterior · ir al siguiente.</td></tr>
   <tr><td>Línea de tiempo</td><td>arrastrar</td><td>Salta a cualquier instante.</td></tr>
   <tr><td>Mano</td><td>—</td><td><a href="#control">Tomar el control</a>.</td></tr>
 </table>
@@ -95,6 +97,17 @@
   <li><code>90</code> — segundos;</li>
   <li><code>f4500</code> — número de frame.</li>
 </ul>
+
+<h2 id="markers">Marcadores</h2>
+<p>Un marcador es un momento con nombre en la línea de tiempo: «aquí empieza el jefe», «aquí falla».</p>
+<ul>
+  <li><strong>Mientras grabas:</strong> <strong>File → Add Marker…</strong> (<kbd>⌘⇧M</kbd>) marca el instante sin interrumpir el juego (suena un «pop»); se llama «Marker at 0:12».</li>
+  <li><strong>Mientras reproduces:</strong> <kbd>M</kbd> en la ventana, o el mismo menú, pide un nombre y marca el fotograma que estás viendo.</li>
+  <li><strong>Verlos:</strong> aparecen como rayas naranjas sobre la línea de tiempo; al pasar cerca de uno, su nombre sale bajo la barra.</li>
+  <li><strong>Ir a uno:</strong> <kbd>,</kbd> y <kbd>.</kbd> saltan al marcador anterior y al siguiente; <strong>File → Go to Marker</strong> los lista con su hora.</li>
+  <li><strong>Borrar:</strong> <strong>File → Remove Marker</strong>.</li>
+</ul>
+<p>Los marcadores se guardan dentro del <code>.cpcrec</code>: al añadir o borrar uno durante una reproducción, MacAPE reescribe el fichero de la sesión.</p>
 
 <h2 id="indexing">Indexado</h2>
 <p>Para saltar rápido, MacAPE reproduce la sesión en segundo plano con una copia de la máquina y guarda puntos de restauración cada pocos segundos. La barra lo muestra como progreso. Mientras no llegue a un punto, saltar allí obliga a reproducir desde el punto indexado más cercano, y tarda un poco. Después es instantáneo, también hacia atrás.</p>

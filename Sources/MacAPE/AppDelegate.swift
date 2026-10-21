@@ -3,7 +3,7 @@ import CPCCore
 import UniformTypeIdentifiers
 
 @main
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, NSMenuDelegate {
     static func main() {
         let app = NSApplication.shared
         let d = AppDelegate()
@@ -309,6 +309,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if item.action == #selector(amxMouse(_:)) { item.state = emu.amxEnabled ? .on : .off }
         if item.action == #selector(recordSession(_:)) { item.title = emu.isRecording ? "Stop Recording…" : "Record Session"; return !emu.isReplaying }
         if item.action == #selector(playSession(_:)) { return !emu.isRecording }
+        if item.action == #selector(addMarker(_:)) { return (emu.isRecording || emu.isReplaying) && !emu.isSearching }
         if item.action == #selector(goToTime(_:)) || item.action == #selector(stopPlayback(_:)) { return emu.isReplaying && !emu.isSearching }
         if item.action == #selector(debugStepBack(_:)) || item.action == #selector(debugStepBackOver(_:)) || item.action == #selector(debugReverseContinue(_:)) || item.action == #selector(debugRunBackToCursor(_:)) { return emu.replayActive && !emu.isSearching }
         if item.action == #selector(debugScreenView(_:)) { item.state = emu.screenView.rawValue == item.tag ? .on : .off }
@@ -316,6 +317,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     // MARK: Menu construction
+    /// Submenu filled with the markers each time it opens.
+    private func markerMenu(_ title: String) -> NSMenuItem {
+        let m = NSMenu(title: title); m.delegate = self
+        let i = NSMenuItem(title: title, action: nil, keyEquivalent: ""); i.submenu = m; return i
+    }
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu.title == "Go to Marker" || menu.title == "Remove Marker" else { return }
+        menu.removeAllItems()
+        let list = emu.markers
+        if list.isEmpty { let i = NSMenuItem(title: "No markers", action: nil, keyEquivalent: ""); i.isEnabled = false; menu.addItem(i); return }
+        for (n, m) in list.enumerated() {
+            let i = NSMenuItem(title: Emulator.clock(m.frame) + "  " + m.text, action: menu.title == "Go to Marker" ? #selector(goToMarker(_:)) : #selector(removeMarker(_:)), keyEquivalent: "")
+            i.tag = n; i.target = self; menu.addItem(i)
+        }
+    }
+
     private func fkey(_ n: Int) -> String { String(UnicodeScalar(UInt32(NSF1FunctionKey) + UInt32(n - 1))!) }
 
     private func item(_ title: String, _ sel: Selector?, _ key: String = "", _ mods: NSEvent.ModifierFlags = []) -> NSMenuItem {
@@ -368,6 +385,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             .separator(),
             item("Record Session", #selector(recordSession(_:))), item("Playback Session…", #selector(playSession(_:))),
             item("Go to Time…", #selector(goToTime(_:)), "g", [.command, .option]), item("Stop Playback", #selector(stopPlayback(_:))),
+            item("Add Marker…", #selector(addMarker(_:)), "m", [.command, .shift]), markerMenu("Go to Marker"), markerMenu("Remove Marker"),
             .separator(),
             item("Save Screenshot…", #selector(saveScreenshot(_:)), fkey(7), ctrl),
             item("Record AVI…", #selector(todo(_:))), item("Record WAV…", #selector(todo(_:))), item("Record YM…", #selector(todo(_:))),

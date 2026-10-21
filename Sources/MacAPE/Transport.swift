@@ -3,6 +3,16 @@ import CPCCore
 
 /// The control strip shown under the display while a session recording plays: play/pause, frame and second
 /// steps, reverse play, speed, and a time line that can be dragged to any moment.
+/// Ticks over the time line, one per marker; clicks go through to the slider.
+final class MarkTicks: NSView {
+    var fractions: [Double] = [] { didSet { if fractions != oldValue { needsDisplay = true } } }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.systemOrange.setFill()
+        for f in fractions { NSRect(x: (bounds.width - 2) * CGFloat(max(0, min(1, f))), y: 0, width: 2, height: bounds.height).fill() }
+    }
+}
+
 final class TransportBar: NSView {
     static let height: CGFloat = 36
     let start = TransportBar.button("backward.end.fill", "Go to the start (Home)")
@@ -20,6 +30,7 @@ final class TransportBar: NSView {
     let slider = NSSlider(value: 0, minValue: 0, maxValue: 1, target: nil, action: nil)
     let time = NSTextField(labelWithString: "0:00.00 / 0:00.00")
     let indexLabel = NSTextField(labelWithString: "")
+    let ticks = MarkTicks()
     private let indexLine = NSView()
     static let speeds: [Double] = [0.1, 0.25, 0.5, 1, 2, 5, 10]
 
@@ -37,7 +48,7 @@ final class TransportBar: NSView {
         speed.addItems(withTitles: TransportBar.speeds.map { $0 < 1 ? String(format: "%.2g×", $0) : String(format: "%g×", $0) })
         speed.selectItem(at: 3); speed.controlSize = .small; speed.font = .systemFont(ofSize: 11); speed.toolTip = "Playback speed"
         addSubview(speed)
-        slider.isContinuous = true; slider.controlSize = .small; addSubview(slider)
+        slider.isContinuous = true; slider.controlSize = .small; addSubview(slider); addSubview(ticks)
         indexLine.wantsLayer = true; indexLine.layer?.backgroundColor = NSColor.systemGreen.withAlphaComponent(0.7).cgColor; addSubview(indexLine)
         for t in [time, indexLabel] { t.font = .monospacedSystemFont(ofSize: 11, weight: .regular); t.textColor = .white; addSubview(t) }
         indexLabel.textColor = .systemGreen; indexLabel.font = .systemFont(ofSize: 10)
@@ -62,8 +73,8 @@ final class TransportBar: NSView {
         // thin line under the track: how much of the recording is indexed
         let inset: CGFloat = 7
         indexLine.frame = NSRect(x: slider.frame.minX + inset, y: slider.frame.minY + 1, width: max(0, (sw - 2 * inset) * CGFloat(min(1, indexedFraction))), height: 2)
-        indexLabel.frame = NSRect(x: x, y: 1, width: 120, height: 11)
-        indexLabel.isHidden = indexedFraction >= 1
+        indexLabel.frame = NSRect(x: x, y: 1, width: max(120, min(300, sw)), height: 11)
+        ticks.frame = NSRect(x: slider.frame.minX + inset, y: slider.frame.maxY - 3, width: max(0, sw - 2 * inset), height: 5)
         indexLine.isHidden = indexedFraction >= 1
     }
 }
@@ -131,7 +142,11 @@ final class TransportController: NSObject {
         bar.reverse.contentTintColor = reversing ? .systemYellow : .white
         let idx = emu.indexedFrames
         bar.indexedFraction = len == 0 ? 1 : Double(idx) / Double(len)
-        bar.indexLabel.stringValue = idx >= len ? "" : String(format: "indexing %d%%", Int(Double(idx) / Double(max(len, 1)) * 100))
+        let marks = emu.markers
+        bar.ticks.fractions = marks.map { Double($0.frame) / Double(max(len, 1)) }
+        let near = marks.first { abs(Int64($0.frame) - Int64(pos)) <= 25 }
+        bar.indexLabel.textColor = near != nil ? .systemOrange : .systemGreen
+        bar.indexLabel.stringValue = near.map { "◆ " + $0.text } ?? (idx >= len ? "" : String(format: "indexing %d%%", Int(Double(idx) / Double(max(len, 1)) * 100)))
     }
 
     // MARK: actions
@@ -252,6 +267,10 @@ final class TransportController: NSObject {
         case 49: playPause()                                                  // space
         case 123: step(option ? -500 : (shift ? -50 : -1))                   // left
         case 124: step(option ? 500 : (shift ? 50 : 1))                      // right
+        case 46: (NSApp.delegate as? AppDelegate)?.addMarker(nil)                // m
+        case 43, 47:                                                          // , .  previous / next marker
+            let pos = position, list = emu.markers.map { $0.frame }
+            if let f = event.keyCode == 47 ? list.first(where: { $0 > pos }) : list.last(where: { $0 + 1 < pos }) { goTo(f) } else { NSSound.beep() }
         case 115: goStart()                                                   // home
         case 119: goEnd()                                                     // end
         case 15: reverse()                                                    // r

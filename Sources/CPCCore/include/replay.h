@@ -38,6 +38,15 @@ const char *cpc_recording_meta(const CPCRecording *r);
 /* Is `d` the disc that was in drive `unit` when recording began (always true when the drive was empty)? Tracks the session wrote to
  * are compared as they were at the start, so a disc saved after the session still matches. */
 bool cpc_recording_disc_matches(const CPCRecording *r, int unit, const CPCDisc *d);
+
+/* Markers: named moments (frame relative to the start, text of at most CPC_MARK_TEXT-1 bytes), kept sorted by frame and
+ * saved with the recording. Added while recording (cpc_record_mark, at the current frame) or later to any recording. */
+#define CPC_MARK_TEXT 48
+bool cpc_record_mark(CPC *c, const char *text);
+bool cpc_recording_mark_add(CPCRecording *r, uint32_t frame, const char *text);
+size_t cpc_recording_mark_count(const CPCRecording *r);
+bool cpc_recording_mark_get(const CPCRecording *r, size_t i, uint32_t *frame, const char **text);
+void cpc_recording_mark_remove(CPCRecording *r, size_t i);
 void cpc_recording_free(CPCRecording *r);
 uint64_t cpc_recording_frames(const CPCRecording *r);       /* length in frames */
 uint64_t cpc_recording_events(const CPCRecording *r);

@@ -34,6 +34,7 @@ final class Emulator {
     // session recording / replay (Session.swift)
     var recordStartFrame: UInt64 = 0
     var replayRecording: OpaquePointer?, replayPlayer: OpaquePointer?
+    var replayURL: URL?                    // file being played; markers added during playback are saved back to it
     var replayEndNotified = false
     var onReplayEnd: (() -> Void)?
     var displayedFrame: UInt64?                       // frame on screen while reversing (the machine itself is parked)

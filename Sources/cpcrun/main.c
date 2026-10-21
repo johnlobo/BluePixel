@@ -659,6 +659,15 @@ static int run_sotest(const char *roms) {
     cpc_player_seek(a, 0);
     { CPCReverseScan *sc = cpc_reverse_begin(a, CPC_REV_STEPOVER, 0, 0); while (sc && !cpc_reverse_slice(a, sc)) {}
       CHECK(sc && !cpc_reverse_end(a, sc, true, NULL) && a->z80.pc == 0x4000, "at the start there is nothing to go back to"); }
+    /* markers: kept sorted, saved with the file */
+    cpc_recording_mark_add(rec, 200, "late"); cpc_recording_mark_add(rec, 10, "early"); cpc_recording_mark_add(rec, 100, "middle");
+    { uint32_t f0, f1; const char *t0, *t1;
+      CHECK(cpc_recording_mark_count(rec) == 3 && cpc_recording_mark_get(rec, 0, &f0, &t0) && f0 == 10 && !strcmp(t0, "early")
+            && cpc_recording_mark_get(rec, 2, &f1, &t1) && f1 == 200 && !strcmp(t1, "late"), "markers are kept sorted by frame");
+      size_t n; uint8_t *file = cpc_recording_serialize(rec, &n); CPCRecording *r2 = cpc_recording_deserialize(file, n); free(file);
+      CHECK(r2 && cpc_recording_mark_count(r2) == 3 && cpc_recording_mark_get(r2, 1, &f1, &t1) && f1 == 100 && !strcmp(t1, "middle"), "markers survive the file round trip");
+      if (r2) { cpc_recording_mark_remove(r2, 1); CHECK(cpc_recording_mark_count(r2) == 2, "a marker can be removed"); }
+      cpc_recording_free(r2); }
     cpc_player_free(p); cpc_recording_free(rec); cpc_destroy(a);
     printf("%d failure(s)\n", fails);
     return fails ? 1 : 0;
