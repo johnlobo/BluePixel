@@ -18,6 +18,19 @@
     <section class="machine">
       <div class="screen-wrap">
         <canvas id="screen" width="768" height="540" tabindex="0" aria-label="Amstrad CPC screen"></canvas>
+        <div class="touch-controls" id="touch-controls" aria-label="Touch joystick">
+          <div class="touch-dpad" aria-label="Joystick directions">
+            <button type="button" data-joy="0" aria-label="Up">▲</button>
+            <button type="button" data-joy="2" aria-label="Left">◀</button>
+            <span></span>
+            <button type="button" data-joy="3" aria-label="Right">▶</button>
+            <button type="button" data-joy="1" aria-label="Down">▼</button>
+          </div>
+          <div class="touch-fire" aria-label="Fire buttons">
+            <button type="button" data-joy="4" aria-label="Fire 1">1</button>
+            <button type="button" data-joy="5" aria-label="Fire 2">2</button>
+          </div>
+        </div>
         <div class="screen-hint" id="screen-hint">Starting CPC 6128…</div>
         <div class="menu-tip" id="menu-tip" hidden>F10 opens the main menu</div>
       </div>

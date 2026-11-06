@@ -11,6 +11,7 @@ No hace falta instalar nada. Abre [BluePixel Web](https://johnlobo.github.io/Blu
 - En **File → Load Snapshot…** carga un snapshot `.sna`; usa **Save Snapshot…** para descargar el estado del CPC y retomarlo después. Los discos se guardan aparte desde el menú de cada unidad.
 - En **File → Save Screenshot…** guarda una captura PNG del área de emulación. **Settings → Machine → Full Screen** muestra el CPC en pantalla completa sin deformar el formato 4:3.
 - El sonido está activado por defecto. El navegador lo habilita después del primer clic o pulsación de tecla.
+- El teclado, un gamepad estándar (cruceta o stick izquierdo; A/B para disparar) y los controles táctiles llevan el joystick del CPC. En pantallas táctiles aparecen automáticamente; puedes activarlos o desactivarlos en **Settings → Controls**.
 - En **Settings** puedes cambiar las ROMs, pausar o reiniciar la máquina y activar o desactivar el sonido.
 
 Los cambios de disco permanecen en memoria durante la sesión. Descarga el disco desde su menú para conservarlos.

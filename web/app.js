@@ -2,6 +2,7 @@ import createBluePixelCore from "./bluepixel.js";
 
 const canvas = document.querySelector("#screen");
 const screenWrap = document.querySelector(".screen-wrap");
+const touchControls = document.querySelector("#touch-controls");
 const ctx = canvas.getContext("2d", { alpha: false });
 const image = ctx.createImageData(canvas.width, canvas.height);
 const imageWords = new Uint32Array(image.data.buffer);
@@ -24,6 +25,8 @@ let typeBuffer = "";
 let soundEnabled = true;
 let menuTipTimer;
 const menuTip = document.querySelector("#menu-tip");
+let touchControlsEnabled = matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
+const joystickSources = new Map();
 
 function closeMenu() {
   menuOpen = false;
@@ -87,9 +90,17 @@ function menuGroups() {
         menuItem(`Sound On${soundEnabled ? "  ✓" : ""}`, () => setSoundEnabled(true)),
         menuItem(`Sound Off${soundEnabled ? "" : "  ✓"}`, () => setSoundEnabled(false)),
       ]),
+      menuBranch("Controls", [
+        menuItem(`Touch Joystick ${touchControlsEnabled ? "On  ✓" : "Off"}`, () => setTouchControlsEnabled(!touchControlsEnabled)),
+        menuItem(`Gamepad: ${navigator.getGamepads?.().some(Boolean) ? "Connected" : "Not connected"}`, () => {
+          status.textContent = navigator.getGamepads?.().some(Boolean)
+            ? "Gamepad connected. Use the D-pad or left stick; A/B are fire buttons."
+            : "Connect a standard gamepad, then press a button to use it.";
+        }),
+      ]),
     ] },
     { label: "Help", items: [
-      menuItem("Keyboard Controls", () => { status.textContent = "Click the screen for keyboard focus. Arrows also control the joystick; Ctrl/Alt fire."; }),
+      menuItem("Controls", () => { status.textContent = "Keyboard: arrows move, Ctrl/Alt fire. Gamepad: D-pad or left stick, A/B fire. Touch: use the on-screen joystick."; }),
     ] },
   ];
 }
@@ -485,6 +496,67 @@ const keyCodes = {
 };
 const joystickBits = { ArrowUp: 0, ArrowDown: 1, ArrowLeft: 2, ArrowRight: 3, ControlLeft: 4, ControlRight: 4, AltLeft: 5, AltRight: 5 };
 
+function setTouchControlsEnabled(enabled) {
+  touchControlsEnabled = enabled;
+  screenWrap.classList.toggle("touch-controls-enabled", enabled);
+  status.textContent = enabled ? "Touch joystick enabled." : "Touch joystick disabled.";
+}
+
+setTouchControlsEnabled(touchControlsEnabled);
+
+function setJoystickSource(source, bit, down) {
+  const previous = joystickSources.get(source);
+  if (previous === bit && down) return;
+  if (previous !== undefined) {
+    const stillHeld = [...joystickSources.entries()].some(([otherSource, otherBit]) => otherSource !== source && otherBit === previous);
+    joystickSources.delete(source);
+    if (!stillHeld) core._bp_joystick(previous, 0);
+  }
+  if (!down) return;
+  const alreadyHeld = [...joystickSources.values()].includes(bit);
+  joystickSources.set(source, bit);
+  if (!alreadyHeld) core._bp_joystick(bit, 1);
+}
+
+touchControls.querySelectorAll("[data-joy]").forEach(button => {
+  const bit = Number(button.dataset.joy);
+  button.addEventListener("pointerdown", event => {
+    event.preventDefault();
+    button.setPointerCapture(event.pointerId);
+    setJoystickSource(`touch:${event.pointerId}`, bit, true);
+  });
+  const release = event => setJoystickSource(`touch:${event.pointerId}`, bit, false);
+  button.addEventListener("pointerup", release);
+  button.addEventListener("pointercancel", release);
+  button.addEventListener("lostpointercapture", release);
+});
+
+window.addEventListener("gamepadconnected", event => {
+  status.textContent = `Gamepad connected: ${event.gamepad.id}.`;
+});
+window.addEventListener("gamepaddisconnected", event => {
+  for (const source of joystickSources.keys()) {
+    if (source.startsWith(`gamepad:${event.gamepad.index}:`)) setJoystickSource(source, joystickSources.get(source), false);
+  }
+  status.textContent = "Gamepad disconnected.";
+});
+
+function pollGamepads() {
+  const gamepads = navigator.getGamepads?.() || [];
+  for (const gamepad of gamepads) {
+    if (!gamepad) continue;
+    const prefix = `gamepad:${gamepad.index}:`;
+    const directions = [
+      ["up-axis", 0, (gamepad.axes[1] ?? 0) < -0.45], ["down-axis", 1, (gamepad.axes[1] ?? 0) > 0.45],
+      ["left-axis", 2, (gamepad.axes[0] ?? 0) < -0.45], ["right-axis", 3, (gamepad.axes[0] ?? 0) > 0.45],
+      ["up-pad", 0, Boolean(gamepad.buttons[12]?.pressed)], ["down-pad", 1, Boolean(gamepad.buttons[13]?.pressed)],
+      ["left-pad", 2, Boolean(gamepad.buttons[14]?.pressed)], ["right-pad", 3, Boolean(gamepad.buttons[15]?.pressed)],
+      ["fire-1", 4, Boolean(gamepad.buttons[0]?.pressed)], ["fire-2", 5, Boolean(gamepad.buttons[1]?.pressed)],
+    ];
+    for (const [name, bit, down] of directions) setJoystickSource(prefix + name, bit, down);
+  }
+}
+
 function setKey(event, down) {
   if (event.code === "F10" || menuOpen) return;
   if (event.target instanceof HTMLElement && event.target.closest("input, textarea, select, button")) return;
@@ -494,7 +566,7 @@ function setKey(event, down) {
   event.preventDefault();
   if (down && event.repeat) return;
   if (key !== undefined) core._bp_key(key, down ? 1 : 0);
-  if (joy !== undefined) core._bp_joystick(joy, down ? 1 : 0);
+  if (joy !== undefined) setJoystickSource(`keyboard:${event.code}`, joy, down);
   if (down) pressed.set(event.code, { key, joy });
   else pressed.delete(event.code);
 }
@@ -504,7 +576,7 @@ window.addEventListener("keyup", event => setKey(event, false));
 window.addEventListener("blur", () => {
   for (const [code, item] of pressed) {
     if (item.key !== undefined) core._bp_key(item.key, 0);
-    if (item.joy !== undefined) core._bp_joystick(item.joy, 0);
+    if (item.joy !== undefined) setJoystickSource(`keyboard:${code}`, item.joy, false);
     pressed.delete(code);
   }
 });
@@ -630,6 +702,7 @@ function drawAppMenu() {
   ctx.restore();
 }
 function animate(time) {
+  pollGamepads();
   if (!lastTime) lastTime = time;
   const elapsed = Math.min(time - lastTime, 100);
   lastTime = time;
