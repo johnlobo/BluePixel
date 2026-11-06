@@ -106,6 +106,12 @@ function openMenu() {
   drawFrame();
 }
 
+menuTip.addEventListener("click", event => {
+  event.stopPropagation();
+  openMenu();
+  canvas.focus();
+});
+
 function activateMenuEntry(entry) {
   if (!entry || entry.disabled) return;
   if (entry.items) {
