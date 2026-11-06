@@ -14,7 +14,7 @@ let menuOpen = false;
 let menuSelection = 0;
 let typeEntry = false;
 let typeBuffer = "";
-const menuItems = ["Start / Pause", "Reset machine", "Sound", "Download disk", "Operating system ROM", "BASIC ROM", "Disk ROM", "Insert disk image", "Load snapshot", "Type on CPC", "Close menu"];
+const menuItems = ["Start / Pause", "Reset machine", "Sound", "Download disk", "Operating system ROM", "BASIC ROM", "Disk ROM", "Insert disk image", "Load snapshot", "Type on CPC"];
 
 function closeMenu() {
   menuOpen = false;
@@ -96,7 +96,7 @@ canvas.addEventListener("click", event => {
       hint.hidden = true;
       canvas.focus();
       drawFrame();
-    }
+    } else canvas.focus();
     return;
   }
   const rect = canvas.getBoundingClientRect();
@@ -214,9 +214,12 @@ async function loadDefaultROMs() {
     if (!hasBasic) missing.push("BASIC");
     updateReady(`${missing.join(" and ")} ROM not found in the bundled ROM folder. Choose another ROM from its menu.`);
   } else {
+    running = true;
+    runButton.textContent = "Pause";
+    clearHintAfterFrame = true;
     status.textContent = results[2]
-      ? "CPC 6128 ROM set loaded. Ready."
-      : "CPC 6128 is ready; its optional disk ROM was not found. Choose one from the menu or select a file.";
+      ? "CPC 6128 ROM set loaded. Running."
+      : "CPC 6128 is running; optional disk ROM was not found.";
   }
 }
 
@@ -397,7 +400,7 @@ function drawAppMenu() {
   const x = 8, y = 8, width = 444, rowTop = 43, rowHeight = 29;
   ctx.save();
   ctx.fillStyle = "#d2d2d2";
-  ctx.fillRect(x, y, width, 398);
+  ctx.fillRect(x, y, width, 368);
   ctx.fillStyle = "#303030";
   ctx.fillRect(x + 2, y + 2, width - 4, 28);
   ctx.fillStyle = "#fff";
@@ -423,10 +426,10 @@ function drawAppMenu() {
   }
   const statusText = typeEntry ? "Enter sends text to the CPC · Esc cancels" : `${status.textContent} · F10/Esc closes`;
   ctx.fillStyle = "#d2d2d2";
-  ctx.fillRect(x + 3, y + 372, width - 6, 23);
+  ctx.fillRect(x + 3, y + 342, width - 6, 23);
   ctx.fillStyle = "#222";
   ctx.font = "12px monospace";
-  ctx.fillText(statusText, x + 10, y + 384, width - 20);
+  ctx.fillText(statusText, x + 10, y + 354, width - 20);
   ctx.restore();
 }
 

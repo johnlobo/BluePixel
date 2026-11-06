@@ -2,7 +2,7 @@
 
 The browser build reuses the portable C emulator core through WebAssembly. It currently supports a CPC 6128, bundled OS/BASIC/AMSDOS ROMs, DSK images in drive A, SNA snapshots, keyboard input, audio, and downloading the current disk image.
 
-The `web/roms/` folder contains the default CPC 6128 firmware and the alternatives offered in the page's dropdowns. They load automatically; each dropdown can switch ROMs while the emulator is running.
+The `web/roms/` folder contains the default CPC 6128 firmware and the alternatives offered in the in-screen menu. They load automatically; ROMs can be changed from the in-screen menu while the emulator is running.
 
 ## Build and run
 
@@ -18,9 +18,9 @@ Open <http://localhost:8080/>. The web folder is self-contained, including its R
 
 ## Controls
 
-- The CPC 6128 OS, BASIC and AMSDOS ROMs load from `web/roms/` on startup. Change each ROM from its dropdown at any time.
+- The CPC 6128 OS, BASIC and AMSDOS ROMs load from `web/roms/` on startup. Change each ROM from the in-screen menu at any time.
 - Insert a disk or load an SNA snapshot with the file pickers.
-- Open the in-screen application menu with **F10**. Navigate with the arrow keys and Enter; use Left/Right to change ROMs. Press **F10** or **Escape** to close it. Click **Start**, then focus the screen and use the keyboard. Arrow keys also act as joystick directions; Control and Alt act as fire buttons.
+- The CPC starts automatically after its default ROMs load. Open the in-screen application menu with **F10**; navigate with the arrow keys and Enter, and use Left/Right to change ROMs. Press **F10** or **Escape** to close it. Click the screen and use the keyboard. Arrow keys also act as joystick directions; Control and Alt act as fire buttons.
 - Enable sound from the page after a click, as required by browser audio policies.
 - Disk writes are kept in memory. Use **Download disk** to save a new DSK image.
 
