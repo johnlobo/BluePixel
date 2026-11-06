@@ -13,6 +13,7 @@ const typeButton = document.querySelector("#type");
 
 let core;
 let running = false;
+let clearHintAfterFrame = false;
 let lastTime = 0;
 let frameDebt = 0;
 let hasOS = false;
@@ -52,7 +53,6 @@ function updateReady(message) {
   soundButton.disabled = !ready;
   typeButton.disabled = !ready;
   if (ready) {
-    hint.hidden = true;
     status.textContent = "Ready. Click the screen and use your keyboard.";
   } else if (message) {
     hint.hidden = false;
@@ -159,6 +159,7 @@ runButton.addEventListener("click", async () => {
   running = !running;
   runButton.textContent = running ? "Pause" : "Resume";
   status.textContent = running ? "Running" : "Paused";
+  if (running) clearHintAfterFrame = true;
   if (running && audioContext?.state === "suspended") await audioContext.resume();
   canvas.focus();
 });
@@ -299,6 +300,10 @@ function animate(time) {
       frameDebt -= 20;
     }
     drawFrame();
+    if (clearHintAfterFrame) {
+      hint.hidden = true;
+      clearHintAfterFrame = false;
+    }
   }
   requestAnimationFrame(animate);
 }
