@@ -70,6 +70,11 @@ EMSCRIPTEN_KEEPALIVE int bp_load_snapshot(const uint8_t *data, size_t size) {
     return machine && cpc_snapshot_load(machine, data, size);
 }
 
+EMSCRIPTEN_KEEPALIVE uint8_t *bp_save_snapshot(size_t *size) {
+    if (!machine) { if (size) *size = 0; return NULL; }
+    return cpc_snapshot_save(machine, 3, 0, true, size);
+}
+
 EMSCRIPTEN_KEEPALIVE void bp_run_frame(void) { if (machine) cpc_run_frame(machine); }
 EMSCRIPTEN_KEEPALIVE void bp_reset(void) { if (machine) cpc_reset(machine, true); }
 EMSCRIPTEN_KEEPALIVE void bp_type(const char *text) { if (machine && text) cpc_autotype(machine, text); }

@@ -10,6 +10,7 @@ const hint = document.querySelector("#screen-hint");
 const runButton = document.querySelector("#run");
 const resetButton = document.querySelector("#reset");
 const soundButton = document.querySelector("#sound");
+const saveSnapshotButton = document.querySelector("#save-snapshot");
 const saveDiskButtons = [document.querySelector("#save-disc-a"), document.querySelector("#save-disc-b")];
 const typeButton = document.querySelector("#type");
 let menuOpen = false;
@@ -66,6 +67,7 @@ function menuGroups() {
         menuItem("Download Changed Disc…", () => saveDiskButtons[drive].click(), { disabled: saveDiskButtons[drive].disabled }),
       ])),
       menuItem("Load Snapshot…", () => snapshotInput.click()),
+      menuItem("Save Snapshot…", () => saveSnapshotButton.click(), { disabled: saveSnapshotButton.disabled }),
       menuItem("Auto Type…", () => { typeEntry = true; typeBuffer = typeText.value || ""; }, { stayOpen: true }),
     ] },
     { label: "Settings", items: [
@@ -194,6 +196,7 @@ let frameDebt = 0;
 let hasOS = false;
 let hasBasic = false;
 let hasSnapshot = false;
+let currentSnapshotName = "";
 const loadedROMs = { os: null, basic: null, amsdos: null };
 const currentDiskNames = ["bluepixel-a.dsk", "bluepixel-b.dsk"];
 let audioContext;
@@ -230,6 +233,7 @@ function updateReady(message) {
   resetButton.disabled = !ready;
   soundButton.disabled = !ready;
   typeButton.disabled = !ready;
+  saveSnapshotButton.disabled = !ready;
   if (ready) {
     status.textContent = "Ready. Click the screen and use your keyboard.";
   } else if (message) {
@@ -331,6 +335,7 @@ document.querySelector("#snapshot").addEventListener("change", async event => {
       throw new Error("This is not a supported SNA snapshot.");
     }
     hasSnapshot = true;
+    currentSnapshotName = file.name;
     hint.hidden = true;
     updateReady();
     status.textContent = `${file.name} loaded.`;
@@ -392,6 +397,31 @@ function downloadDisc(drive) {
 }
 
 saveDiskButtons.forEach((button, drive) => button.addEventListener("click", () => downloadDisc(drive)));
+
+saveSnapshotButton.addEventListener("click", () => {
+  const sizePtr = core._malloc(4);
+  let dataPtr = 0;
+  try {
+    core.HEAPU32[sizePtr >> 2] = 0;
+    dataPtr = core._bp_save_snapshot(sizePtr);
+    const size = core.HEAPU32[sizePtr >> 2];
+    if (!dataPtr || !size) throw new Error("Could not create the snapshot.");
+    const bytes = core.HEAPU8.slice(dataPtr, dataPtr + size);
+    const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
+    const link = document.createElement("a");
+    const baseName = currentSnapshotName.replace(/\.sna$/i, "") || "bluepixel";
+    link.href = url;
+    link.download = `${baseName}-bluepixel.sna`;
+    link.click();
+    URL.revokeObjectURL(url);
+    status.textContent = "Snapshot saved.";
+  } catch (error) {
+    status.textContent = `Could not save snapshot: ${error.message}`;
+  } finally {
+    if (dataPtr) core._bp_free(dataPtr);
+    core._free(sizePtr);
+  }
+});
 
 const keyCodes = {
   KeyA: 69, KeyB: 54, KeyC: 62, KeyD: 61, KeyE: 58, KeyF: 53, KeyG: 52,

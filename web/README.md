@@ -1,6 +1,6 @@
 # BluePixel Web
 
-The browser build reuses the portable C emulator core through WebAssembly. It currently supports a CPC 6128, bundled OS/BASIC/AMSDOS ROMs, DSK images in drives A and B, SNA snapshots, keyboard input, audio, and downloading disk images from both drives.
+The browser build reuses the portable C emulator core through WebAssembly. It currently supports a CPC 6128, bundled OS/BASIC/AMSDOS ROMs, DSK images in drives A and B, SNA snapshot loading and saving, keyboard input, audio, and downloading disk images from both drives.
 
 The `web/roms/` folder contains the default CPC 6128 firmware and the alternatives offered in the in-screen menu. They load automatically; ROMs can be changed from the in-screen menu while the emulator is running.
 
@@ -25,7 +25,7 @@ tools/build-web.sh
 ## Controls
 
 - The CPC 6128 OS, BASIC and AMSDOS ROMs load from `web/roms/` on startup. Change each ROM from the in-screen menu at any time.
-- Insert a DSK image into Drive A or Drive B, or load an SNA snapshot from the in-screen File menu.
+- Insert a DSK image into Drive A or Drive B, or load/save the CPC state as an SNA snapshot from the in-screen File menu. Save disk images separately from each drive menu.
 - The CPC starts automatically after its default ROMs load. Click the screen to see the **F10** menu hint; the in-screen menu follows the macOS app structure (**BluePixel**, **File**, **Settings**, **Help**). Navigate with the arrow keys and Enter; use Left/Right for menu navigation. Press **F10** or **Escape** to close it. Click the screen and use the keyboard. Arrow keys also act as joystick directions; Control and Alt act as fire buttons.
 - Sound is enabled by default and starts after the first click or key press, as required by browser audio policies. Toggle it from **Settings → Sound**.
 - Disk writes are kept in memory independently for drives A and B. Use each drive’s **Download Changed Disc** menu item to save its DSK image.
