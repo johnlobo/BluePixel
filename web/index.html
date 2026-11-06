@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#071226">
+  <title>BluePixel CPC</title>
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <img src="icon.png" alt="" width="56" height="56">
+      <div><h1>BluePixel</h1><p>Amstrad CPC in your browser</p></div>
+    </header>
+
+    <section class="machine">
+      <div class="screen-wrap">
+        <canvas id="screen" width="768" height="540" tabindex="0" aria-label="Amstrad CPC screen"></canvas>
+        <div class="screen-hint" id="screen-hint">Load your CPC ROMs to start</div>
+      </div>
+      <div class="controls">
+        <button id="run" class="primary" disabled>Start</button>
+        <button id="reset" disabled>Reset</button>
+        <button id="sound" disabled>Enable sound</button>
+        <button id="save-disc" disabled>Download disk</button>
+        <span id="status" role="status">Preparing the emulator…</span>
+      </div>
+    </section>
+
+    <section class="files">
+      <h2>ROMs</h2>
+      <p>ROMs load from the local <code>roms/</code> folder by default. Choose another ROM from each menu, or select a custom file.</p>
+      <div class="file-grid">
+        <label>Operating system<select id="os-rom">
+          <option value="OS6128.ROM" selected>6128 — OS6128.ROM</option>
+          <option value="OS664.ROM">664 — OS664.ROM</option>
+          <option value="OS464.ROM">464 — OS464.ROM</option>
+        </select><input id="os-rom-file" type="file" accept=".rom,.bin" aria-label="Choose custom operating system ROM"></label>
+        <label>BASIC<select id="basic-rom">
+          <option value="BASIC1-1.ROM" selected>6128 — BASIC1-1.ROM</option>
+          <option value="BASIC664.ROM">664 — BASIC664.ROM</option>
+          <option value="BASIC1-0.ROM">464 — BASIC1-0.ROM</option>
+        </select><input id="basic-rom-file" type="file" accept=".rom,.bin" aria-label="Choose custom BASIC ROM"></label>
+        <label>Disk ROM<select id="amsdos-rom">
+          <option value="AMSDOS.ROM" selected>AMSDOS — AMSDOS.ROM</option>
+          <option value="CPCDOS.ROM">CPCDOS — CPCDOS.ROM</option>
+          <option value="PARADOS.ROM">ParaDOS — PARADOS.ROM</option>
+          <option value="ParaDOS 1-2.ROM">ParaDOS 1.2</option>
+          <option value="ParaDOS 1-2+.ROM">ParaDOS 1.2+</option>
+          <option value="">None</option>
+        </select><input id="amsdos-rom-file" type="file" accept=".rom,.bin" aria-label="Choose custom disk ROM"></label>
+      </div>
+      <h2>Media</h2>
+      <div class="file-grid">
+        <label>Drive A disk image <input id="disk" type="file" accept=".dsk"></label>
+        <label>Snapshot <input id="snapshot" type="file" accept=".sna"></label>
+      </div>
+      <label class="type-line">Type on the CPC <span><input id="type-text" type="text" placeholder='e.g. RUN"DISC"'><button id="type" disabled>Send</button></span></label>
+    </section>
+
+    <footer>BluePixel uses your browser locally. ROM and media files stay on this device.</footer>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -9,8 +9,8 @@ User manual (Spanish, HTML, start at [docs/index.html](docs/index.html)): living
 
 ## Layout
 
-- `Sources/CPCCore/` — the emulator, plain C, **no Apple dependencies** (keep it portable: a WebAssembly/Linux build
-  is a possible future). Z80, gate array, CRTC, PPI, PSG, FDC/DSK, tape, SNA, Plus ASIC, Multiface II, AMX mouse,
+- `Sources/CPCCore/` — the emulator, plain C, **no Apple dependencies** (keep it portable for WebAssembly/Linux).
+  Z80, gate array, CRTC, PPI, PSG, FDC/DSK, tape, SNA, Plus ASIC, Multiface II, AMX mouse,
   disassembler, debugger core (`debug.c`, `debugview.c`), exact machine state (`state.c`) and session
   recording/replay (`replay.c`). Public headers in `include/`.
 - `Sources/BluePixel/` — AppKit app (Swift). `Emulator.swift` owns the machine and its thread; `AppDelegate.swift`
@@ -18,6 +18,7 @@ User manual (Spanish, HTML, start at [docs/index.html](docs/index.html)): living
   `WatchLogWindows.swift` are the debugger UI; `SettingsController.swift`, `Pokes.swift`, `Help.swift`,
   `LaunchOptions.swift` (command line), `Session.swift` (record/replay menu actions) are the rest.
 - `Sources/cpcrun/` — headless test runner and diagnostics for the core (no UI).
+- `web/` — browser frontend and C/WebAssembly bridge. Build with `tools/build-web.sh`; see `web/README.md`.
 - `tools/` — `bundle.sh` (builds `build/BluePixel.app` with icon), `bluepixel` (runs the bundle from a terminal),
   `fetch_z80_tests.sh`, `extract_z80_timing.py`. `Resources/` holds the app icon.
 
@@ -31,6 +32,8 @@ tools/bluepixel game.dsk /A /SYM obj/game.noi
 
 `build/BluePixel.app` is a bundle (a folder), not an executable: launch it with `open`, `tools/bluepixel` or
 `build/BluePixel.app/Contents/MacOS/BluePixel`.
+
+The browser build needs Emscripten and a local HTTP server; see [web/README.md](web/README.md).
 
 ## Tests
 
@@ -134,7 +137,7 @@ controls blank (tab strips, segmented controls); use `screencapture` when the re
   one-line handlers are normal here). Keep `CPCCore` free of AppKit/Foundation.
 - Temporary test harnesses in the app (env-var hooks) must be removed before committing: `grep -n "DBG[A-Z0-9]*TEST\|DBGB[0-9]"`.
 - Commit messages: imperative summary, then a short paragraph of what and why.
-- ROM images, `.dsk` files and WinAPE's own files (`WinApe.exe`, `CPC_Symbols.ttf`, the CHM) are not in the repo.
+- `.dsk` files and WinAPE's own files (`WinApe.exe`, `CPC_Symbols.ttf`, the CHM) are not in the repo. CPC ROMs are in `roms/`.
 
 ## Not done yet
 
@@ -142,5 +145,6 @@ Session record/playback is complete: core, File menu, transport bar (`Transport.
 ⌥F7, Step Back Over ⌥⌘F8, Reverse Continue ⌥F9, Run Back to Cursor ⌥F4, "Who Wrote/Read This?"), disc writes and markers (`CPC_MARK_TEXT`,
 stored in the `.cpcrec` and saved back when edited). Integrated Maxam-compatible assembler
 (menu item says "Not available yet"), disc/sector editor, Format Disc, Flip Disc, AVI/WAV/YM recording, Symbiface II (IDE/RTC/PS2 mouse), 4 MB Yarek RAM, printer, ZIP/RAR,
-tape CSV, DSC/HDR discs, gamepad joystick. Debugger ideas not built: DeZog/VS Code protocol, AY channel viewer. A web (WebAssembly) build was discussed:
-the core is already portable C, the UI would be new.
+tape CSV, DSC/HDR discs, gamepad joystick. Debugger ideas not built: DeZog/VS Code protocol, AY channel viewer.
+The first browser port is in `web/`: CPC 6128, local `roms/` ROM choices, DSK, SNA, keyboard, audio and disk export. Plus,
+tapes, debugger and session tools are not yet available in the browser UI.

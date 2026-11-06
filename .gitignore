@@ -1,5 +1,6 @@
 .build/
+/web/bluepixel.js
+/web/bluepixel.wasm
 *.app
 .DS_Store
-roms/
 tests/z80/*.com

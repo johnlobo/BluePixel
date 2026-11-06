@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 enum { W_READ = 1, W_WRITE = 2, W_CODE = 4 };
 
