@@ -32,3 +32,17 @@ Los cambios de disco permanecen en memoria durante la sesión. Descarga el disco
 3. Abre <http://localhost:8080/>.
 
 No necesitas Emscripten para usarla: el JavaScript y el WebAssembly compilados están incluidos en el repositorio. Sólo hace falta Emscripten para recompilar el núcleo después de modificar el código C; las instrucciones técnicas y los controles están también en [web/README.md](web/README.md).
+
+## Instalar en un servidor web existente
+
+BluePixel Web es una aplicación estática: no necesita Node.js, PHP, un proceso de emulación en el servidor ni Emscripten. Basta con copiar los archivos precompilados de `web/` a cualquier carpeta servida por tu web, por ejemplo `public_html/bluepixel/` o `/var/www/html/bluepixel/`.
+
+Copia el **contenido** de `web/` conservando la estructura y los nombres, incluidos `index.html`, `app.js`, `style.css`, `icon.png`, `bluepixel.js`, `bluepixel.wasm` y la carpeta `roms/`. Puedes subirlos desde el panel de tu hosting/FTP o, si tienes SSH y `rsync`, desde la raíz del repositorio:
+
+```sh
+rsync -av web/ usuario@servidor:/ruta/de/tu/sitio/bluepixel/
+```
+
+Después abre `https://tu-dominio/bluepixel/`. El servidor debe ofrecer los archivos WebAssembly con el tipo MIME `application/wasm` y servir la web por HTTPS (o HTTP en una red local); no abras `index.html` como archivo `file://`. Si el navegador informa de un error al cargar WebAssembly, revisa el tipo MIME de `bluepixel.wasm` en la configuración del servidor o consulta con el proveedor del hosting.
+
+Para actualizar la instalación, vuelve a copiar el contenido actualizado de `web/` a esa misma carpeta. El despliegue de GitHub Pages se actualiza automáticamente, pero los otros servidores no: hay que subir allí los archivos de nuevo.
