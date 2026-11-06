@@ -166,9 +166,11 @@ runButton.addEventListener("click", async () => {
 
 resetButton.addEventListener("click", () => {
   core._bp_reset();
-  running = false;
-  runButton.textContent = "Start";
-  status.textContent = "Machine reset.";
+  frameDebt = 0;
+  running = true;
+  clearHintAfterFrame = true;
+  runButton.textContent = "Pause";
+  status.textContent = "Machine restarted.";
   canvas.focus();
 });
 
