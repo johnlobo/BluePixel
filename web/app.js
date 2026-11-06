@@ -82,9 +82,9 @@ async function loadROMFromFolder(select, slot, key) {
   }
   if (!name) return false;
   try {
-    const url = new URL(`../roms/${encodeURIComponent(name)}`, import.meta.url);
+    const url = new URL(`./roms/${encodeURIComponent(name)}`, import.meta.url);
     const response = await fetch(url);
-    if (!response.ok) throw new Error(`${name} was not found in roms/.`);
+    if (!response.ok) throw new Error(`${name} was not found in the bundled ROM folder.`);
     const bytes = new Uint8Array(await response.arrayBuffer());
     await installROM(select, slot, key, bytes, name);
     return true;
@@ -95,33 +95,12 @@ async function loadROMFromFolder(select, slot, key) {
   }
 }
 
-function loadCustomROM(input, select, slot, key) {
-  const file = input.files?.[0];
-  if (!file) return;
-  (async () => {
-    const value = `custom:${file.name}`;
-    const previous = select.value;
-    try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      if (![...select.options].some(option => option.value === value)) select.add(new Option(`Custom — ${file.name}`, value));
-      select.value = value;
-      await installROM(select, slot, key, bytes, file.name);
-    } catch (error) {
-      select.value = previous;
-      status.textContent = `ROM error: ${error.message}`;
-    }
-  })();
-}
-
 const osROM = document.querySelector("#os-rom");
 const basicROM = document.querySelector("#basic-rom");
 const amsdosROM = document.querySelector("#amsdos-rom");
 osROM.addEventListener("change", () => loadROMFromFolder(osROM, -1, "os"));
 basicROM.addEventListener("change", () => loadROMFromFolder(basicROM, 0, "basic"));
 amsdosROM.addEventListener("change", () => loadROMFromFolder(amsdosROM, 7, "amsdos"));
-document.querySelector("#os-rom-file").addEventListener("change", event => loadCustomROM(event.currentTarget, osROM, -1, "os"));
-document.querySelector("#basic-rom-file").addEventListener("change", event => loadCustomROM(event.currentTarget, basicROM, 0, "basic"));
-document.querySelector("#amsdos-rom-file").addEventListener("change", event => loadCustomROM(event.currentTarget, amsdosROM, 7, "amsdos"));
 
 async function loadDefaultROMs() {
   const results = await Promise.all([
@@ -133,7 +112,7 @@ async function loadDefaultROMs() {
     const missing = [];
     if (!hasOS) missing.push("OS");
     if (!hasBasic) missing.push("BASIC");
-    updateReady(`${missing.join(" and ")} ROM not found in roms/. Choose from the menu or select a custom file.`);
+    updateReady(`${missing.join(" and ")} ROM not found in the bundled ROM folder. Choose another ROM from its menu.`);
   } else {
     status.textContent = results[2]
       ? "CPC 6128 ROM set loaded. Ready."

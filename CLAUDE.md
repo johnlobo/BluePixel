@@ -137,7 +137,7 @@ controls blank (tab strips, segmented controls); use `screencapture` when the re
   one-line handlers are normal here). Keep `CPCCore` free of AppKit/Foundation.
 - Temporary test harnesses in the app (env-var hooks) must be removed before committing: `grep -n "DBG[A-Z0-9]*TEST\|DBGB[0-9]"`.
 - Commit messages: imperative summary, then a short paragraph of what and why.
-- `.dsk` files and WinAPE's own files (`WinApe.exe`, `CPC_Symbols.ttf`, the CHM) are not in the repo. CPC ROMs are in `roms/`.
+- `.dsk` files and WinAPE's own files (`WinApe.exe`, `CPC_Symbols.ttf`, the CHM) are not in the repo. CPC ROMs for the browser build are in `web/roms/`.
 
 ## Not done yet
 
@@ -146,5 +146,5 @@ Session record/playback is complete: core, File menu, transport bar (`Transport.
 stored in the `.cpcrec` and saved back when edited). Integrated Maxam-compatible assembler
 (menu item says "Not available yet"), disc/sector editor, Format Disc, Flip Disc, AVI/WAV/YM recording, Symbiface II (IDE/RTC/PS2 mouse), 4 MB Yarek RAM, printer, ZIP/RAR,
 tape CSV, DSC/HDR discs, gamepad joystick. Debugger ideas not built: DeZog/VS Code protocol, AY channel viewer.
-The first browser port is in `web/`: CPC 6128, local `roms/` ROM choices, DSK, SNA, keyboard, audio and disk export. Plus,
+The first browser port is in `web/`: CPC 6128, bundled `web/roms/` ROM choices, DSK, SNA, keyboard, audio and disk export. Plus,
 tapes, debugger and session tools are not yet available in the browser UI.
