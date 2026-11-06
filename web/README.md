@@ -4,17 +4,23 @@ The browser build reuses the portable C emulator core through WebAssembly. It cu
 
 The `web/roms/` folder contains the default CPC 6128 firmware and the alternatives offered in the in-screen menu. They load automatically; ROMs can be changed from the in-screen menu while the emulator is running.
 
-## Build and run
+## Ejecutar una copia local
 
-On macOS, install Emscripten with Homebrew. On other systems, use the [official Emscripten SDK instructions](https://emscripten.org/docs/getting_started/downloads.html). Then build and serve the `web/` folder:
+Los archivos precompilados `bluepixel.js` y `bluepixel.wasm` están incluidos. No necesitas instalar Emscripten para usar la versión web. Desde la carpeta raíz del repositorio, inicia un servidor HTTP:
 
 ```sh
-brew install emscripten
-tools/build-web.sh
 python3 -m http.server 8080 --bind 127.0.0.1 --directory web
 ```
 
-Open <http://localhost:8080/>. The web folder is self-contained, including its ROMs. A local HTTP server is needed because browsers do not load WebAssembly modules from `file://` URLs. `tools/build-web.sh` produces ignored `web/bluepixel.js` and `web/bluepixel.wasm` files.
+Abre <http://localhost:8080/>. El servidor HTTP es necesario porque los navegadores no cargan módulos WebAssembly desde URLs `file://`.
+
+### Recompilar el núcleo (opcional)
+
+Sólo hace falta Emscripten si modificas el núcleo C. Instálalo con Homebrew en macOS o sigue las [instrucciones oficiales del SDK de Emscripten](https://emscripten.org/docs/getting_started/downloads.html) en otros sistemas; después ejecuta:
+
+```sh
+tools/build-web.sh
+```
 
 ## Controls
 
@@ -28,6 +34,6 @@ The web UI is intentionally separate from the macOS AppKit frontend. Debugger wi
 
 ## Publishing
 
-The repository includes a GitHub Pages workflow at `.github/workflows/deploy-pages.yml`. It compiles WebAssembly and deploys the contents of `web/` on every push to `main`; it can also be run manually from the Actions tab.
+The repository includes a GitHub Pages workflow at `.github/workflows/deploy-pages.yml`. It deploys the precompiled contents of `web/` on every push to `main`; it can also be run manually from the Actions tab. Emscripten is not needed for deployment.
 
 GitHub Pages sites are publicly accessible, including sites built from private repositories when the account plan permits it. This site bundle includes `web/roms/`, so those ROM files will also be publicly downloadable after deployment.

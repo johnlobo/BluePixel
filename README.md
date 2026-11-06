@@ -23,21 +23,12 @@ Los cambios de disco permanecen en memoria durante la sesión. Descarga el disco
    cd BluePixel
    ```
 
-2. Instala Emscripten. En macOS:
+2. Sirve la versión web precompilada por HTTP:
 
    ```sh
-   brew install emscripten
-   ```
-
-   Para otros sistemas, sigue las [instrucciones oficiales del SDK de Emscripten](https://emscripten.org/docs/getting_started/downloads.html).
-
-3. Compila el núcleo WebAssembly y sirve la carpeta web por HTTP:
-
-   ```sh
-   tools/build-web.sh
    python3 -m http.server 8080 --bind 127.0.0.1 --directory web
    ```
 
-4. Abre <http://localhost:8080/>.
+3. Abre <http://localhost:8080/>.
 
-El servidor HTTP es necesario: los navegadores no cargan el módulo WebAssembly desde una URL `file://`. Las instrucciones técnicas y los controles están también en [web/README.md](web/README.md).
+No necesitas Emscripten para usarla: el JavaScript y el WebAssembly compilados están incluidos en el repositorio. Sólo hace falta Emscripten para recompilar el núcleo después de modificar el código C; las instrucciones técnicas y los controles están también en [web/README.md](web/README.md).

@@ -1,6 +1,4 @@
 .build/
-/web/bluepixel.js
-/web/bluepixel.wasm
 *.app
 .DS_Store
 tests/z80/*.com
