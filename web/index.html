@@ -19,13 +19,10 @@
       <div class="screen-wrap">
         <canvas id="screen" width="768" height="540" tabindex="0" aria-label="Amstrad CPC screen"></canvas>
         <div class="screen-hint" id="screen-hint">Load your CPC ROMs to start</div>
-        <button id="menu-open" class="menu-open" aria-haspopup="dialog" aria-controls="menu-overlay">Menu <kbd>F10</kbd></button>
       </div>
     </section>
 
-    <div class="menu-overlay" id="menu-overlay" hidden>
-      <section class="menu-panel" role="dialog" aria-modal="true" aria-labelledby="menu-title">
-      <div class="menu-heading"><h2 id="menu-title">BluePixel menu</h2><button id="menu-close" aria-label="Close menu">Close <kbd>F10</kbd></button></div>
+    <div class="app-actions" aria-hidden="true">
       <div class="controls">
         <button id="run" class="primary" disabled>Start</button>
         <button id="reset" disabled>Reset</button>
@@ -62,7 +59,6 @@
         <label>Snapshot <input id="snapshot" type="file" accept=".sna"></label>
       </div>
       <label class="type-line">Type on the CPC <span><input id="type-text" type="text" placeholder='e.g. RUN"DISC"'><button id="type" disabled>Send</button></span></label>
-      </section>
       </section>
     </div>
 

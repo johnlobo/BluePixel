@@ -10,29 +10,97 @@ const resetButton = document.querySelector("#reset");
 const soundButton = document.querySelector("#sound");
 const saveDiskButton = document.querySelector("#save-disc");
 const typeButton = document.querySelector("#type");
-const menuOverlay = document.querySelector("#menu-overlay");
-const menuOpenButton = document.querySelector("#menu-open");
-const menuCloseButton = document.querySelector("#menu-close");
+let menuOpen = false;
+let menuSelection = 0;
+let typeEntry = false;
+let typeBuffer = "";
+const menuItems = ["Start / Pause", "Reset machine", "Sound", "Download disk", "Operating system ROM", "BASIC ROM", "Disk ROM", "Insert disk image", "Load snapshot", "Type on CPC", "Close menu"];
 
-function setMenuOpen(open) {
-  menuOverlay.hidden = !open;
-  if (open) menuCloseButton.focus();
-  else canvas.focus();
+function closeMenu() {
+  menuOpen = false;
+  typeEntry = false;
+  hint.hidden = running || hasSnapshot;
+  drawFrame();
 }
 
-menuOpenButton.addEventListener("click", () => setMenuOpen(true));
-menuCloseButton.addEventListener("click", () => setMenuOpen(false));
-menuOverlay.addEventListener("click", event => {
-  if (event.target === menuOverlay) setMenuOpen(false);
-});
+function changeROM(select, direction) {
+  const options = [...select.options];
+  const index = options.findIndex(option => option.value === select.value);
+  select.selectedIndex = (index + direction + options.length) % options.length;
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function activateMenuItem(index) {
+  if (index === 0) runButton.click();
+  else if (index === 1) resetButton.click();
+  else if (index === 2) soundButton.click();
+  else if (index === 3) saveDiskButton.click();
+  else if (index === 4) changeROM(document.querySelector("#os-rom"), 1);
+  else if (index === 5) changeROM(document.querySelector("#basic-rom"), 1);
+  else if (index === 6) changeROM(document.querySelector("#amsdos-rom"), 1);
+  else if (index === 7) { closeMenu(); document.querySelector("#disk").click(); }
+  else if (index === 8) { closeMenu(); document.querySelector("#snapshot").click(); }
+  else if (index === 9) { typeEntry = true; typeBuffer = ""; }
+  else closeMenu();
+}
+
+function handleMenuKey(event) {
+  if (!menuOpen) return false;
+  if (typeEntry) {
+    if (event.code === "Escape") { typeEntry = false; typeBuffer = ""; }
+    else if (event.code === "Enter") {
+      if (typeBuffer) {
+        const bytes = new TextEncoder().encode(typeBuffer + "\0");
+        transfer(bytes, ptr => core._bp_type(ptr));
+      }
+      typeEntry = false;
+      typeBuffer = "";
+    } else if (event.code === "Backspace") typeBuffer = typeBuffer.slice(0, -1);
+    else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey) typeBuffer += event.key;
+    return true;
+  }
+  if (event.code === "Escape") closeMenu();
+  else if (event.code === "ArrowDown") menuSelection = (menuSelection + 1) % menuItems.length;
+  else if (event.code === "ArrowUp") menuSelection = (menuSelection + menuItems.length - 1) % menuItems.length;
+  else if (event.code === "Enter") activateMenuItem(menuSelection);
+  else if (event.code === "ArrowRight" || event.code === "ArrowLeft") {
+    const direction = event.code === "ArrowRight" ? 1 : -1;
+    if (menuSelection === 4) changeROM(document.querySelector("#os-rom"), direction);
+    if (menuSelection === 5) changeROM(document.querySelector("#basic-rom"), direction);
+    if (menuSelection === 6) changeROM(document.querySelector("#amsdos-rom"), direction);
+  }
+  return true;
+}
+
 window.addEventListener("keydown", event => {
   if (event.code === "F10") {
     event.preventDefault();
-    setMenuOpen(menuOverlay.hidden);
-  } else if (event.code === "Escape" && !menuOverlay.hidden) {
-    event.preventDefault();
-    setMenuOpen(false);
+    menuOpen = !menuOpen;
+    if (menuOpen) hint.hidden = true;
+    else hint.hidden = running || hasSnapshot;
+    canvas.focus();
+    drawFrame();
+    return;
   }
+  if (handleMenuKey(event)) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    drawFrame();
+  }
+});
+
+canvas.addEventListener("click", event => {
+  if (!menuOpen) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = (event.clientX - rect.left) * canvas.width / rect.width;
+  const y = (event.clientY - rect.top) * canvas.height / rect.height;
+  const panel = { x: 8, y: 8, width: 444, rowTop: 43, rowHeight: 29 };
+  if (x < panel.x || x > panel.x + panel.width || y < panel.rowTop) return;
+  const index = Math.floor((y - panel.rowTop) / panel.rowHeight);
+  if (index < 0 || index >= menuItems.length) return;
+  menuSelection = index;
+  activateMenuItem(index);
+  drawFrame();
 });
 
 let core;
@@ -249,7 +317,7 @@ const keyCodes = {
 const joystickBits = { ArrowUp: 0, ArrowDown: 1, ArrowLeft: 2, ArrowRight: 3, ControlLeft: 4, ControlRight: 4, AltLeft: 5, AltRight: 5 };
 
 function setKey(event, down) {
-  if (event.code === "F10") return;
+  if (event.code === "F10" || menuOpen) return;
   if (event.target instanceof HTMLElement && event.target.closest("input, textarea, select, button")) return;
   const key = keyCodes[event.code];
   const joy = joystickBits[event.code];
@@ -301,6 +369,7 @@ soundButton.addEventListener("click", async () => {
 });
 
 function drawFrame() {
+  if (!core) return;
   const ptr = core._bp_frame();
   if (!ptr) return;
   const pixels = core.HEAPU32.subarray(ptr >> 2, (ptr >> 2) + canvas.width * canvas.height);
@@ -313,6 +382,44 @@ function drawFrame() {
     image.data[j + 3] = 255;
   }
   ctx.putImageData(image, 0, 0);
+  if (menuOpen) drawAppMenu();
+}
+
+function drawAppMenu() {
+  const x = 8, y = 8, width = 444, rowTop = 43, rowHeight = 29;
+  ctx.save();
+  ctx.fillStyle = "#d2d2d2";
+  ctx.fillRect(x, y, width, 398);
+  ctx.fillStyle = "#303030";
+  ctx.fillRect(x + 2, y + 2, width - 4, 28);
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 16px monospace";
+  ctx.textBaseline = "middle";
+  ctx.fillText("BluePixel CPC 6128", x + 12, y + 16);
+  ctx.font = "14px monospace";
+  for (let i = 0; i < menuItems.length; i++) {
+    const rowY = rowTop + i * rowHeight;
+    const selected = i === menuSelection;
+    ctx.fillStyle = selected ? "#111" : "#fff";
+    ctx.fillRect(x + 3, rowY, width - 6, rowHeight);
+    ctx.fillStyle = selected ? "#fff" : "#111";
+    let label = menuItems[i];
+    if (i === 0) label = running ? "Pause emulation" : "Start emulation";
+    if (i === 2) label = soundButton.disabled ? "Sound enabled" : "Enable sound";
+    if (i === 3 && saveDiskButton.disabled) label += " (unavailable until disk loaded)";
+    if (i === 4) label += `: ${document.querySelector("#os-rom").selectedOptions[0].textContent}`;
+    if (i === 5) label += `: ${document.querySelector("#basic-rom").selectedOptions[0].textContent}`;
+    if (i === 6) label += `: ${document.querySelector("#amsdos-rom").selectedOptions[0].textContent}`;
+    if (i === 9 && typeEntry) label = `Type: ${typeBuffer}_`;
+    ctx.fillText(label, x + 14, rowY + rowHeight / 2, width - 28);
+  }
+  const statusText = typeEntry ? "Enter sends text to the CPC · Esc cancels" : `${status.textContent} · F10/Esc closes`;
+  ctx.fillStyle = "#d2d2d2";
+  ctx.fillRect(x + 3, y + 372, width - 6, 23);
+  ctx.fillStyle = "#222";
+  ctx.font = "12px monospace";
+  ctx.fillText(statusText, x + 10, y + 384, width - 20);
+  ctx.restore();
 }
 
 function animate(time) {
