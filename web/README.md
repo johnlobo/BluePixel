@@ -20,8 +20,8 @@ Open <http://localhost:8080/>. The web folder is self-contained, including its R
 
 - The CPC 6128 OS, BASIC and AMSDOS ROMs load from `web/roms/` on startup. Change each ROM from the in-screen menu at any time.
 - Insert a disk or load an SNA snapshot with the file pickers.
-- The CPC starts automatically after its default ROMs load. Open the in-screen application menu with **F10**; navigate with the arrow keys and Enter, and use Left/Right to change ROMs. Press **F10** or **Escape** to close it. Click the screen and use the keyboard. Arrow keys also act as joystick directions; Control and Alt act as fire buttons.
-- Enable sound from the page after a click, as required by browser audio policies.
+- The CPC starts automatically after its default ROMs load. Click the screen to see the **F10** menu hint; the in-screen menu follows the macOS app structure (**BluePixel**, **File**, **Settings**, **Help**). Navigate with the arrow keys and Enter; use Left/Right for menu navigation. Press **F10** or **Escape** to close it. Click the screen and use the keyboard. Arrow keys also act as joystick directions; Control and Alt act as fire buttons.
+- Sound is enabled by default and starts after the first click or key press, as required by browser audio policies. Toggle it from **Settings → Sound**.
 - Disk writes are kept in memory. Use **Download disk** to save a new DSK image.
 
 The web UI is intentionally separate from the macOS AppKit frontend. Debugger windows, recording/replay, tapes, cartridges, and Plus-specific configuration are not part of this first browser version.

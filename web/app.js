@@ -13,10 +13,15 @@ const soundButton = document.querySelector("#sound");
 const saveDiskButton = document.querySelector("#save-disc");
 const typeButton = document.querySelector("#type");
 let menuOpen = false;
-let menuSelection = 0;
+let activeMenu = 1;
+let menuStack = [];
+let menuLayouts = [];
+let menuBarLayouts = [];
 let typeEntry = false;
 let typeBuffer = "";
-const menuItems = ["Start / Pause", "Reset machine", "Sound", "Download disk", "Operating system ROM", "BASIC ROM", "Disk ROM", "Insert disk image", "Load snapshot", "Type on CPC"];
+let soundEnabled = true;
+let menuTipTimer;
+const menuTip = document.querySelector("#menu-tip");
 
 function closeMenu() {
   menuOpen = false;
@@ -25,25 +30,88 @@ function closeMenu() {
   drawFrame();
 }
 
-function changeROM(select, direction) {
-  const options = [...select.options];
-  const index = options.findIndex(option => option.value === select.value);
-  select.selectedIndex = (index + direction + options.length) % options.length;
-  select.dispatchEvent(new Event("change", { bubbles: true }));
+function showMenuTip() {
+  menuTip.hidden = false;
+  clearTimeout(menuTipTimer);
+  menuTipTimer = setTimeout(() => { menuTip.hidden = true; }, 2600);
 }
 
-function activateMenuItem(index) {
-  if (index === 0) runButton.click();
-  else if (index === 1) resetButton.click();
-  else if (index === 2) soundButton.click();
-  else if (index === 3) saveDiskButton.click();
-  else if (index === 4) changeROM(document.querySelector("#os-rom"), 1);
-  else if (index === 5) changeROM(document.querySelector("#basic-rom"), 1);
-  else if (index === 6) changeROM(document.querySelector("#amsdos-rom"), 1);
-  else if (index === 7) { closeMenu(); document.querySelector("#disk").click(); }
-  else if (index === 8) { closeMenu(); document.querySelector("#snapshot").click(); }
-  else if (index === 9) { typeEntry = true; typeBuffer = ""; }
-  else closeMenu();
+function menuItem(label, action, options = {}) {
+  return { label, action, disabled: Boolean(options.disabled), stayOpen: Boolean(options.stayOpen) };
+}
+
+function menuBranch(label, items) {
+  return { label, items };
+}
+
+function romItems(select) {
+  return [...select.options].map(option => menuItem(
+    `${option.textContent}${option.value === select.value ? "  ✓" : ""}`,
+    () => {
+      select.value = option.value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    },
+  ));
+}
+
+function menuGroups() {
+  const diskInput = document.querySelector("#disk");
+  const snapshotInput = document.querySelector("#snapshot");
+  const typeText = document.querySelector("#type-text");
+  return [
+    { label: "BluePixel", items: [menuItem("About BluePixel CPC", () => { status.textContent = "BluePixel — Amstrad CPC 6128 emulator."; })] },
+    { label: "File", items: [
+      menuBranch("Drive A:", [
+        menuItem("Insert Disc Image…", () => diskInput.click()),
+        menuItem("Download Changed Disc…", () => saveDiskButton.click(), { disabled: saveDiskButton.disabled }),
+      ]),
+      menuItem("Load Snapshot…", () => snapshotInput.click()),
+      menuItem("Auto Type…", () => { typeEntry = true; typeBuffer = typeText.value || ""; }, { stayOpen: true }),
+    ] },
+    { label: "Settings", items: [
+      menuBranch("Memory", [
+        menuBranch("Operating System ROM", romItems(document.querySelector("#os-rom"))),
+        menuBranch("BASIC ROM", romItems(document.querySelector("#basic-rom"))),
+        menuBranch("Disk ROM", romItems(document.querySelector("#amsdos-rom"))),
+      ]),
+      menuBranch("Machine", [
+        menuItem(running ? "Pause" : "Resume", () => runButton.click()),
+        menuItem("Reset", () => resetButton.click()),
+      ]),
+      menuBranch("Sound", [
+        menuItem(`Sound On${soundEnabled ? "  ✓" : ""}`, () => setSoundEnabled(true)),
+        menuItem(`Sound Off${soundEnabled ? "" : "  ✓"}`, () => setSoundEnabled(false)),
+      ]),
+    ] },
+    { label: "Help", items: [
+      menuItem("Keyboard Controls", () => { status.textContent = "Click the screen for keyboard focus. Arrows also control the joystick; Ctrl/Alt fire."; }),
+    ] },
+  ];
+}
+
+function setActiveMenu(index) {
+  const groups = menuGroups();
+  activeMenu = (index + groups.length) % groups.length;
+  menuStack = [{ title: groups[activeMenu].label, items: groups[activeMenu].items, selected: 0 }];
+}
+
+function openMenu() {
+  menuOpen = true;
+  setActiveMenu(activeMenu);
+  hint.hidden = true;
+  clearTimeout(menuTipTimer);
+  menuTip.hidden = true;
+  drawFrame();
+}
+
+function activateMenuEntry(entry) {
+  if (!entry || entry.disabled) return;
+  if (entry.items) {
+    menuStack.push({ title: entry.label, items: entry.items, selected: 0 });
+    return;
+  }
+  entry.action?.();
+  if (!entry.stayOpen) closeMenu();
 }
 
 function handleMenuKey(event) {
@@ -61,27 +129,25 @@ function handleMenuKey(event) {
     else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey) typeBuffer += event.key;
     return true;
   }
-  if (event.code === "Escape") closeMenu();
-  else if (event.code === "ArrowDown") menuSelection = (menuSelection + 1) % menuItems.length;
-  else if (event.code === "ArrowUp") menuSelection = (menuSelection + menuItems.length - 1) % menuItems.length;
-  else if (event.code === "Enter") activateMenuItem(menuSelection);
-  else if (event.code === "ArrowRight" || event.code === "ArrowLeft") {
-    const direction = event.code === "ArrowRight" ? 1 : -1;
-    if (menuSelection === 4) changeROM(document.querySelector("#os-rom"), direction);
-    if (menuSelection === 5) changeROM(document.querySelector("#basic-rom"), direction);
-    if (menuSelection === 6) changeROM(document.querySelector("#amsdos-rom"), direction);
-  }
+  const current = menuStack.at(-1);
+  if (event.code === "Escape") {
+    if (menuStack.length > 1) menuStack.pop();
+    else closeMenu();
+  } else if (menuStack.length > 1 && event.code === "ArrowLeft") menuStack.pop();
+  else if (menuStack.length === 1 && event.code === "ArrowLeft") setActiveMenu(activeMenu - 1);
+  else if (menuStack.length === 1 && event.code === "ArrowRight") setActiveMenu(activeMenu + 1);
+  else if (event.code === "ArrowDown") current.selected = (current.selected + 1) % current.items.length;
+  else if (event.code === "ArrowUp") current.selected = (current.selected + current.items.length - 1) % current.items.length;
+  else if (event.code === "ArrowRight" || event.code === "Enter") activateMenuEntry(current.items[current.selected]);
   return true;
 }
 
 window.addEventListener("keydown", event => {
+  if (soundEnabled) resumeAudio();
   if (event.code === "F10") {
     event.preventDefault();
-    menuOpen = !menuOpen;
-    if (menuOpen) hint.hidden = true;
-    else hint.hidden = running || hasSnapshot;
+    if (menuOpen) closeMenu(); else openMenu();
     canvas.focus();
-    drawFrame();
     return;
   }
   if (handleMenuKey(event)) {
@@ -93,26 +159,33 @@ window.addEventListener("keydown", event => {
 
 canvas.addEventListener("click", event => {
   if (!menuOpen) {
-    if (!running) {
-      menuOpen = true;
-      hint.hidden = true;
-      canvas.focus();
-      drawFrame();
-    } else canvas.focus();
+    showMenuTip();
+    if (!running) openMenu();
+    canvas.focus();
     return;
   }
   const rect = canvas.getBoundingClientRect();
   const x = (event.clientX - rect.left) * canvas.width / rect.width;
   const y = (event.clientY - rect.top) * canvas.height / rect.height;
-  const panel = { x: 8, y: 8, width: 444, rowTop: 43, rowHeight: 29 };
-  if (x < panel.x || x > panel.x + panel.width || y < panel.rowTop) return;
-  const index = Math.floor((y - panel.rowTop) / panel.rowHeight);
-  if (index < 0 || index >= menuItems.length) return;
-  menuSelection = index;
-  activateMenuItem(index);
-  drawFrame();
+  const barItem = menuBarLayouts.find(item => x >= item.x && x <= item.x + item.width && y >= 8 && y <= 36);
+  if (barItem) {
+    setActiveMenu(barItem.index);
+    drawFrame();
+    return;
+  }
+  const layout = menuLayouts[0];
+  const frame = menuStack.at(-1);
+  if (layout && x >= layout.x && x <= layout.x + layout.width && y >= layout.rowTop) {
+    const index = Math.floor((y - layout.rowTop) / layout.rowHeight);
+    if (index >= 0 && index < frame.items.length) {
+      frame.selected = index;
+      activateMenuEntry(frame.items[index]);
+      drawFrame();
+      return;
+    }
+  }
+  closeMenu();
 });
-
 let core;
 let running = false;
 let clearHintAfterFrame = false;
@@ -127,10 +200,13 @@ let audioContext;
 let audioNode;
 let audioPtr;
 let pressed = new Map();
+let audioConnected = false;
 
 try {
   core = await createBluePixelCore({ locateFile: file => new URL(file, import.meta.url).href });
   if (!core._bp_init()) throw new Error("Could not allocate the CPC machine.");
+  try { initializeAudioGraph(); }
+  catch (error) { soundEnabled = false; soundButton.textContent = "Sound Off"; console.warn(error.message); }
   status.textContent = "Loading the CPC 6128 ROM set…";
 } catch (error) {
   status.textContent = `Could not start WebAssembly: ${error.message}`;
@@ -353,33 +429,53 @@ window.addEventListener("blur", () => {
   }
 });
 
-soundButton.addEventListener("click", async () => {
+function initializeAudioGraph() {
+  if (audioConnected) return;
+  if (!window.AudioContext) throw new Error("Web Audio is not available in this browser.");
+  audioContext ??= new AudioContext({ sampleRate: 44100 });
+  audioPtr ??= core._malloc(1024 * 2 * Float32Array.BYTES_PER_ELEMENT);
+  audioNode ??= audioContext.createScriptProcessor(1024, 0, 2);
+  audioNode.onaudioprocess = event => {
+    const frames = event.outputBuffer.length;
+    const offset = audioPtr >> 2;
+    core.HEAPF32.fill(0, offset, offset + frames * 2);
+    core._bp_read_audio(audioPtr, frames);
+    const interleaved = core.HEAPF32.subarray(offset, offset + frames * 2);
+    const left = event.outputBuffer.getChannelData(0);
+    const right = event.outputBuffer.getChannelData(1);
+    for (let i = 0; i < frames; i++) {
+      left[i] = interleaved[i * 2];
+      right[i] = interleaved[i * 2 + 1];
+    }
+  };
+  audioNode.connect(audioContext.destination);
+  audioConnected = true;
+  soundButton.textContent = soundEnabled ? "Sound On" : "Sound Off";
+}
+
+async function resumeAudio() {
+  if (!soundEnabled) return;
   try {
-    audioContext ??= new AudioContext({ sampleRate: 44100 });
-    audioPtr ??= core._malloc(1024 * 2 * Float32Array.BYTES_PER_ELEMENT);
-    audioNode ??= audioContext.createScriptProcessor(1024, 0, 2);
-    audioNode.onaudioprocess = event => {
-      const frames = event.outputBuffer.length;
-      const offset = audioPtr >> 2;
-      core.HEAPF32.fill(0, offset, offset + frames * 2);
-      core._bp_read_audio(audioPtr, frames);
-      const interleaved = core.HEAPF32.subarray(offset, offset + frames * 2);
-      const left = event.outputBuffer.getChannelData(0);
-      const right = event.outputBuffer.getChannelData(1);
-      for (let i = 0; i < frames; i++) {
-        left[i] = interleaved[i * 2];
-        right[i] = interleaved[i * 2 + 1];
-      }
-    };
-    audioNode.connect(audioContext.destination);
-    await audioContext.resume();
-    soundButton.textContent = "Sound enabled";
-    soundButton.disabled = true;
-    status.textContent = "Audio is enabled.";
+    initializeAudioGraph();
+    if (audioContext.state === "suspended") await audioContext.resume();
   } catch (error) {
+    soundEnabled = false;
+    soundButton.textContent = "Sound Off";
     status.textContent = `Audio error: ${error.message}`;
   }
-});
+}
+
+async function setSoundEnabled(enabled) {
+  soundEnabled = enabled;
+  soundButton.textContent = enabled ? "Sound On" : "Sound Off";
+  if (enabled) await resumeAudio();
+  else if (audioContext?.state === "running") await audioContext.suspend();
+  status.textContent = soundEnabled ? "Sound is on." : "Sound is off.";
+  if (menuOpen) drawFrame();
+}
+
+soundButton.addEventListener("click", () => setSoundEnabled(!soundEnabled));
+window.addEventListener("pointerdown", () => resumeAudio(), { capture: true });
 
 function drawFrame() {
   if (!core) return;
@@ -397,42 +493,62 @@ function drawFrame() {
 }
 
 function drawAppMenu() {
-  const x = 8, y = 8, width = 444, rowTop = 43, rowHeight = 29;
+  const groups = menuGroups();
+  menuBarLayouts = [];
+  menuLayouts = [];
   ctx.save();
-  ctx.fillStyle = "#d2d2d2";
-  ctx.fillRect(x, y, width, 368);
-  ctx.fillStyle = "#303030";
-  ctx.fillRect(x + 2, y + 2, width - 4, 28);
-  ctx.fillStyle = "#fff";
-  ctx.font = "bold 16px monospace";
+  ctx.font = "bold 15px monospace";
   ctx.textBaseline = "middle";
-  ctx.fillText("BluePixel CPC 6128", x + 12, y + 16);
-  ctx.font = "14px monospace";
-  for (let i = 0; i < menuItems.length; i++) {
-    const rowY = rowTop + i * rowHeight;
-    const selected = i === menuSelection;
-    ctx.fillStyle = selected ? "#111" : "#fff";
-    ctx.fillRect(x + 3, rowY, width - 6, rowHeight);
+  const barY = 8, barH = 28;
+  let barX = 8;
+  ctx.fillStyle = "#e7e7e7";
+  ctx.fillRect(barX, barY, 500, barH);
+  for (let i = 0; i < groups.length; i++) {
+    const width = Math.ceil(ctx.measureText(groups[i].label).width) + 22;
+    const selected = i === activeMenu;
+    menuBarLayouts.push({ index: i, x: barX, width });
+    ctx.fillStyle = selected ? "#111" : "#e7e7e7";
+    ctx.fillRect(barX, barY, width, barH);
     ctx.fillStyle = selected ? "#fff" : "#111";
-    let label = menuItems[i];
-    if (i === 0) label = running ? "Pause emulation" : "Start emulation";
-    if (i === 2) label = soundButton.disabled ? "Sound enabled" : "Enable sound";
-    if (i === 3 && saveDiskButton.disabled) label += " (unavailable until disk loaded)";
-    if (i === 4) label += `: ${document.querySelector("#os-rom").selectedOptions[0].textContent}`;
-    if (i === 5) label += `: ${document.querySelector("#basic-rom").selectedOptions[0].textContent}`;
-    if (i === 6) label += `: ${document.querySelector("#amsdos-rom").selectedOptions[0].textContent}`;
-    if (i === 9 && typeEntry) label = `Type: ${typeBuffer}_`;
-    ctx.fillText(label, x + 14, rowY + rowHeight / 2, width - 28);
+    ctx.fillText(groups[i].label, barX + 11, barY + barH / 2);
+    barX += width;
   }
-  const statusText = typeEntry ? "Enter sends text to the CPC · Esc cancels" : `${status.textContent} · F10/Esc closes`;
-  ctx.fillStyle = "#d2d2d2";
-  ctx.fillRect(x + 3, y + 342, width - 6, 23);
-  ctx.fillStyle = "#222";
-  ctx.font = "12px monospace";
-  ctx.fillText(statusText, x + 10, y + 354, width - 20);
+
+  const frame = menuStack.at(-1);
+  if (frame) {
+    const x = 8, y = 39, width = 430, rowTop = 68, rowHeight = 27;
+    const height = 35 + frame.items.length * rowHeight + 24;
+    ctx.fillStyle = "#111";
+    ctx.fillRect(x - 2, y - 2, width + 4, height + 4);
+    ctx.fillStyle = "#d2d2d2";
+    ctx.fillRect(x, y, width, height);
+    ctx.fillStyle = "#c5c5c5";
+    ctx.fillRect(x + 2, y + 2, width - 4, 25);
+    ctx.fillStyle = "#111";
+    ctx.font = "bold 14px monospace";
+    ctx.fillText(menuStack.map(part => part.title).join("  ›  "), x + 10, y + 14);
+    ctx.font = "14px monospace";
+    for (let i = 0; i < frame.items.length; i++) {
+      const item = frame.items[i];
+      const rowY = rowTop + i * rowHeight;
+      const selected = i === frame.selected;
+      ctx.fillStyle = selected ? "#111" : "#fff";
+      ctx.fillRect(x + 3, rowY, width - 6, rowHeight);
+      ctx.fillStyle = item.disabled ? "#888" : selected ? "#fff" : "#111";
+      const suffix = item.items ? "  ›" : "";
+      ctx.fillText(`${item.label}${suffix}`, x + 12, rowY + rowHeight / 2, width - 42);
+    }
+    const footerY = rowTop + frame.items.length * rowHeight;
+    ctx.fillStyle = "#d2d2d2";
+    ctx.fillRect(x + 3, footerY, width - 6, 22);
+    ctx.fillStyle = "#222";
+    ctx.font = "12px monospace";
+    const footer = typeEntry ? "Type command, then Enter to send · Esc cancels" : `${status.textContent} · F10 closes`;
+    ctx.fillText(footer, x + 10, footerY + 11, width - 20);
+    menuLayouts.push({ x, width, rowTop, rowHeight, itemCount: frame.items.length });
+  }
   ctx.restore();
 }
-
 function animate(time) {
   if (!lastTime) lastTime = time;
   const elapsed = Math.min(time - lastTime, 100);
