@@ -3,6 +3,8 @@ import createBluePixelCore from "./bluepixel.js";
 const canvas = document.querySelector("#screen");
 const ctx = canvas.getContext("2d", { alpha: false });
 const image = ctx.createImageData(canvas.width, canvas.height);
+const imageWords = new Uint32Array(image.data.buffer);
+const isLittleEndian = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
 const status = document.querySelector("#status");
 const hint = document.querySelector("#screen-hint");
 const runButton = document.querySelector("#run");
@@ -386,11 +388,9 @@ function drawFrame() {
   const pixels = core.HEAPU32.subarray(ptr >> 2, (ptr >> 2) + canvas.width * canvas.height);
   for (let i = 0; i < pixels.length; i++) {
     const pixel = pixels[i];
-    const j = i * 4;
-    image.data[j] = (pixel >>> 16) & 255;
-    image.data[j + 1] = (pixel >>> 8) & 255;
-    image.data[j + 2] = pixel & 255;
-    image.data[j + 3] = 255;
+    imageWords[i] = isLittleEndian
+      ? (0xFF000000 | ((pixel & 255) << 16) | (pixel & 0xFF00) | ((pixel >>> 16) & 255))
+      : (pixel | 0xFF000000);
   }
   ctx.putImageData(image, 0, 0);
   if (menuOpen) drawAppMenu();
@@ -438,16 +438,18 @@ function animate(time) {
   const elapsed = Math.min(time - lastTime, 100);
   lastTime = time;
   if (running) {
-    frameDebt += elapsed;
-    let count = 0;
-    while (frameDebt >= 20 && count++ < 4) {
+    frameDebt = Math.min(frameDebt + elapsed, 100);
+    const frames = Math.min(Math.floor(frameDebt / 20), 5);
+    for (let i = 0; i < frames; i++) {
       core._bp_run_frame();
       frameDebt -= 20;
     }
-    drawFrame();
-    if (clearHintAfterFrame) {
-      hint.hidden = true;
-      clearHintAfterFrame = false;
+    if (frames > 0) {
+      drawFrame();
+      if (clearHintAfterFrame) {
+        hint.hidden = true;
+        clearHintAfterFrame = false;
+      }
     }
   }
   requestAnimationFrame(animate);
