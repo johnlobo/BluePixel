@@ -90,7 +90,15 @@ window.addEventListener("keydown", event => {
 });
 
 canvas.addEventListener("click", event => {
-  if (!menuOpen) return;
+  if (!menuOpen) {
+    if (!running) {
+      menuOpen = true;
+      hint.hidden = true;
+      canvas.focus();
+      drawFrame();
+    }
+    return;
+  }
   const rect = canvas.getBoundingClientRect();
   const x = (event.clientX - rect.left) * canvas.width / rect.width;
   const y = (event.clientY - rect.top) * canvas.height / rect.height;
