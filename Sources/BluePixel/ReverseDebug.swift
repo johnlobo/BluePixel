@@ -47,7 +47,7 @@ extension Emulator {
             DispatchQueue.main.async { if self.searchThread === me { self.searchThread = nil }; done(result) }   // not a newer search's
             self.searchDone.signal()
         }
-        t.name = "MacAPE reverse search"; t.qualityOfService = .userInitiated
+        t.name = "BluePixel reverse search"; t.qualityOfService = .userInitiated
         searchThread = t; t.start()
     }
 

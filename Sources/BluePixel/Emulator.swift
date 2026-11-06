@@ -57,7 +57,7 @@ final class Emulator {
     }
 
     static func findRomFolder(_ s: Settings) -> URL {
-        if let p = s["MacAPE", "ROM Folder"], !p.isEmpty { return URL(fileURLWithPath: p) }
+        if let p = s["BluePixel", "ROM Folder"], !p.isEmpty { return URL(fileURLWithPath: p) }
         let candidates = [AppPaths.roms.path, NSHomeDirectory() + "/Documents/WinAPE20B2/ROM"]
         for c in candidates where FileManager.default.fileExists(atPath: c + "/OS6128.ROM") { return URL(fileURLWithPath: c) }
         return AppPaths.roms
@@ -168,7 +168,7 @@ final class Emulator {
         audio = AudioOutput(cpc: cpc, sampleRate: Double(cpc.pointee.cfg.sample_rate))
         audio?.start()
         let t = Thread { [weak self] in self?.loop() }
-        t.name = "MacAPE emulation"; t.qualityOfService = .userInteractive
+        t.name = "BluePixel emulation"; t.qualityOfService = .userInteractive
         thread = t; t.start()
     }
 

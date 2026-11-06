@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Grabar y reproducir — Manual de MacAPE</title>
+<title>Grabar y reproducir — Manual de BluePixel</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header class="top">
-  <a class="brand" href="index.html">MacAPE</a>
+  <a class="brand" href="index.html">BluePixel</a>
   <nav>
     <a href="index.html">Inicio</a>
     <a href="command-line.html">Línea de comandos</a>
@@ -65,7 +65,7 @@
 <h2 id="play">Reproducir</h2>
 <ol>
   <li><strong>File → Playback Session…</strong> y elige un <code>.cpcrec</code>.</li>
-  <li>MacAPE comprueba qué discos y ROMs usó la grabación. Si no coinciden con los actuales, avisa («The session may not play back exactly») y te deja continuar o cancelar.</li>
+  <li>BluePixel comprueba qué discos y ROMs usó la grabación. Si no coinciden con los actuales, avisa («The session may not play back exactly») y te deja continuar o cancelar.</li>
   <li>La máquina arranca desde el estado guardado y aparece la barra de transporte.</li>
 </ol>
 <p>El título muestra <code>▶ 0:12 / 1:30</code>. Si la reproducción se desvía de la grabación aparece <code>OUT OF SYNC</code>: fíate de los datos solo hasta ese punto.</p>
@@ -107,10 +107,10 @@
   <li><strong>Ir a uno:</strong> <kbd>,</kbd> y <kbd>.</kbd> saltan al marcador anterior y al siguiente; <strong>File → Go to Marker</strong> los lista con su hora.</li>
   <li><strong>Borrar:</strong> <strong>File → Remove Marker</strong>.</li>
 </ul>
-<p>Los marcadores se guardan dentro del <code>.cpcrec</code>: al añadir o borrar uno durante una reproducción, MacAPE reescribe el fichero de la sesión.</p>
+<p>Los marcadores se guardan dentro del <code>.cpcrec</code>: al añadir o borrar uno durante una reproducción, BluePixel reescribe el fichero de la sesión.</p>
 
 <h2 id="indexing">Indexado</h2>
-<p>Para saltar rápido, MacAPE reproduce la sesión en segundo plano con una copia de la máquina y guarda puntos de restauración cada pocos segundos. La barra lo muestra como progreso. Mientras no llegue a un punto, saltar allí obliga a reproducir desde el punto indexado más cercano, y tarda un poco. Después es instantáneo, también hacia atrás.</p>
+<p>Para saltar rápido, BluePixel reproduce la sesión en segundo plano con una copia de la máquina y guarda puntos de restauración cada pocos segundos. La barra lo muestra como progreso. Mientras no llegue a un punto, saltar allí obliga a reproducir desde el punto indexado más cercano, y tarda un poco. Después es instantáneo, también hacia atrás.</p>
 
 <h2 id="control">Tomar el control</h2>
 <p>El botón de la <strong>mano</strong> (a la derecha de la barra) abandona la grabación en el instante que estés viendo y te deja jugar desde ahí. La grabación no se modifica.</p>
@@ -136,9 +136,9 @@
 </ul>
 <p>Otras limitaciones:</p>
 <ul>
-  <li><strong>Escrituras en disco:</strong> si el juego guarda en el disco durante la grabación, la sesión lleva consigo las pistas originales y la reproducción (y cada salto) deja el disco como estaba en ese momento, así que puedes rebobinar a antes de guardar. Mientras reproduces, MacAPE <em>no escribe</em> en tu fichero <code>.dsk</code>; si tomas el control, el disco queda tal como esté en ese punto y se guardará como siempre.</li>
+  <li><strong>Escrituras en disco:</strong> si el juego guarda en el disco durante la grabación, la sesión lleva consigo las pistas originales y la reproducción (y cada salto) deja el disco como estaba en ese momento, así que puedes rebobinar a antes de guardar. Mientras reproduces, BluePixel <em>no escribe</em> en tu fichero <code>.dsk</code>; si tomas el control, el disco queda tal como esté en ese punto y se guardará como siempre.</li>
   <li><strong>Mismo disco:</strong> la sesión recuerda qué discos y ROMs usó. Si el disco insertado es el de la grabación (aunque se haya guardado después con los cambios del juego), se reconoce; si no, se avisa y la reproducción puede desviarse.</li>
-  <li><strong>Misma versión:</strong> una sesión solo sirve para la versión de MacAPE que la grabó. Si falla con «not a MacAPE session recording, or it was made by a different build», es por esto.</li>
+  <li><strong>Misma versión:</strong> una sesión solo sirve para la versión de BluePixel que la grabó. Si falla con «not a BluePixel session recording, or it was made by a different build», es por esto.</li>
   <li>Pausar y usar el depurador mientras grabas está permitido siempre que no modifiques nada.</li>
 </ul>
 
@@ -147,6 +147,6 @@
 </main>
 </div>
 
-<footer>Manual de MacAPE — port a macOS de WinAPE 2.0 beta 2</footer>
+<footer>Manual de BluePixel — port a macOS de WinAPE 2.0 beta 2</footer>
 </body>
 </html>

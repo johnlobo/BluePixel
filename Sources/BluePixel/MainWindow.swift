@@ -21,7 +21,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         emu = emulator
         let win = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 768, height: 540 + MainWindowController.panelHeight),
                            styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        win.title = "MacAPE"
+        win.title = "BluePixel"
         win.contentMinSize = NSSize(width: 384, height: 270 + MainWindowController.panelHeight)
         win.collectionBehavior = [.fullScreenPrimary]
         super.init(window: win)
@@ -135,7 +135,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             timing.stringValue = String(format: "Emulation Timing %3.0f%%", pct)
             lastFrames = fr; lastTime = now
         }
-        let base = emu.discPaths[0].split(separator: "/").last.map { "MacAPE — \($0)" } ?? "MacAPE"
+        let base = emu.discPaths[0].split(separator: "/").last.map { "BluePixel — \($0)" } ?? "BluePixel"
         let status = emu.sessionStatus
         window?.title = status.isEmpty ? base : base + "     " + status
     }

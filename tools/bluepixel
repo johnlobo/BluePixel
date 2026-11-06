@@ -1,0 +1,6 @@
+#!/bin/sh
+# Runs BluePixel from the terminal with WinAPE-style arguments, e.g.
+#   bluepixel game.dsk /A          bluepixel disc.dsk /A:loader     bluepixel /SN:game.sna
+# Symlink it somewhere on PATH:  ln -s "$PWD/tools/bluepixel" /usr/local/bin/bluepixel
+here="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)"
+exec "$here/../build/BluePixel.app/Contents/MacOS/BluePixel" "$@"

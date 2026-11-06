@@ -37,7 +37,12 @@ final class Settings {
         for raw in text.components(separatedBy: .newlines) {
             let line = raw.trimmingCharacters(in: .whitespaces)
             if line.isEmpty || line.hasPrefix(";") { continue }
-            if line.hasPrefix("[") && line.hasSuffix("]") { section = String(line.dropFirst().dropLast()); if st.data[section] == nil { st.data[section] = []; st.order.append(section) }; continue }
+            if line.hasPrefix("[") && line.hasSuffix("]") {
+                let name = String(line.dropFirst().dropLast())
+                section = name.caseInsensitiveCompare("MacAPE") == .orderedSame ? "BluePixel" : name
+                if st.data[section] == nil { st.data[section] = []; st.order.append(section) }
+                continue
+            }
             if let eq = line.firstIndex(of: "=") {
                 let k = String(line[..<eq]).trimmingCharacters(in: .whitespaces)
                 let v = String(line[line.index(after: eq)...]).trimmingCharacters(in: .whitespaces)
@@ -69,11 +74,16 @@ final class Settings {
 
 enum AppPaths {
     static let support: URL = {
-        let u = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("MacAPE")
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let u = base.appendingPathComponent("BluePixel")
+        let old = base.appendingPathComponent("MacAPE")
+        if !FileManager.default.fileExists(atPath: u.path), FileManager.default.fileExists(atPath: old.path) {
+            try? FileManager.default.copyItem(at: old, to: u)
+        }
         try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
         return u
     }()
-    static var ini: URL { support.appendingPathComponent("MacAPE.ini") }
+    static var ini: URL { support.appendingPathComponent("BluePixel.ini") }
     static var profiles: URL { support.appendingPathComponent("Profile") }
     static var roms: URL { support.appendingPathComponent("ROM") }
 }

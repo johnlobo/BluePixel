@@ -1,4 +1,4 @@
-# MacAPE
+# BluePixel
 
 macOS port of the WinAPE Amstrad CPC/Plus emulator (WinAPE 2.0 beta 2). The Windows binary was analysed with
 REA/Ghidra to recover timing tables, formats and behaviour; the emulator itself is written from scratch.
@@ -13,24 +13,24 @@ User manual (Spanish, HTML, start at [docs/index.html](docs/index.html)): living
   is a possible future). Z80, gate array, CRTC, PPI, PSG, FDC/DSK, tape, SNA, Plus ASIC, Multiface II, AMX mouse,
   disassembler, debugger core (`debug.c`, `debugview.c`), exact machine state (`state.c`) and session
   recording/replay (`replay.c`). Public headers in `include/`.
-- `Sources/MacAPE/` — AppKit app (Swift). `Emulator.swift` owns the machine and its thread; `AppDelegate.swift`
+- `Sources/BluePixel/` — AppKit app (Swift). `Emulator.swift` owns the machine and its thread; `AppDelegate.swift`
   builds the menus; `Debug*.swift`, `DebuggerController.swift`, `SymbolsWindow.swift`, `HistoryWindow.swift`,
   `WatchLogWindows.swift` are the debugger UI; `SettingsController.swift`, `Pokes.swift`, `Help.swift`,
   `LaunchOptions.swift` (command line), `Session.swift` (record/replay menu actions) are the rest.
 - `Sources/cpcrun/` — headless test runner and diagnostics for the core (no UI).
-- `tools/` — `bundle.sh` (builds `build/MacAPE.app` with icon), `macape` (runs the bundle from a terminal),
+- `tools/` — `bundle.sh` (builds `build/BluePixel.app` with icon), `bluepixel` (runs the bundle from a terminal),
   `fetch_z80_tests.sh`, `extract_z80_timing.py`. `Resources/` holds the app icon.
 
 ## Build and run
 
 ```bash
 swift build -c release            # both products
-tools/bundle.sh                   # build/MacAPE.app (needed to get the icon / Info.plist)
-tools/macape game.dsk /A /SYM obj/game.noi
+tools/bundle.sh                   # build/BluePixel.app (needed to get the icon / Info.plist)
+tools/bluepixel game.dsk /A /SYM obj/game.noi
 ```
 
-`build/MacAPE.app` is a bundle (a folder), not an executable: launch it with `open`, `tools/macape` or
-`build/MacAPE.app/Contents/MacOS/MacAPE`.
+`build/BluePixel.app` is a bundle (a folder), not an executable: launch it with `open`, `tools/bluepixel` or
+`build/BluePixel.app/Contents/MacOS/BluePixel`.
 
 ## Tests
 
@@ -60,13 +60,13 @@ controls blank (tab strips, segmented controls); use `screencapture` when the re
 
 ## Where things come from
 
-- ROMs: `~/Documents/WinAPE20B2/ROM` (override with `[MacAPE] ROM Folder`). Per-user data lives in
-  `~/Library/Application Support/MacAPE/` (`MacAPE.ini`, `Profile/`, `Help/`, `WINAPE.POK`).
+- ROMs: `~/Documents/WinAPE20B2/ROM` (override with `[BluePixel] ROM Folder`). Per-user data lives in
+  `~/Library/Application Support/BluePixel/` (`BluePixel.ini`, `Profile/`, `Help/`, `WINAPE.POK`).
 - Help: pages extracted from `WinAPE.chm` with `extract_chmLib` (brew `chmlib`) into `Help/`; the viewer is `Help.swift`.
 - WinApe.exe addresses worth knowing (Ghidra, image base 0x400000): AMX mouse per-frame logic 0x5989FA,
   palette intensity tables 0x5CCA14 (linear) / 0x5CCA44 (non-linear), INI key table 0x5CBCA4.
 - `WINAPE.POK` format is decoded in `Pokes.swift` (header comment); it round-trips byte for byte.
-- Debugger window layout and shortcuts mirror WinAPE; the guide is in the owner's Docs ("MacAPE — Guía del depurador").
+- Debugger window layout and shortcuts mirror WinAPE; the guide is in the owner's Docs ("BluePixel — Guía del depurador").
 
 ## Hard-won facts (do not re-derive)
 

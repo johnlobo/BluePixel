@@ -21,7 +21,7 @@ final class SettingsController: NSObject, NSWindowDelegate {
     init(emu: Emulator) {
         self.emu = emu
         super.init()
-        panel.title = "MacAPE - Setup"; panel.isReleasedWhenClosed = false; panel.delegate = self
+        panel.title = "BluePixel - Setup"; panel.isReleasedWhenClosed = false; panel.delegate = self
         build()
     }
 
@@ -93,7 +93,7 @@ final class SettingsController: NSObject, NSWindowDelegate {
         let options = group("Options", [row([makeLabel("CRTC Type:"), crtc]), check("Enable Plus Features", "Configuration", "Enable Plus", false), check("Enable Four Drives (Non-Standard)", "Configuration", "Enable Four Drives", false),
                                         check("Save Screenshot on Frame Flyback", "Configuration", "Screenshot On Flyback", true), check("Plus PPI Emulation", "Configuration", "Plus PPI", false),
                                         check("Fast Disc Emulation", "Configuration", "Fast Disc", true)])
-        tab("General", column([timing, options, makeLabel("MacAPE 0.1 — Mac port of WinAPE features")]))
+        tab("General", column([timing, options, makeLabel("BluePixel 0.1 — Mac port of WinAPE features")]))
 
         // Display
         let monitor = popup(["Colour", "Green", "Greyscale"], "Configuration", "Monitor Type", 0)
@@ -229,7 +229,7 @@ final class SettingsController: NSObject, NSWindowDelegate {
     // MARK: buttons
     private func commit() {
         savers.forEach { $0() }
-        s.set("MacAPE", "Profile", currentProfile)
+        s.set("BluePixel", "Profile", currentProfile)
         emu.settings.set("Configuration", "Frame Skip", s.int("Configuration", "Refresh Rate", 0) > 0)
         onApply?()
     }

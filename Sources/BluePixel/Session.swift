@@ -76,7 +76,7 @@ extension Emulator {
         }
         var roms: [String: String] = [:]
         for k in ["Lower"] + (0..<32).map({ "Upper(\($0))" }) { let v = settings.string("ROMS", k); if !v.isEmpty { roms[k] = v } }
-        let meta: [String: Any] = ["app": "MacAPE", "date": ISO8601DateFormatter().string(from: Date()), "drives": drives, "roms": roms,
+        let meta: [String: Any] = ["app": "BluePixel", "date": ISO8601DateFormatter().string(from: Date()), "drives": drives, "roms": roms,
                                    "tape": tape.map { String(cString: tape_name($0)) } ?? ""]
         let d = (try? JSONSerialization.data(withJSONObject: meta)) ?? Data()
         return String(decoding: d, as: UTF8.self)
@@ -89,7 +89,7 @@ extension Emulator {
     func openRecording(url: URL) -> (rec: OpaquePointer?, error: String?) {
         guard let data = try? Data(contentsOf: url) else { return (nil, "The file cannot be read.") }
         let rec: OpaquePointer? = data.withUnsafeBytes { cpc_recording_deserialize($0.bindMemory(to: UInt8.self).baseAddress, data.count) }
-        guard let r = rec else { return (nil, "This is not a MacAPE session recording, or it was made by a different build of MacAPE.") }
+        guard let r = rec else { return (nil, "This is not a BluePixel session recording, or it was made by a different build of BluePixel.") }
         return (r, nil)
     }
 
@@ -227,7 +227,7 @@ extension Emulator {
             cpc_player_free(p2); cpc_clone_free(c2)
             self.indexDone.signal()
         }
-        t.name = "MacAPE replay index"; t.qualityOfService = .utility
+        t.name = "BluePixel replay index"; t.qualityOfService = .utility
         indexThread = t; t.start()
     }
 

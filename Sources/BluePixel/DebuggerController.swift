@@ -59,7 +59,7 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     init(emulator: Emulator) {
         emu = emulator; model = DebugModel(emu: emulator)
         let win = NSWindow(contentRect: NSRect(x: 120, y: 120, width: 980, height: 740), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        win.title = "MacAPE Debugger"; win.isReleasedWhenClosed = false
+        win.title = "BluePixel Debugger"; win.isReleasedWhenClosed = false
         win.contentMinSize = NSSize(width: 980, height: 600)   // below this the bottom groups would reach the right column
         super.init(window: win)
         win.delegate = self
@@ -403,14 +403,14 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
         guard p.runModal() == .OK, let u = p.url else { return }
         emu.lock.lock(); _ = dbg_attach(emu.cpc); let n = dbg_symbols_load(emu.cpc, u.path); emu.lock.unlock()
         if n < 0 { let a = NSAlert(); a.messageText = "Cannot load symbols"; a.informativeText = u.path; a.runModal(); return }
-        window?.title = "MacAPE Debugger — \(n) symbols from \(u.lastPathComponent)"
+        window?.title = "BluePixel Debugger — \(n) symbols from \(u.lastPathComponent)"
         (NSApp.delegate as? AppDelegate)?.symbolsURL = u
         refreshAll(); symbolsWindow?.reload()
     }
-    func symbolsReloaded(_ note: String) { window?.title = "MacAPE Debugger" + note; refreshAll() }
+    func symbolsReloaded(_ note: String) { window?.title = "BluePixel Debugger" + note; refreshAll() }
     @objc func clearSymbols(_ s: Any?) {
         emu.lock.lock(); dbg_symbol_clear(emu.cpc); emu.lock.unlock()
-        window?.title = "MacAPE Debugger"
+        window?.title = "BluePixel Debugger"
         refreshAll(); symbolsWindow?.reload()
     }
     @objc func followChanged(_ s: Any?) { refreshAll() }

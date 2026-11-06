@@ -22,7 +22,7 @@ final class HelpController: NSObject, NSOutlineViewDataSource, NSOutlineViewDele
         if !FileManager.default.fileExists(atPath: folder.appendingPathComponent("WinAPE.hhc").path) { extract(winapeFolder) }
         guard FileManager.default.fileExists(atPath: folder.appendingPathComponent("WinAPE.hhc").path) else {
             let a = NSAlert(); a.messageText = "WinAPE help not found"
-            a.informativeText = "MacAPE shows the help from WinAPE.chm. Install chmlib (brew install chmlib) so it can be extracted automatically, or extract WinAPE.chm into:\n\(folder.path)"
+            a.informativeText = "BluePixel shows the help from WinAPE.chm. Install chmlib (brew install chmlib) so it can be extracted automatically, or extract WinAPE.chm into:\n\(folder.path)"
             a.runModal(); return nil
         }
         return HelpController()
@@ -41,7 +41,7 @@ final class HelpController: NSObject, NSOutlineViewDataSource, NSOutlineViewDele
     private override init() {
         super.init()
         roots = HelpController.parseContents((try? String(contentsOf: HelpController.folder.appendingPathComponent("WinAPE.hhc"), encoding: .isoLatin1)) ?? "")
-        window.title = "MacAPE Help (WinAPE manual)"; window.isReleasedWhenClosed = false; window.center()
+        window.title = "BluePixel Help (WinAPE manual)"; window.isReleasedWhenClosed = false; window.center()
         let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("t")); outline.addTableColumn(col); outline.outlineTableColumn = col
         outline.headerView = nil; outline.dataSource = self; outline.delegate = self; outline.style = .sourceList
         let scroll = NSScrollView(); scroll.documentView = outline; scroll.hasVerticalScroller = true

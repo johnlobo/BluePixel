@@ -84,7 +84,7 @@ final class DriveSetupController: NSObject {
     @objc func openDisc(_ s: NSButton) {
         let p = NSOpenPanel(); p.allowedContentTypes = ["dsk", "dsc", "hdr"].compactMap { UTType(filenameExtension: $0) }
         guard p.runModal() == .OK, let u = p.url else { return }
-        if !emu.insertDisc(drive: s.tag, url: u) { NSAlert(error: NSError(domain: "MacAPE", code: 1, userInfo: [NSLocalizedDescriptionKey: "Cannot open disc image"])).runModal() }
+        if !emu.insertDisc(drive: s.tag, url: u) { NSAlert(error: NSError(domain: "BluePixel", code: 1, userInfo: [NSLocalizedDescriptionKey: "Cannot open disc image"])).runModal() }
         refresh(); onChange?()
     }
     @objc func ejectDisc(_ s: NSButton) { emu.removeDisc(drive: s.tag); refresh(); onChange?() }
@@ -169,7 +169,7 @@ final class TapeController: NSObject, NSTableViewDataSource, NSTableViewDelegate
     @objc func open(_ s: Any?) {
         let p = NSOpenPanel(); p.allowedContentTypes = ["cdt", "tzx", "voc", "wav", "csw"].compactMap { UTType(filenameExtension: $0) }
         guard p.runModal() == .OK, let u = p.url else { return }
-        if !emu.insertTape(url: u) { NSAlert(error: NSError(domain: "MacAPE", code: 2, userInfo: [NSLocalizedDescriptionKey: "Unsupported or damaged tape image"])).runModal() }
+        if !emu.insertTape(url: u) { NSAlert(error: NSError(domain: "BluePixel", code: 2, userInfo: [NSLocalizedDescriptionKey: "Unsupported or damaged tape image"])).runModal() }
         reload()
     }
     @objc func record(_ s: Any?) { emu.startTapeRecording() }

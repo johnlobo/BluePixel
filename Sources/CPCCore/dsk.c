@@ -147,7 +147,7 @@ uint8_t *dsk_serialize(const CPCDisc *d, size_t *out_size) {
     uint8_t *o = calloc(1, cap); size_t pos = 0x100;
     bool ext = d->extended;
     memcpy(o, ext ? "EXTENDED CPC DSK File\r\nDisk-Info\r\n" : "MV - CPCEMU Disk-File\r\nDisk-Info\r\n", ext ? 34 : 34);
-    memcpy(o + 0x22, "MacAPE", 6);
+    memcpy(o + 0x22, "BluePx", 6);
     o[0x30] = d->tracks; o[0x31] = d->sides;
     size_t max_track = 0;
     for (int t = 0; t < d->tracks; t++) for (int h = 0; h < d->sides; h++) {

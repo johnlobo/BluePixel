@@ -2,15 +2,15 @@
 import PackageDescription
 
 let package = Package(
-    name: "MacAPE",
+    name: "BluePixel",
     platforms: [.macOS(.v13)],
     products: [
-        .executable(name: "MacAPE", targets: ["MacAPE"]),
+        .executable(name: "BluePixel", targets: ["BluePixel"]),
         .executable(name: "cpcrun", targets: ["cpcrun"]),
     ],
     targets: [
         .target(name: "CPCCore", path: "Sources/CPCCore", cSettings: [.unsafeFlags(["-O2"])], linkerSettings: [.linkedLibrary("z")]),
         .executableTarget(name: "cpcrun", dependencies: ["CPCCore"], path: "Sources/cpcrun"),
-        .executableTarget(name: "MacAPE", dependencies: ["CPCCore"], path: "Sources/MacAPE"),
+        .executableTarget(name: "BluePixel", dependencies: ["CPCCore"], path: "Sources/BluePixel"),
     ]
 )

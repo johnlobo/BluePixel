@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>El depurador — Manual de MacAPE</title>
+<title>El depurador — Manual de BluePixel</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header class="top">
-  <a class="brand" href="index.html">MacAPE</a>
+  <a class="brand" href="index.html">BluePixel</a>
   <nav>
     <a href="index.html">Inicio</a>
     <a href="command-line.html">Línea de comandos</a>
@@ -51,10 +51,10 @@
 
 <h2 id="intro">Introducción</h2>
 <p>Se abre con <kbd>F7</kbd> (pausa), con el botón de pausa del panel de la ventana principal, con el menú <strong>Debug</strong> o automáticamente al saltar un breakpoint. <strong>Cerrar la ventana reanuda la emulación</strong>, igual que <kbd>F9</kbd>.</p>
-<p>El título de la ventana indica cuántos símbolos hay cargados: <code>MacAPE Debugger — 208 symbols from boop.noi</code>.</p>
+<p>El título de la ventana indica cuántos símbolos hay cargados: <code>BluePixel Debugger — 208 symbols from boop.noi</code>.</p>
 
 <figure>
-  <img src="img/debugger.png" alt="Ventana del depurador de MacAPE con desensamblado, volcado de memoria, registros y pila">
+  <img src="img/debugger.png" alt="Ventana del depurador de BluePixel con desensamblado, volcado de memoria, registros y pila">
   <figcaption>El depurador parado dentro de un juego CPCtelera con sus símbolos cargados.</figcaption>
 </figure>
 
@@ -234,7 +234,7 @@
 <p>Los símbolos ponen nombre a direcciones en el desensamblado, la pila, el historial, Goto, Find, Watch y las expresiones.</p>
 <h3>Cargarlos</h3>
 <ul>
-  <li>Desde la <a href="command-line.html">línea de comandos</a>: <code>macape juego.dsk /A /SYM obj/juego.noi</code> (también <code>/SYM:fichero</code>).</li>
+  <li>Desde la <a href="command-line.html">línea de comandos</a>: <code>bluepixel juego.dsk /A /SYM obj/juego.noi</code> (también <code>/SYM:fichero</code>).</li>
   <li><strong>Debug → Load Symbols…</strong> o el botón <em>Load…</em> de la ventana de símbolos.</li>
   <li><strong>Debug → Clear Symbols</strong> los borra todos.</li>
 </ul>
@@ -448,6 +448,6 @@
 </main>
 </div>
 
-<footer>Manual de MacAPE — port a macOS de WinAPE 2.0 beta 2</footer>
+<footer>Manual de BluePixel — port a macOS de WinAPE 2.0 beta 2</footer>
 </body>
 </html>

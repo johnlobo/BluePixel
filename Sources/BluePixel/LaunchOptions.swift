@@ -2,7 +2,7 @@ import Foundation
 import CPCCore
 
 /// WinAPE-compatible command line:
-///   MacAPE [file…] [/A[:prog|:|CPM]] [/T:autotype.txt] [/SN:snapshot.sna] [/SYM:symbols]
+///   BluePixel [file…] [/A[:prog|:|CPM]] [/T:autotype.txt] [/SN:snapshot.sna] [/SYM:symbols]
 /// Options may also be written -A, --a, /a=prog …; a leading "/" is only an option when the
 /// name is one of the above, so absolute paths still work. Plain files are opened by type
 /// (discs go to drive A, a second disc to drive B).
@@ -19,7 +19,7 @@ struct LaunchOptions {
     var errors: [String] = []
 
     static let usage = """
-    Usage: MacAPE [options] [disc.dsk] [tape.cdt] [snapshot.sna] [cartridge.cpr] [profile.wpf]
+    Usage: BluePixel [options] [disc.dsk] [tape.cdt] [snapshot.sna] [cartridge.cpr] [profile.wpf]
       /A              run the first program on the disc in drive A
       /A:name         run "name" from drive A   (/A:|CPM boots CP/M)
       /T:file         type the contents of an Auto-Type text file

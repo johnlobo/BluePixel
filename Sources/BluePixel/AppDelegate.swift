@@ -37,7 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             settings = Settings()
             if let p = Profiles.load(currentProfile) { settings.merge(p) }
         }
-        if let p = settings["MacAPE", "Profile"] { currentProfile = p }
+        if let p = settings["BluePixel", "Profile"] { currentProfile = p }
         emu = Emulator(settings: settings)
         main = MainWindowController(emulator: emu)
         transport = TransportController(emu: emu, main: main)
@@ -63,7 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         emu.start()
         let opt = LaunchOptions(Array(CommandLine.arguments.dropFirst()))
         if opt.help { print(LaunchOptions.usage); exit(0) }
-        for e in opt.errors { FileHandle.standardError.write(("MacAPE: " + e + "\n").data(using: .utf8)!) }
+        for e in opt.errors { FileHandle.standardError.write(("BluePixel: " + e + "\n").data(using: .utf8)!) }
         var discs = 0
         for f in opt.files {
             if ["dsk", "dsc", "hdr"].contains(f.pathExtension.lowercased()) {
@@ -75,7 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         symbolsURL = opt.symbols; autoRunRequest = opt.autoRun
         if let sym = opt.symbols {
             emu.lock.lock(); _ = dbg_attach(emu.cpc); let n = dbg_symbols_load(emu.cpc, sym.path); emu.lock.unlock()
-            if n < 0 { alert("Cannot load symbols", sym.path) } else { FileHandle.standardError.write("MacAPE: \(n) symbols loaded from \(sym.lastPathComponent)\n".data(using: .utf8)!) }
+            if n < 0 { alert("Cannot load symbols", sym.path) } else { FileHandle.standardError.write("BluePixel: \(n) symbols loaded from \(sym.lastPathComponent)\n".data(using: .utf8)!) }
         }
         var typing = ""
         if let req = opt.autoRun {
@@ -101,7 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
     }
 
-    func applicationWillTerminate(_ notification: Notification) { emu.stop(); settings["MacAPE", "Profile"] = currentProfile; emu.saveSettings() }
+    func applicationWillTerminate(_ notification: Notification) { emu.stop(); settings["BluePixel", "Profile"] = currentProfile; emu.saveSettings() }
     func application(_ sender: NSApplication, openFile filename: String) -> Bool { if emu != nil { openFile(URL(fileURLWithPath: filename)); return true }; return false }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
@@ -120,10 +120,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     }
 
     func askForROMFolder() {
-        alert("ROM images not found", "MacAPE needs the Amstrad ROM images (OS6128.ROM, BASIC1-1.ROM, AMSDOS.ROM, …). Select the folder that contains them (for example the ROM folder of a WinAPE installation).")
+        alert("ROM images not found", "BluePixel needs the Amstrad ROM images (OS6128.ROM, BASIC1-1.ROM, AMSDOS.ROM, …). Select the folder that contains them (for example the ROM folder of a WinAPE installation).")
         let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = false; p.title = "Select ROM folder"
         if p.runModal() == .OK, let u = p.url {
-            emu.romFolder = u; settings["MacAPE", "ROM Folder"] = u.path
+            emu.romFolder = u; settings["BluePixel", "ROM Folder"] = u.path
             // Copy to app support so access survives
             try? FileManager.default.createDirectory(at: AppPaths.roms, withIntermediateDirectories: true)
             emu.applySettings()
@@ -279,7 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         emu.reset(cold: true)
         if let cmd = emu.autoRunCommand(autoRunRequest ?? "") { DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.emu.type(cmd) } }
         debugger?.symbolsReloaded(note); debugger?.symbolsWindow?.reload()
-        main.window?.title = "MacAPE — " + URL(fileURLWithPath: path).lastPathComponent
+        main.window?.title = "BluePixel — " + URL(fileURLWithPath: path).lastPathComponent
     }
     @objc func debugStepBack(_ s: Any?) { let d = ensureDebugger(); d.show(); d.stepBack(s) }
     @objc func debugShowProfiler(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showProfiler(s) }
@@ -351,12 +351,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     func buildMenus() {
         let bar = NSMenu()
         let ctrl: NSEvent.ModifierFlags = .control, shift: NSEvent.ModifierFlags = .shift
-        let appMenu = submenu("MacAPE", [
-            item("About MacAPE", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+        let appMenu = submenu("BluePixel", [
+            item("About BluePixel", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
             .separator(),
-            item("Hide MacAPE", #selector(NSApplication.hide(_:)), "h"),
+            item("Hide BluePixel", #selector(NSApplication.hide(_:)), "h"),
             .separator(),
-            item("Quit MacAPE", #selector(NSApplication.terminate(_:)), "q"),
+            item("Quit BluePixel", #selector(NSApplication.terminate(_:)), "q"),
         ])
         func drive(_ n: String, _ f: Int, ins: Selector, new: Selector, rm: Selector) -> NSMenuItem {
             submenu("Drive \(n):", [

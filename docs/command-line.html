@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Línea de comandos — Manual de MacAPE</title>
+<title>Línea de comandos — Manual de BluePixel</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header class="top">
-  <a class="brand" href="index.html">MacAPE</a>
+  <a class="brand" href="index.html">BluePixel</a>
   <nav>
     <a href="index.html">Inicio</a>
     <a href="command-line.html" aria-current="page">Línea de comandos</a>
@@ -29,13 +29,13 @@
 
 <main>
 <h1>Línea de comandos</h1>
-<p class="lead">MacAPE acepta las mismas opciones que WinAPE: ficheros a abrir, arranque automático de un programa, auto-type, snapshot y símbolos.</p>
+<p class="lead">BluePixel acepta las mismas opciones que WinAPE: ficheros a abrir, arranque automático de un programa, auto-type, snapshot y símbolos.</p>
 
 <h2 id="launch">Lanzar desde el terminal</h2>
 <p>Un <code>.app</code> no se ejecuta directamente (da <code>permission denied</code>). Usa <code>open</code> o el script del proyecto:</p>
-<pre><code>tools/macape juego.dsk /A
-open -a build/MacAPE.app --args juego.dsk /A</code></pre>
-<p><code>tools/macape</code> ejecuta el binario dentro del bundle, por lo que las opciones y los mensajes de error salen en el terminal.</p>
+<pre><code>tools/bluepixel juego.dsk /A
+open -a build/BluePixel.app --args juego.dsk /A</code></pre>
+<p><code>tools/bluepixel</code> ejecuta el binario dentro del bundle, por lo que las opciones y los mensajes de error salen en el terminal.</p>
 
 <h2 id="options">Opciones</h2>
 <div class="table-scroll">
@@ -56,16 +56,16 @@ open -a build/MacAPE.app --args juego.dsk /A</code></pre>
 
 <h2 id="examples">Ejemplos</h2>
 <pre><code># Probar un juego de CPCtelera con sus símbolos
-tools/macape obj/juego.dsk /A /SYM obj/juego.noi
+tools/bluepixel obj/juego.dsk /A /SYM obj/juego.noi
 
 # Arrancar CP/M con dos discos
-tools/macape cpm.dsk datos.dsk /A:|CPM
+tools/bluepixel cpm.dsk datos.dsk /A:|CPM
 
 # Cargar un snapshot
-tools/macape /SN partida.sna</code></pre>
+tools/bluepixel /SN partida.sna</code></pre>
 </main>
 </div>
 
-<footer>Manual de MacAPE — port a macOS de WinAPE 2.0 beta 2</footer>
+<footer>Manual de BluePixel — port a macOS de WinAPE 2.0 beta 2</footer>
 </body>
 </html>

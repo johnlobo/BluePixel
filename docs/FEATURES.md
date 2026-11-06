@@ -1,4 +1,4 @@
-# WinAPE 2.0b2 feature inventory (target for MacAPE)
+# WinAPE 2.0b2 feature inventory (target for BluePixel)
 
 Source: REA analysis of `WinApe.exe` (Delphi/VCL, 46 forms, DirectDraw/DirectSound), its help CHM and
 resources. Menus/forms decoded from the PE `RCDATA` TPF0 resources.
