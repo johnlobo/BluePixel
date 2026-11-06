@@ -9,6 +9,7 @@ No hace falta instalar nada. Abre [BluePixel Web](https://johnlobo.github.io/Blu
 - Haz clic en la pantalla para enfocarla y ver el aviso del menú, o pulsa **F10** para abrirlo. Usa las flechas y **Enter** para navegar; **F10** o **Escape** lo cierran.
 - En **File → Drive A:** o **Drive B:** carga una imagen `.dsk` en cada unidad. Desde el mismo menú puedes descargar la copia modificada de cada disco.
 - En **File → Load Snapshot…** carga un snapshot `.sna`; usa **Save Snapshot…** para descargar el estado del CPC y retomarlo después. Los discos se guardan aparte desde el menú de cada unidad.
+- En **File → Save Screenshot…** guarda una captura PNG del área de emulación. **Settings → Machine → Full Screen** muestra el CPC en pantalla completa sin deformar el formato 4:3.
 - El sonido está activado por defecto. El navegador lo habilita después del primer clic o pulsación de tecla.
 - En **Settings** puedes cambiar las ROMs, pausar o reiniciar la máquina y activar o desactivar el sonido.
 

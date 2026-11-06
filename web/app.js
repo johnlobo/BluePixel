@@ -1,6 +1,7 @@
 import createBluePixelCore from "./bluepixel.js";
 
 const canvas = document.querySelector("#screen");
+const screenWrap = document.querySelector(".screen-wrap");
 const ctx = canvas.getContext("2d", { alpha: false });
 const image = ctx.createImageData(canvas.width, canvas.height);
 const imageWords = new Uint32Array(image.data.buffer);
@@ -68,6 +69,7 @@ function menuGroups() {
       ])),
       menuItem("Load Snapshot…", () => snapshotInput.click()),
       menuItem("Save Snapshot…", () => saveSnapshotButton.click(), { disabled: saveSnapshotButton.disabled }),
+      menuItem("Save Screenshot…", saveScreenshot),
       menuItem("Auto Type…", () => { typeEntry = true; typeBuffer = typeText.value || ""; }, { stayOpen: true }),
     ] },
     { label: "Settings", items: [
@@ -79,6 +81,7 @@ function menuGroups() {
       menuBranch("Machine", [
         menuItem(running ? "Pause" : "Resume", () => runButton.click()),
         menuItem("Reset", () => resetButton.click()),
+        menuItem(document.fullscreenElement === screenWrap ? "Exit Full Screen" : "Full Screen", toggleFullScreen),
       ]),
       menuBranch("Sound", [
         menuItem(`Sound On${soundEnabled ? "  ✓" : ""}`, () => setSoundEnabled(true)),
@@ -403,6 +406,42 @@ function downloadDisc(drive) {
 }
 
 saveDiskButtons.forEach((button, drive) => button.addEventListener("click", () => downloadDisc(drive)));
+
+function saveScreenshot() {
+  const source = document.createElement("canvas");
+  source.width = canvas.width;
+  source.height = canvas.height;
+  source.getContext("2d").putImageData(image, 0, 0);
+
+  const screenshot = document.createElement("canvas");
+  screenshot.width = 720;
+  screenshot.height = 540;
+  const screenshotContext = screenshot.getContext("2d");
+  screenshotContext.drawImage(source, 0, 0, screenshot.width, screenshot.height);
+  screenshot.toBlob(blob => {
+    if (!blob) {
+      status.textContent = "Could not save the screenshot.";
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    link.href = url;
+    link.download = `bluepixel-${timestamp}.png`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    status.textContent = "Screenshot saved.";
+  }, "image/png");
+}
+
+async function toggleFullScreen() {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await screenWrap.requestFullscreen();
+  } catch (error) {
+    status.textContent = `Could not toggle full screen: ${error.message}`;
+  }
+}
 
 saveSnapshotButton.addEventListener("click", () => {
   const sizePtr = core._malloc(4);
