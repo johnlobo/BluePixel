@@ -20,7 +20,7 @@ Open <http://localhost:8080/>. The web folder is self-contained, including its R
 
 - The CPC 6128 OS, BASIC and AMSDOS ROMs load from `web/roms/` on startup. Change each ROM from its dropdown at any time.
 - Insert a disk or load an SNA snapshot with the file pickers.
-- Click **Start**, then focus the screen and use the keyboard. Arrow keys also act as joystick directions; Control and Alt act as fire buttons.
+- Open the options overlay with **F10** or the on-screen **Menu** button. Press **F10** or **Escape** to close it. Click **Start**, then focus the screen and use the keyboard. Arrow keys also act as joystick directions; Control and Alt act as fire buttons.
 - Enable sound from the page after a click, as required by browser audio policies.
 - Disk writes are kept in memory. Use **Download disk** to save a new DSK image.
 

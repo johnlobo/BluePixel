@@ -10,6 +10,30 @@ const resetButton = document.querySelector("#reset");
 const soundButton = document.querySelector("#sound");
 const saveDiskButton = document.querySelector("#save-disc");
 const typeButton = document.querySelector("#type");
+const menuOverlay = document.querySelector("#menu-overlay");
+const menuOpenButton = document.querySelector("#menu-open");
+const menuCloseButton = document.querySelector("#menu-close");
+
+function setMenuOpen(open) {
+  menuOverlay.hidden = !open;
+  if (open) menuCloseButton.focus();
+  else canvas.focus();
+}
+
+menuOpenButton.addEventListener("click", () => setMenuOpen(true));
+menuCloseButton.addEventListener("click", () => setMenuOpen(false));
+menuOverlay.addEventListener("click", event => {
+  if (event.target === menuOverlay) setMenuOpen(false);
+});
+window.addEventListener("keydown", event => {
+  if (event.code === "F10") {
+    event.preventDefault();
+    setMenuOpen(menuOverlay.hidden);
+  } else if (event.code === "Escape" && !menuOverlay.hidden) {
+    event.preventDefault();
+    setMenuOpen(false);
+  }
+});
 
 let core;
 let running = false;
@@ -225,6 +249,7 @@ const keyCodes = {
 const joystickBits = { ArrowUp: 0, ArrowDown: 1, ArrowLeft: 2, ArrowRight: 3, ControlLeft: 4, ControlRight: 4, AltLeft: 5, AltRight: 5 };
 
 function setKey(event, down) {
+  if (event.code === "F10") return;
   if (event.target instanceof HTMLElement && event.target.closest("input, textarea, select, button")) return;
   const key = keyCodes[event.code];
   const joy = joystickBits[event.code];

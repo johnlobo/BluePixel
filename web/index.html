@@ -19,7 +19,13 @@
       <div class="screen-wrap">
         <canvas id="screen" width="768" height="540" tabindex="0" aria-label="Amstrad CPC screen"></canvas>
         <div class="screen-hint" id="screen-hint">Load your CPC ROMs to start</div>
+        <button id="menu-open" class="menu-open" aria-haspopup="dialog" aria-controls="menu-overlay">Menu <kbd>F10</kbd></button>
       </div>
+    </section>
+
+    <div class="menu-overlay" id="menu-overlay" hidden>
+      <section class="menu-panel" role="dialog" aria-modal="true" aria-labelledby="menu-title">
+      <div class="menu-heading"><h2 id="menu-title">BluePixel menu</h2><button id="menu-close" aria-label="Close menu">Close <kbd>F10</kbd></button></div>
       <div class="controls">
         <button id="run" class="primary" disabled>Start</button>
         <button id="reset" disabled>Reset</button>
@@ -27,9 +33,7 @@
         <button id="save-disc" disabled>Download disk</button>
         <span id="status" role="status">Preparing the emulator…</span>
       </div>
-    </section>
-
-    <section class="files">
+      <section class="files">
       <h2>ROMs</h2>
       <p>ROMs load automatically. Use each menu to change a ROM while the emulator is running.</p>
       <div class="file-grid">
@@ -58,7 +62,9 @@
         <label>Snapshot <input id="snapshot" type="file" accept=".sna"></label>
       </div>
       <label class="type-line">Type on the CPC <span><input id="type-text" type="text" placeholder='e.g. RUN"DISC"'><button id="type" disabled>Send</button></span></label>
-    </section>
+      </section>
+      </section>
+    </div>
 
     <footer>BluePixel uses your browser locally. ROM and media files stay on this device.</footer>
   </main>
