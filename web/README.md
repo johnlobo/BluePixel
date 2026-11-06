@@ -28,6 +28,6 @@ The web UI is intentionally separate from the macOS AppKit frontend. Debugger wi
 
 ## Publishing
 
-The repository includes a manual GitHub Pages workflow at `.github/workflows/deploy-pages.yml`. Enable **Settings → Pages → Build and deployment → GitHub Actions**, then run **Deploy BluePixel web** from the Actions tab when you are ready to publish. The workflow compiles WebAssembly and deploys the contents of `web/`.
+The repository includes a GitHub Pages workflow at `.github/workflows/deploy-pages.yml`. It compiles WebAssembly and deploys the contents of `web/` on every push to `main`; it can also be run manually from the Actions tab.
 
 GitHub Pages sites are publicly accessible, including sites built from private repositories when the account plan permits it. This site bundle includes `web/roms/`, so those ROM files will also be publicly downloadable after deployment.
