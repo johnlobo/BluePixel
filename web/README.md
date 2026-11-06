@@ -25,3 +25,9 @@ Open <http://localhost:8080/>. The web folder is self-contained, including its R
 - Disk writes are kept in memory. Use **Download disk** to save a new DSK image.
 
 The web UI is intentionally separate from the macOS AppKit frontend. Debugger windows, recording/replay, tapes, cartridges, and Plus-specific configuration are not part of this first browser version.
+
+## Publishing
+
+The repository includes a manual GitHub Pages workflow at `.github/workflows/deploy-pages.yml`. Enable **Settings → Pages → Build and deployment → GitHub Actions**, then run **Deploy BluePixel web** from the Actions tab when you are ready to publish. The workflow compiles WebAssembly and deploys the contents of `web/`.
+
+GitHub Pages sites are publicly accessible, including sites built from private repositories when the account plan permits it. This site bundle includes `web/roms/`, so those ROM files will also be publicly downloadable after deployment.
