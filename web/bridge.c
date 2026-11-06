@@ -7,14 +7,14 @@
 #include <stdlib.h>
 
 static CPC *machine;
-static CPCDisc *drive0;
+static CPCDisc *drives[2];
 static uint32_t *display_frame;
 static uint8_t *disc_export;
 static size_t disc_export_size;
 
 EMSCRIPTEN_KEEPALIVE int bp_init(void) {
     if (machine) cpc_destroy(machine);
-    drive0 = NULL;
+    drives[0] = drives[1] = NULL;
     machine = cpc_create(CPC_MODEL_6128);
     if (!machine) return 0;
     CPCConfig cfg;
@@ -35,10 +35,12 @@ EMSCRIPTEN_KEEPALIVE int bp_init(void) {
 
 EMSCRIPTEN_KEEPALIVE void bp_destroy(void) {
     if (!machine) return;
-    fdc_insert(machine->fdc, 0, NULL);
-    machine->disc[0] = NULL;
-    dsk_free(drive0);
-    drive0 = NULL;
+    for (int drive = 0; drive < 2; drive++) {
+        fdc_insert(machine->fdc, drive, NULL);
+        machine->disc[drive] = NULL;
+        dsk_free(drives[drive]);
+        drives[drive] = NULL;
+    }
     cpc_destroy(machine);
     machine = NULL;
     free(display_frame);
@@ -52,15 +54,15 @@ EMSCRIPTEN_KEEPALIVE int bp_load_rom(int slot, const uint8_t *data, size_t size)
     return machine && cpc_load_rom(machine, slot, data, size);
 }
 
-EMSCRIPTEN_KEEPALIVE int bp_load_disc(const uint8_t *data, size_t size) {
-    if (!machine) return 0;
-    CPCDisc *disc = dsk_load(data, size, "browser.dsk");
+EMSCRIPTEN_KEEPALIVE int bp_load_disc(int drive, const uint8_t *data, size_t size) {
+    if (!machine || drive < 0 || drive > 1) return 0;
+    CPCDisc *disc = dsk_load(data, size, drive == 0 ? "browser-a.dsk" : "browser-b.dsk");
     if (!disc) return 0;
-    fdc_insert(machine->fdc, 0, NULL);
-    dsk_free(drive0);
-    drive0 = disc;
-    machine->disc[0] = drive0;
-    fdc_insert(machine->fdc, 0, drive0);
+    fdc_insert(machine->fdc, drive, NULL);
+    dsk_free(drives[drive]);
+    drives[drive] = disc;
+    machine->disc[drive] = drives[drive];
+    fdc_insert(machine->fdc, drive, drives[drive]);
     return 1;
 }
 
@@ -83,13 +85,15 @@ EMSCRIPTEN_KEEPALIVE int bp_read_audio(float *out, int frames) {
     return machine ? cpc_audio_read(machine, out, frames) : 0;
 }
 
-EMSCRIPTEN_KEEPALIVE const char *bp_disc_name(void) { return drive0 ? drive0->name : ""; }
+EMSCRIPTEN_KEEPALIVE const char *bp_disc_name(int drive) {
+    return drive >= 0 && drive < 2 && drives[drive] ? drives[drive]->name : "";
+}
 
-EMSCRIPTEN_KEEPALIVE const uint8_t *bp_export_disc(size_t *size) {
+EMSCRIPTEN_KEEPALIVE const uint8_t *bp_export_disc(int drive, size_t *size) {
     free(disc_export);
     disc_export = NULL;
     disc_export_size = 0;
-    if (drive0) disc_export = dsk_serialize(drive0, &disc_export_size);
+    if (drive >= 0 && drive < 2 && drives[drive]) disc_export = dsk_serialize(drives[drive], &disc_export_size);
     if (size) *size = disc_export_size;
     return disc_export;
 }

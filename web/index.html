@@ -28,7 +28,8 @@
         <button id="run" class="primary" disabled>Start</button>
         <button id="reset" disabled>Reset</button>
         <button id="sound" disabled>Enable sound</button>
-        <button id="save-disc" disabled>Download disk</button>
+        <button id="save-disc-a" disabled>Download disk A</button>
+        <button id="save-disc-b" disabled>Download disk B</button>
         <span id="status" role="status">Preparing the emulator…</span>
       </div>
       <section class="files">
@@ -56,7 +57,8 @@
       </div>
       <h2>Media</h2>
       <div class="file-grid">
-        <label>Drive A disk image <input id="disk" type="file" accept=".dsk"></label>
+        <label>Drive A disk image <input id="disk-a" type="file" accept=".dsk"></label>
+        <label>Drive B disk image <input id="disk-b" type="file" accept=".dsk"></label>
         <label>Snapshot <input id="snapshot" type="file" accept=".sna"></label>
       </div>
       <label class="type-line">Type on the CPC <span><input id="type-text" type="text" placeholder='e.g. RUN"DISC"'><button id="type" disabled>Send</button></span></label>

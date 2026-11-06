@@ -10,7 +10,7 @@ const hint = document.querySelector("#screen-hint");
 const runButton = document.querySelector("#run");
 const resetButton = document.querySelector("#reset");
 const soundButton = document.querySelector("#sound");
-const saveDiskButton = document.querySelector("#save-disc");
+const saveDiskButtons = [document.querySelector("#save-disc-a"), document.querySelector("#save-disc-b")];
 const typeButton = document.querySelector("#type");
 let menuOpen = false;
 let activeMenu = 1;
@@ -55,16 +55,16 @@ function romItems(select) {
 }
 
 function menuGroups() {
-  const diskInput = document.querySelector("#disk");
+  const diskInputs = [document.querySelector("#disk-a"), document.querySelector("#disk-b")];
   const snapshotInput = document.querySelector("#snapshot");
   const typeText = document.querySelector("#type-text");
   return [
     { label: "BluePixel", items: [menuItem("About BluePixel CPC", () => { status.textContent = "BluePixel — Amstrad CPC 6128 emulator."; })] },
     { label: "File", items: [
-      menuBranch("Drive A:", [
-        menuItem("Insert Disc Image…", () => diskInput.click()),
-        menuItem("Download Changed Disc…", () => saveDiskButton.click(), { disabled: saveDiskButton.disabled }),
-      ]),
+      ...[0, 1].map(drive => menuBranch(`Drive ${drive === 0 ? "A" : "B"}:`, [
+        menuItem("Insert Disc Image…", () => diskInputs[drive].click()),
+        menuItem("Download Changed Disc…", () => saveDiskButtons[drive].click(), { disabled: saveDiskButtons[drive].disabled }),
+      ])),
       menuItem("Load Snapshot…", () => snapshotInput.click()),
       menuItem("Auto Type…", () => { typeEntry = true; typeBuffer = typeText.value || ""; }, { stayOpen: true }),
     ] },
@@ -195,7 +195,7 @@ let hasOS = false;
 let hasBasic = false;
 let hasSnapshot = false;
 const loadedROMs = { os: null, basic: null, amsdos: null };
-let currentDiskName = "bluepixel.dsk";
+const currentDiskNames = ["bluepixel-a.dsk", "bluepixel-b.dsk"];
 let audioContext;
 let audioNode;
 let audioPtr;
@@ -303,20 +303,23 @@ async function loadDefaultROMs() {
 
 loadDefaultROMs();
 
-document.querySelector("#disk").addEventListener("change", async event => {
-  const file = event.currentTarget.files?.[0];
-  if (!file) return;
-  try {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    if (!transfer(bytes, (ptr, size) => core._bp_load_disc(ptr, size))) {
-      throw new Error("This is not a supported DSK image.");
+[0, 1].forEach(drive => {
+  const input = document.querySelector(drive === 0 ? "#disk-a" : "#disk-b");
+  input.addEventListener("change", async event => {
+    const file = event.currentTarget.files?.[0];
+    if (!file) return;
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (!transfer(bytes, (ptr, size) => core._bp_load_disc(drive, ptr, size))) {
+        throw new Error("This is not a supported DSK image.");
+      }
+      currentDiskNames[drive] = file.name;
+      saveDiskButtons[drive].disabled = false;
+      status.textContent = `${file.name} inserted in drive ${drive === 0 ? "A" : "B"}.`;
+    } catch (error) {
+      status.textContent = `Disk error: ${error.message}`;
     }
-    currentDiskName = file.name;
-    saveDiskButton.disabled = false;
-    status.textContent = `${file.name} inserted in drive A.`;
-  } catch (error) {
-    status.textContent = `Disk error: ${error.message}`;
-  }
+  });
 });
 
 document.querySelector("#snapshot").addEventListener("change", async event => {
@@ -364,29 +367,31 @@ typeButton.addEventListener("click", () => {
   canvas.focus();
 });
 
-saveDiskButton.addEventListener("click", () => {
+function downloadDisc(drive) {
   const sizePtr = core._malloc(4);
   let dataPtr = 0;
   try {
     core.HEAPU32[sizePtr >> 2] = 0;
-    dataPtr = core._bp_export_disc(sizePtr);
+    dataPtr = core._bp_export_disc(drive, sizePtr);
     const size = core.HEAPU32[sizePtr >> 2];
     if (!dataPtr || !size) throw new Error("No disk is inserted.");
     const bytes = core.HEAPU8.slice(dataPtr, dataPtr + size);
     const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
     const link = document.createElement("a");
     link.href = url;
-    link.download = currentDiskName.replace(/\.dsk$/i, "") + "-bluepixel.dsk";
+    link.download = currentDiskNames[drive].replace(/\.dsk$/i, "") + "-bluepixel.dsk";
     link.click();
     URL.revokeObjectURL(url);
-    status.textContent = "Disk image downloaded.";
+    status.textContent = `Drive ${drive === 0 ? "A" : "B"} disk image downloaded.`;
   } catch (error) {
     status.textContent = `Could not save disk: ${error.message}`;
   } finally {
     core._bp_release_disc_export();
     core._free(sizePtr);
   }
-});
+}
+
+saveDiskButtons.forEach((button, drive) => button.addEventListener("click", () => downloadDisc(drive)));
 
 const keyCodes = {
   KeyA: 69, KeyB: 54, KeyC: 62, KeyD: 61, KeyE: 58, KeyF: 53, KeyG: 52,
