@@ -21,9 +21,20 @@ h2 span { color: #83a4ff; font: 12px ui-monospace, monospace; }
 form { margin: 14px 0; }
 label { display: block; margin-bottom: 6px; color: #c9d6f1; }
 .form-row { display: flex; gap: 7px; }
-input { width: 170px; border: 1px solid #354b72; border-radius: 6px; background: #071226; color: #fff; padding: 8px; font: 13px ui-monospace, monospace; }
-.breakpoints { display: flex; flex-wrap: wrap; gap: 6px; }
-.breakpoints button { padding: 5px 8px; font-size: 12px; }
+input, select { border: 1px solid #354b72; border-radius: 6px; background: #071226; color: #fff; padding: 8px; font: 13px ui-monospace, monospace; }
+input { width: 170px; }
+select { padding: 7px; }
+.breakpoints { display: flex; flex-direction: column; gap: 7px; }
+.breakpoint-row { padding: 7px; border: 1px solid #263b62; border-radius: 6px; background: #081328; }
+.breakpoint-heading { display: flex; justify-content: space-between; align-items: center; gap: 6px; font: 12px ui-monospace, monospace; }
+.breakpoint-heading button, .bp-condition button { padding: 4px 7px; font-size: 11px; }
+.bp-condition { display: flex; gap: 5px; margin: 6px 0 0; }
+.bp-condition .condition-expression { flex: 1; min-width: 80px; width: auto; }
+.bp-condition .condition-pass { width: 58px; }
+.memory-breakpoint-form .form-row { flex-wrap: wrap; }
+.memory-breakpoint-form input { width: 82px; }
+.memory-breakpoint-form select { width: 82px; }
+.condition-help { color: #a8b8dc; font-size: 11px; margin-top: 8px; }
 .disassembly { max-height: calc(100vh - 190px); min-height: 360px; overflow: auto; border: 1px solid #263b62; border-radius: 6px; background: #081328; }
 .instruction { display: flex; align-items: center; gap: 7px; min-width: max-content; padding: 3px 8px; font: 12px/1.5 ui-monospace, monospace; }
 .instruction.current { background: #1a3261; }

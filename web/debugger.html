@@ -31,6 +31,19 @@
         </form>
         <h2>Breakpoints</h2>
         <div id="breakpoints" class="breakpoints"></div>
+        <form id="memory-breakpoint-form" class="memory-breakpoint-form">
+          <label>Add memory breakpoint</label>
+          <div class="form-row">
+            <input id="memory-bp-start" inputmode="text" maxlength="6" placeholder="Start" autocomplete="off">
+            <input id="memory-bp-end" inputmode="text" maxlength="6" placeholder="End" autocomplete="off">
+            <select id="memory-bp-access" aria-label="Memory access type">
+              <option value="read">Read</option>
+              <option value="write">Write</option>
+            </select>
+            <button type="submit">Add</button>
+          </div>
+        </form>
+        <p class="condition-help">Conditions support registers (A, BC, PC), hex values (#FF), comparisons (=, &lt;&gt;, &lt;, &gt;) and peek(address). Pass count 0 stops on every match.</p>
       </section>
       <section class="panel">
         <h2>Disassembly <span id="pc"></span></h2>

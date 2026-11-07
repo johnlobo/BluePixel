@@ -62,6 +62,46 @@ function renderMemory(start = parseHexAddress(memoryAddressField.value)) {
   memoryGrid.replaceChildren(...rows);
 }
 
+function renderBreakpoints(items) {
+  const api = bridge();
+  if (!api) return;
+  breakpoints.replaceChildren(...items.map(bp => {
+    const row = document.createElement("div"); row.className = "breakpoint-row";
+    const heading = document.createElement("div"); heading.className = "breakpoint-heading";
+    const range = bp.start === bp.end ? hex(bp.start) : `${hex(bp.start)}–${hex(bp.end)}`;
+    const description = document.createElement("span"); description.textContent = `${bp.type} ${range}`;
+    const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "Remove";
+    remove.addEventListener("click", () => {
+      api.removeBreakpoint(bp.id);
+      renderBreakpoints(api.getState().breakpoints);
+    });
+    heading.append(description, remove);
+
+    const condition = document.createElement("form"); condition.className = "bp-condition";
+    const expression = document.createElement("input"); expression.className = "condition-expression";
+    expression.value = bp.condition; expression.maxLength = 150; expression.placeholder = "condition (optional)";
+    expression.setAttribute("aria-label", `Condition for ${bp.type} breakpoint ${range}`);
+    const pass = document.createElement("input"); pass.className = "condition-pass"; pass.type = "number";
+    pass.min = "0"; pass.step = "1"; pass.value = String(bp.passCount); pass.title = "Pass count; 0 stops on every match";
+    pass.setAttribute("aria-label", "Pass count");
+    const apply = document.createElement("button"); apply.type = "submit"; apply.textContent = "Apply";
+    condition.append(expression, pass, apply);
+    condition.addEventListener("submit", event => {
+      event.preventDefault();
+      const passCount = Number.parseInt(pass.value, 10);
+      if (!Number.isInteger(passCount) || passCount < 0) {
+        status.textContent = "Pass count must be zero or a positive integer.";
+        return;
+      }
+      const result = api.setBreakpointCondition(bp.id, expression.value.trim(), passCount);
+      status.textContent = result.ok ? "Breakpoint condition applied." : `Condition error: ${result.error}`;
+      renderBreakpoints(api.getState().breakpoints);
+    });
+    row.append(heading, condition);
+    return row;
+  }));
+}
+
 function render() {
   const api = bridge();
   if (!api) {
@@ -99,12 +139,7 @@ function render() {
     return row;
   }));
 
-  breakpoints.replaceChildren(...state.breakpoints.map(address => {
-    const button = document.createElement("button");
-    button.type = "button"; button.textContent = `Remove ${hex(address)}`;
-    button.addEventListener("click", () => api.removeBreakpoint(address));
-    return button;
-  }));
+  if (!breakpoints.contains(document.activeElement)) renderBreakpoints(state.breakpoints);
   if (!memoryRendered) { renderMemory(); memoryRendered = true; }
 }
 
@@ -128,6 +163,22 @@ document.querySelector("#memory-form").addEventListener("submit", event => {
   event.preventDefault();
   renderMemory(parseHexAddress(memoryAddressField.value));
   memoryRendered = true;
+});
+document.querySelector("#memory-breakpoint-form").addEventListener("submit", event => {
+  event.preventDefault();
+  const start = parseHexAddress(document.querySelector("#memory-bp-start").value);
+  const end = parseHexAddress(document.querySelector("#memory-bp-end").value);
+  if (start === null || end === null || start > end) {
+    status.textContent = "Enter a valid memory range from 0000 to FFFF, with start ≤ end.";
+    return;
+  }
+  const write = document.querySelector("#memory-bp-access").value === "write";
+  const id = bridge()?.addMemoryBreakpoint(start, end, write);
+  if (id >= 0) {
+    document.querySelector("#memory-bp-start").value = "";
+    document.querySelector("#memory-bp-end").value = "";
+    renderBreakpoints(bridge().getState().breakpoints);
+  } else status.textContent = "Could not add memory breakpoint; the breakpoint limit may be reached.";
 });
 
 window.addEventListener("beforeunload", () => bridge()?.windowClosed());

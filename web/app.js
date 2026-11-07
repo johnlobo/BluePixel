@@ -462,6 +462,13 @@ function readDebugString(address, size = 160) {
   }
 }
 
+function readDebugCString(ptr, maxSize = 256) {
+  if (!ptr) return "";
+  let end = ptr;
+  while (end < ptr + maxSize && core.HEAPU8[end] !== 0) end++;
+  return new TextDecoder().decode(core.HEAPU8.subarray(ptr, end));
+}
+
 function toggleCodeBreakpoint(address) {
   core._bp_debug_toggle_code_bp(address);
   debuggerMessage = core._bp_debug_has_code_bp(address)
@@ -484,8 +491,27 @@ function getDebuggerState() {
     instructions.push({ address, text, length: core._bp_debug_instruction_length(address), breakpoint: Boolean(core._bp_debug_has_code_bp(address)) });
     address = (address + Math.max(1, instructions.at(-1).length)) & 0xFFFF;
   }
-  const count = core._bp_debug_breakpoint_count();
-  const breakpoints = Array.from({ length: count }, (_, i) => core._bp_debug_breakpoint_address(i));
+  const breakpointTypes = ["Code", "Read", "Write", "I/O", "Change"];
+  const count = core._bp_debug_breakpoint_count_all();
+  const breakpoints = Array.from({ length: count }, (_, ordinal) => {
+    const id = core._bp_debug_breakpoint_id(ordinal);
+    const conditionPtr = core._malloc(160);
+    let condition = "";
+    if (conditionPtr) {
+      core.HEAPU8.fill(0, conditionPtr, conditionPtr + 160);
+      core._bp_debug_breakpoint_condition(id, conditionPtr, 160);
+      condition = readDebugCString(conditionPtr, 160);
+      core._free(conditionPtr);
+    }
+    return {
+      id,
+      type: breakpointTypes[core._bp_debug_breakpoint_type(id)] || "Breakpoint",
+      start: core._bp_debug_breakpoint_start(id),
+      end: core._bp_debug_breakpoint_end(id),
+      condition,
+      passCount: core._bp_debug_breakpoint_pass_count(id),
+    };
+  });
   return { registers, pc, instructions, breakpoints, running, message: debuggerMessage };
 }
 
@@ -516,7 +542,32 @@ window.bluePixelDebugger = {
   },
   toggleBreakpoint: toggleCodeBreakpoint,
   addBreakpoint(address) { if (!core._bp_debug_has_code_bp(address)) toggleCodeBreakpoint(address); },
-  removeBreakpoint(address) { if (core._bp_debug_has_code_bp(address)) toggleCodeBreakpoint(address); },
+  addMemoryBreakpoint(start, end, write) {
+    const id = core._bp_debug_add_memory_bp(start, end, write ? 1 : 0);
+    debuggerMessage = id < 0 ? "Could not add memory breakpoint: check the address range." : `${write ? "Write" : "Read"} breakpoint added for ${debugHex(start)}–${debugHex(end)}.`;
+    status.textContent = debuggerMessage;
+    return id;
+  },
+  removeBreakpoint(id) {
+    const type = ["code", "read", "write", "I/O", "change"][core._bp_debug_breakpoint_type(id)] || "breakpoint";
+    const address = core._bp_debug_breakpoint_start(id);
+    core._bp_debug_remove_breakpoint(id);
+    debuggerMessage = `Removed ${type} breakpoint at ${debugHex(address)}.`;
+    status.textContent = debuggerMessage;
+  },
+  setBreakpointCondition(id, condition, passCount) {
+    const bytes = new TextEncoder().encode(condition + "\0");
+    const ptr = core._malloc(bytes.byteLength);
+    if (!ptr) return { ok: false, error: "Not enough memory to apply the condition." };
+    try {
+      core.HEAPU8.set(bytes, ptr);
+      const ok = Boolean(core._bp_debug_set_condition(id, ptr, passCount));
+      const error = ok ? "" : readDebugCString(core._bp_debug_last_error());
+      debuggerMessage = ok ? "Breakpoint condition applied." : `Condition error: ${error}`;
+      status.textContent = debuggerMessage;
+      return { ok, error };
+    } finally { core._free(ptr); }
+  },
   readMemory(start, count) {
     const size = Math.max(1, Math.min(Number(count) || 1, 4096));
     const ptr = core._malloc(size);

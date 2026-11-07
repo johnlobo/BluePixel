@@ -6,6 +6,7 @@
 #include "cpc_keys.h"
 #include "debug.h"
 #include <emscripten.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 static CPC *machine;
@@ -196,6 +197,47 @@ EMSCRIPTEN_KEEPALIVE int bp_debug_breakpoint_address(int ordinal) {
     }
     return -1;
 }
+EMSCRIPTEN_KEEPALIVE int bp_debug_add_memory_bp(unsigned int start, unsigned int end, int write) {
+    if (!machine || start > end || end > 0xFFFF) return -1;
+    return dbg_add_mem_bp(machine, (uint16_t)start, (uint16_t)end, write == 0, write != 0);
+}
+EMSCRIPTEN_KEEPALIVE int bp_debug_set_condition(int index, const char *condition, int pass_count) {
+    if (!machine || pass_count < 0) return 0;
+    return dbg_set_condition(machine, index, condition, pass_count) ? 1 : 0;
+}
+EMSCRIPTEN_KEEPALIVE const char *bp_debug_last_error(void) {
+    return machine && machine->dbg ? machine->dbg->last_error : "Debugger unavailable.";
+}
+EMSCRIPTEN_KEEPALIVE int bp_debug_breakpoint_count_all(void) {
+    if (!machine || !machine->dbg) return 0;
+    int count = 0;
+    for (int i = 0; i < DBG_MAX_BP; i++) if (machine->dbg->bp[i].used) count++;
+    return count;
+}
+EMSCRIPTEN_KEEPALIVE int bp_debug_breakpoint_id(int ordinal) {
+    if (!machine || !machine->dbg || ordinal < 0) return -1;
+    for (int i = 0, n = 0; i < DBG_MAX_BP; i++) if (machine->dbg->bp[i].used && n++ == ordinal) return i;
+    return -1;
+}
+EMSCRIPTEN_KEEPALIVE int bp_debug_breakpoint_type(int index) {
+    return machine && machine->dbg && index >= 0 && index < DBG_MAX_BP && machine->dbg->bp[index].used ? machine->dbg->bp[index].type : -1;
+}
+EMSCRIPTEN_KEEPALIVE unsigned int bp_debug_breakpoint_start(int index) {
+    return machine && machine->dbg && index >= 0 && index < DBG_MAX_BP && machine->dbg->bp[index].used ? machine->dbg->bp[index].start : 0;
+}
+EMSCRIPTEN_KEEPALIVE unsigned int bp_debug_breakpoint_end(int index) {
+    return machine && machine->dbg && index >= 0 && index < DBG_MAX_BP && machine->dbg->bp[index].used ? machine->dbg->bp[index].end : 0;
+}
+EMSCRIPTEN_KEEPALIVE int bp_debug_breakpoint_pass_count(int index) {
+    return machine && machine->dbg && index >= 0 && index < DBG_MAX_BP && machine->dbg->bp[index].used ? machine->dbg->bp[index].pass_count : 0;
+}
+EMSCRIPTEN_KEEPALIVE void bp_debug_breakpoint_condition(int index, char *out, int size) {
+    if (!out || size <= 0) return;
+    out[0] = 0;
+    if (machine && machine->dbg && index >= 0 && index < DBG_MAX_BP && machine->dbg->bp[index].used)
+        snprintf(out, (size_t)size, "%s", machine->dbg->bp[index].cond);
+}
+EMSCRIPTEN_KEEPALIVE void bp_debug_remove_breakpoint(int index) { if (machine) dbg_remove_bp(machine, index); }
 
 EMSCRIPTEN_KEEPALIVE const char *bp_disc_name(int drive) {
     return drive >= 0 && drive < 2 && drives[drive] ? drives[drive]->name : "";
