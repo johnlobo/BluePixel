@@ -18,6 +18,8 @@ let disassemblyRenderStart = -1;
 let memoryRenderStart = -1;
 let disassemblyScrollQueued = false;
 let memoryScrollQueued = false;
+let symbols = [];
+let symbolsAtAddress = new Map();
 
 function bridge() {
   if (!window.opener || window.opener.closed) return null;
@@ -32,6 +34,43 @@ function hex(value, digits = 4) {
 function parseHexAddress(value) {
   const raw = value.trim().replace(/^(#|0x)/i, "");
   return /^[\da-f]{1,4}$/i.test(raw) ? Number.parseInt(raw, 16) : null;
+}
+
+function refreshSymbols() {
+  symbols = bridge()?.getSymbols() || [];
+  symbols.sort((a, b) => a.address - b.address || a.name.localeCompare(b.name));
+  symbolsAtAddress = new Map();
+  for (const symbol of symbols) {
+    const names = symbolsAtAddress.get(symbol.address) || [];
+    names.push(symbol.name); symbolsAtAddress.set(symbol.address, names);
+  }
+  renderSymbolList();
+}
+
+function renderSymbolList() {
+  const list = document.querySelector("#symbol-list");
+  if (!list) return;
+  const query = document.querySelector("#symbol-filter").value.trim().toLowerCase();
+  const filtered = symbols.filter(symbol => !query || symbol.name.toLowerCase().includes(query) || hex(symbol.address).toLowerCase().includes(query));
+  document.querySelector("#symbol-count").textContent = `${filtered.length} of ${symbols.length} symbols`;
+  if (!filtered.length) {
+    const empty = document.createElement("p"); empty.className = "symbol-empty";
+    empty.textContent = symbols.length ? "No symbols match this search." : "No symbols loaded. Use Load Symbols… to open a symbol file.";
+    list.replaceChildren(empty); return;
+  }
+  list.replaceChildren(...filtered.map(symbol => {
+    const button = document.createElement("button"); button.type = "button"; button.className = "symbol-row";
+    const address = document.createElement("code"); address.textContent = hex(symbol.address);
+    const name = document.createElement("span"); name.textContent = symbol.name;
+    button.append(address, name);
+    button.addEventListener("click", () => {
+      const pc = Number(bridge()?.getState().pc) & 0xFFFF;
+      followPC = false; document.querySelector("#follow-pc").classList.remove("active");
+      disassemblyRenderStart = -1; renderDisassembly(symbol.address, pc, true);
+      document.querySelector("#symbol-dialog").close();
+    });
+    return button;
+  }));
 }
 
 function renderMemory(start = null, resetScroll = false) {
@@ -151,8 +190,10 @@ function renderDisassembly(start, pc, resetScroll = false) {
     const address = document.createElement("code"); address.className = "instruction-address"; address.textContent = hex(instruction.address);
     const bytes = document.createElement("code"); bytes.className = "instruction-bytes";
     bytes.textContent = instruction.bytes.map(value => value.toString(16).toUpperCase().padStart(2, "0")).join(" ");
+    const symbol = document.createElement("span"); symbol.className = "instruction-symbol";
+    symbol.textContent = symbolsAtAddress.get(instruction.address)?.join(", ") || "";
     const text = document.createElement("code"); text.className = "instruction-asm"; text.textContent = instruction.text;
-    row.append(toggle, address, bytes, text); return row;
+    row.append(toggle, address, bytes, symbol, text); return row;
   });
   const top = document.createElement("div"); top.className = "virtual-spacer";
   top.style.height = `${firstAddress * DISASSEMBLY_ROW_HEIGHT}px`;
@@ -200,7 +241,9 @@ function render() {
     const row = document.createElement("div"); row.className = `stack-row${index === 0 ? " stack-top" : ""}`;
     const addr = document.createElement("code"); addr.textContent = hex(address);
     const word = document.createElement("code"); word.textContent = hex(value);
-    row.append(addr, word); return row;
+    const symbol = document.createElement("span"); symbol.className = "stack-symbol";
+    symbol.textContent = symbolsAtAddress.get(value)?.join(", ") || "";
+    row.append(addr, word, symbol); return row;
   }));
 
   if (!breakpoints.contains(document.activeElement)) renderBreakpoints(state.breakpoints);
@@ -214,8 +257,15 @@ document.querySelector("#step-out").addEventListener("click", () => bridge()?.st
 document.querySelector("#close-window").addEventListener("click", () => window.close());
 const symbolInput = document.querySelector("#symbol-file");
 document.querySelector("#load-symbols").addEventListener("click", () => symbolInput.click());
+document.querySelector("#show-symbols").addEventListener("click", () => {
+  refreshSymbols(); document.querySelector("#symbol-dialog").showModal();
+});
+document.querySelector("#close-symbols").addEventListener("click", () => document.querySelector("#symbol-dialog").close());
+document.querySelector("#symbol-filter").addEventListener("input", renderSymbolList);
 document.querySelector("#clear-symbols").addEventListener("click", () => {
-  bridge()?.clearSymbols(); document.querySelector("#symbol-status").textContent = "Symbols cleared";
+  const api = bridge(); api?.clearSymbols(); refreshSymbols();
+  if (api) { disassemblyRenderStart = -1; renderDisassembly(disassemblyStart ?? api.getState().pc, api.getState().pc); }
+  document.querySelector("#symbol-status").textContent = "Symbols cleared";
 });
 symbolInput.addEventListener("change", async () => {
   const file = symbolInput.files?.[0]; if (!file) return;
@@ -245,6 +295,10 @@ symbolInput.addEventListener("change", async () => {
     }
     if (name && address !== null && address >= 0 && address <= 0xFFFF && !/^(l__|s__|\.__\.)/.test(name) && api.setSymbol(name, address)) loaded++;
   }
+  refreshSymbols();
+  disassemblyRenderStart = -1;
+  const currentPC = api.getState().pc;
+  renderDisassembly(disassemblyStart ?? currentPC, currentPC);
   document.querySelector("#symbol-status").textContent = `${loaded} symbols loaded`;
   symbolInput.value = ""; render();
 });
@@ -325,5 +379,6 @@ document.querySelector("#memory-breakpoint-form").addEventListener("submit", eve
 });
 
 window.addEventListener("beforeunload", () => bridge()?.windowClosed());
+refreshSymbols();
 render();
 setInterval(render, 250);

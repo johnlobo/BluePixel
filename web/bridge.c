@@ -143,6 +143,17 @@ EMSCRIPTEN_KEEPALIVE void bp_debug_step_into(void) { if (machine) dbg_step_into(
 EMSCRIPTEN_KEEPALIVE void bp_debug_step_out(void) { if (machine) dbg_step_out(machine); }
 EMSCRIPTEN_KEEPALIVE void bp_debug_symbol_set(const char *name, int value) { if (machine && name && *name) dbg_symbol_set(machine, name, value); }
 EMSCRIPTEN_KEEPALIVE void bp_debug_symbol_clear(void) { if (machine) dbg_symbol_clear(machine); }
+EMSCRIPTEN_KEEPALIVE int bp_debug_symbol_count(void) { return machine && machine->dbg ? machine->dbg->nsyms : 0; }
+EMSCRIPTEN_KEEPALIVE int bp_debug_symbol_value(int index) {
+    if (!machine || !machine->dbg || index < 0 || index >= machine->dbg->nsyms) return -1;
+    return machine->dbg->syms[index].value;
+}
+EMSCRIPTEN_KEEPALIVE void bp_debug_symbol_name(int index, char *out, int size) {
+    if (!out || size <= 0) return;
+    out[0] = 0;
+    if (machine && machine->dbg && index >= 0 && index < machine->dbg->nsyms)
+        snprintf(out, (size_t)size, "%s", machine->dbg->syms[index].name);
+}
 EMSCRIPTEN_KEEPALIVE unsigned int bp_debug_register(int id) {
     if (!machine) return 0;
     Z80 *z = &machine->z80;

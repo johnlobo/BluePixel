@@ -19,6 +19,7 @@
       <button id="step" type="button">Step Into</button>
       <button id="step-out" type="button">Step Out</button>
       <button id="load-symbols" type="button">Load Symbols…</button>
+      <button id="show-symbols" type="button">Symbols…</button>
       <button id="clear-symbols" type="button">Clear Symbols</button>
       <input id="symbol-file" type="file" accept=".sym,.noi,.map,.txt" hidden>
       <span id="symbol-status"></span>
@@ -80,6 +81,16 @@
     </div>
     <footer>Click ○ beside an instruction to toggle its breakpoint.</footer>
   </main>
+  <dialog id="symbol-dialog" aria-labelledby="symbol-dialog-title">
+    <div class="dialog-header">
+      <h2 id="symbol-dialog-title">Symbols</h2>
+      <button id="close-symbols" type="button">Close</button>
+    </div>
+    <label class="symbol-search-label" for="symbol-filter">Filter by name or address</label>
+    <input id="symbol-filter" type="search" placeholder="Search symbols…" autocomplete="off">
+    <p id="symbol-count" class="symbol-count"></p>
+    <div id="symbol-list" class="symbol-list"></div>
+  </dialog>
   <script type="module" src="debugger-window.js"></script>
 </body>
 </html>

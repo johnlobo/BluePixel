@@ -583,6 +583,18 @@ window.bluePixelDebugger = {
     finally { core._free(ptr); }
   },
   clearSymbols() { core._bp_debug_symbol_clear(); },
+  getSymbols() {
+    const count = core._bp_debug_symbol_count();
+    const ptr = core._malloc(48);
+    if (!ptr) return [];
+    try {
+      return Array.from({ length: count }, (_, index) => {
+        core.HEAPU8.fill(0, ptr, ptr + 48);
+        core._bp_debug_symbol_name(index, ptr, 48);
+        return { name: readDebugCString(ptr, 48), address: core._bp_debug_symbol_value(index) };
+      }).filter(symbol => symbol.address >= 0 && symbol.address <= 0xFFFF);
+    } finally { core._free(ptr); }
+  },
   toggleBreakpoint: toggleCodeBreakpoint,
   addBreakpoint(address) { if (!core._bp_debug_has_code_bp(address)) toggleCodeBreakpoint(address); },
   addMemoryBreakpoint(start, end, write) {
