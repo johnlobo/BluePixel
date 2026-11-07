@@ -1,0 +1,29 @@
+{
+  "api_version": "1.0",
+  "protocol": "JSON-RPC 2.0 over one-request-per-line stdio",
+  "methods": {
+    "session.capabilities": {"params": {}, "result": {"api_version": "string", "machine": "default machine", "roms_loaded": "boolean by role", "capabilities": "implemented capability names only", "transports": "string[]"}},
+    "rom.load": {"params": {"role": "os, basic, or amsdos", "data_base64": "exactly 16K ROM bytes"}, "result": "boolean"},
+    "machine.reset": {"params": {}, "result": "boolean"},
+    "run.frames": {"params": {"count": "integer"}, "result": {"frames": "integer", "pc": "integer"}},
+    "run.instructions": {"params": {"count": "integer"}, "result": {"requested": "integer", "executed_instructions": "integer", "advanced_nops": "integer", "pc": "integer", "t_states_aligned": "integer"}},
+    "run.nops": {"params": {"count": "integer"}, "result": {"requested": "integer nops", "executed_instructions": "integer", "advanced_nops": "integer (can overshoot at an instruction boundary)", "pc": "integer", "t_states_aligned": "integer"}},
+    "cpu.registers": {"params": {}, "result": "primary and alternate Z80 registers, interrupt state, halt state and virtual counters"},
+    "mem.read": {"params": {"address": "0..65535", "length": "1..4096"}, "result": {"address": "integer", "hex": "lowercase hex bytes"}},
+    "mem.write": {"params": {"address": "0..65535", "value": "0..255"}, "result": "boolean"},
+    "disc.load": {"params": {"drive": "0 or 1", "data_base64": "DSK image"}, "result": "boolean"},
+    "snapshot.load": {"params": {"data_base64": "SNA image"}, "result": "boolean"},
+    "snapshot.save": {"params": {"version": "1..3 (optional, default 3)"}, "result": {"data_base64": "SNA image"}},
+    "screen.capture": {"params": {}, "result": {"frame": "completed CRTC frame count", "width": 768, "height": 270, "format": "rgba8", "data_base64": "explicit RGBA bytes in row-major order"}},
+    "state.hash": {"params": {}, "result": {"hash": "16 lowercase hexadecimal digits"}},
+    "state.save": {"params": {}, "result": {"data_base64": "exact build-specific machine state image"}},
+    "state.restore": {"params": {"data_base64": "exact machine state image from this build"}, "result": {"restored": "boolean", "hazards": "integer"}},
+    "boot_ready.configure": {"params": {"address": "0..65535"}, "result": {"configured": "boolean", "address": "integer"}},
+    "boot_ready.status": {"params": {}, "result": {"ready": "boolean", "pc": "integer", "keyboard_drained": "boolean", "target": "integer"}},
+    "input.text": {"params": {"text": "string"}, "result": "boolean"},
+    "input.matrix": {"params": {"row": "0..9", "mask": "active-low byte; zero bits are pressed", "pressed": "boolean"}, "result": "boolean"},
+    "symbols.load": {"params": {"data_base64": "NoICE .noi/.map text"}, "result": {"loaded": "symbol count"}},
+    "run.reset_tstates": {"params": {}, "result": "boolean"}
+  },
+  "clock": "Virtual only: it advances on run.* calls. One NOP is 4 T-states; instruction steps cannot stop mid-instruction, so run.nops may advance past its requested count. t_states_aligned is NOP-aligned."
+}
