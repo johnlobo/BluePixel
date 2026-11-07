@@ -54,7 +54,28 @@ char*cpc_api_dispatch(CPCApiSession*s,const char*request){if(!s||!request)return
  else if(!strcmp(m,"symbols.load")){char*payload=str(&p,field(&p,a,"data_base64"));size_t n=0;unsigned char*b=payload?unb64(payload,&n):NULL;if(!b)err="missing or invalid symbols data_base64";else{Debugger*d=dbg_attach(c);d->hist_on=false;d->active=false;int count=dbg_symbols_parse(c,(char*)b,n);if(count<0)err="symbol parsing failed";else snprintf(out,sizeof out,"{\"loaded\":%d}",count);}free(payload);free(b);}
  else if(!strcmp(m,"boot_ready.configure")){s->boot_target=(int)num(&p,field(&p,a,"address"),-1);s->boot_configured=s->boot_target>=0&&s->boot_target<=65535;snprintf(out,sizeof out,"{\"configured\":%s,\"address\":%d}",s->boot_configured?"true":"false",s->boot_target);}
  else if(!strcmp(m,"boot_ready.status")){bool drained=!cpc_autotype_active(c);for(int row=0;row<16;row++)if(c->kbd[row]!=0xFF)drained=false;snprintf(out,sizeof out,"{\"ready\":%s,\"pc\":%u,\"keyboard_drained\":%s,\"target\":%d}",s->boot_configured&&c->z80.pc==s->boot_target&&drained?"true":"false",c->z80.pc,drained?"true":"false",s->boot_target);}
- else if(!strcmp(m,"screen.capture")){size_t pixels=(size_t)CPC_SCREEN_W*CPC_SCREEN_H,n=pixels*4;const uint32_t*frame=cpc_frame(c);if(!frame)frame=c->frame;uint8_t*rgba=malloc(n);if(!rgba)err="out of memory";else{for(size_t i=0;i<pixels;i++){uint32_t px=frame[i];rgba[i*4]=(uint8_t)(px>>16);rgba[i*4+1]=(uint8_t)(px>>8);rgba[i*4+2]=(uint8_t)px;rgba[i*4+3]=(uint8_t)(px>>24);}char*data=b64(rgba,n);size_t cap=strlen(data)+160;char*r=malloc(cap);snprintf(r,cap,"{\"frame\":%" PRIu64 ",\"width\":%d,\"height\":%d,\"format\":\"rgba8\",\"data_base64\":\"%s\"}",c->frames,CPC_SCREEN_W,CPC_SCREEN_H,data);char*ret=response(idbuf,r,NULL);free(r);free(data);free(rgba);free(m);return ret;}}
+ else if(!strcmp(m,"screen.capture")){
+  size_t pixels=(size_t)CPC_SCREEN_W*CPC_SCREEN_H,n=pixels*4;const uint32_t*frame=cpc_frame(c);if(!frame)frame=c->frame;
+  uint8_t*rgba=malloc(n);if(!rgba)err="out of memory";else{
+   for(size_t i=0;i<pixels;i++){uint32_t px=frame[i];rgba[i*4]=(uint8_t)(px>>16);rgba[i*4+1]=(uint8_t)(px>>8);rgba[i*4+2]=(uint8_t)px;rgba[i*4+3]=(uint8_t)(px>>24);}
+   char*data=b64(rgba,n);if(!data){free(rgba);err="out of memory";}else{
+    bool with_metadata=boolean(&p,field(&p,a,"metadata"),false);char meta[768]="";
+    if(with_metadata){
+     size_t z=0;z+=(size_t)snprintf(meta+z,sizeof meta-z,"\"metadata\":{\"screen_mode\":%u,\"crtc_type\":%u,\"crtc_registers\":[",c->ga_mode,c->crtc.type);
+     for(int i=0;i<18&&z<sizeof meta;i++)z+=(size_t)snprintf(meta+z,sizeof meta-z,"%s%u",i?",":"",c->crtc.r[i]);
+     z+=(size_t)snprintf(meta+z,sizeof meta-z,"],\"palette_hw\":[");
+     for(int i=0;i<17&&z<sizeof meta;i++)z+=(size_t)snprintf(meta+z,sizeof meta-z,"%s%u",i?",":"",c->ga_palette[i]);
+     z+=(size_t)snprintf(meta+z,sizeof meta-z,"],\"palette_argb\":[");
+     for(int i=0;i<17&&z<sizeof meta;i++)z+=(size_t)snprintf(meta+z,sizeof meta-z,"%s\"%08" PRIx32 "\"",i?",":"",cpc_pen_rgb(c,i));
+     (void)snprintf(meta+z,sizeof meta-z,"]},");
+    }
+    size_t cap=strlen(data)+sizeof meta+192;char*r=malloc(cap);if(!r){free(data);free(rgba);err="out of memory";}else{
+     snprintf(r,cap,"{\"frame\":%" PRIu64 ",\"width\":%d,\"height\":%d,\"format\":\"rgba8\",%s\"data_base64\":\"%s\"}",c->frames,CPC_SCREEN_W,CPC_SCREEN_H,meta[0]?meta:"",data);
+     char*ret=response(idbuf,r,NULL);free(r);free(data);free(rgba);free(m);return ret;
+    }
+   }
+  }
+ }
  else if(!strcmp(m,"run.reset_tstates")){c->t_counter=0;strcpy(out,"true");}
  else err="method not found";
  char*ret=response(idbuf,out,err);free(m);return ret;

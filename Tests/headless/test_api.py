@@ -75,6 +75,11 @@ amsdos_snapshot = call(21, "snapshot.save")["data_base64"]
 call(22, "snapshot.load", {"data_base64": amsdos_snapshot})
 assert "ready" in call(23, "boot_ready.status")
 assert len(base64.b64decode(call(9, "screen.capture")["data_base64"])) == 768 * 270 * 4
+capture_meta = call(36, "screen.capture", {"metadata": True})
+assert capture_meta["metadata"]["screen_mode"] in range(4)
+assert len(capture_meta["metadata"]["crtc_registers"]) == 18
+assert len(capture_meta["metadata"]["palette_hw"]) == 17
+assert len(capture_meta["metadata"]["palette_argb"]) == 17
 proc.stdin.close()
 assert proc.wait(timeout=10) == 0
 print("headless API smoke: PASS (capabilities, memory, exact state/hash roundtrip, deterministic replay, capture)")
