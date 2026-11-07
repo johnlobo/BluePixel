@@ -82,6 +82,7 @@ function menuGroups() {
   return [
     { label: "BluePixel", items: [menuItem("About BluePixel CPC", () => { status.textContent = "BluePixel — Amstrad CPC 6128 emulator."; })] },
     { label: "File", items: [
+      menuItem("Insert Disc Image in Drive A…  F1", () => diskInputs[0].click()),
       ...[0, 1].map(drive => menuBranch(`Drive ${drive === 0 ? "A" : "B"}:`, [
         menuItem("Insert Disc Image…", () => diskInputs[drive].click()),
         menuItem("Download Changed Disc…", () => saveDiskButtons[drive].click(), { disabled: saveDiskButtons[drive].disabled }),
@@ -206,6 +207,11 @@ function handleMenuKey(event) {
 }
 
 window.addEventListener("keydown", event => {
+  if (event.code === "F1" && !event.altKey && !event.ctrlKey && !event.metaKey) {
+    event.preventDefault();
+    document.querySelector("#disk-a").click();
+    return;
+  }
   if (event.code === "F7") {
     event.preventDefault();
     if (menuOpen) closeMenu();
@@ -868,7 +874,7 @@ function pollGamepads() {
 }
 
 function setKey(event, down) {
-  if (event.code === "F10" || event.code === "F7" || menuOpen) return;
+  if (event.code === "F1" || event.code === "F10" || event.code === "F7" || menuOpen) return;
   if (event.target instanceof HTMLElement && event.target.closest("input, textarea, select, button")) return;
   const key = keyCodes[event.code];
   const joy = joystickBits[event.code];
