@@ -78,9 +78,11 @@ input:focus, select:focus { outline: 1px solid #6d97da; }
 .memory-panel h2 span { color: #666; font: 10px system-ui, sans-serif; }
 .memory-form { display: flex; align-items: center; gap: 5px; }
 .memory-form input { width: 78px; }
-.data-range-form { flex-wrap: wrap; }
-.data-range-form label { margin-right: 3px; }
-.data-range-form input { width: 68px; }
+.disassembly-controls { display: flex; align-items: center; gap: 10px; margin: 4px 0; }
+.disassembly-controls form { margin: 0; }
+.disassembly-controls .memory-form { gap: 3px; }
+.disassembly-controls .memory-form input { width: 62px; }
+.disassembly-controls label { font-size: 10px; white-space: nowrap; }
 .data-range-form button { padding: 3px 6px; font-size: 10px; }
 .memory-grid { max-height: 175px; overflow: auto; overflow-anchor: none; padding: 4px; border: 1px solid #ddd; background: #fff; }
 .memory-row { display: grid; height: 20px; grid-template-columns: 46px repeat(16, minmax(20px, 1fr)) 130px; gap: 2px; min-width: 600px; margin: 0; align-items: center; }
