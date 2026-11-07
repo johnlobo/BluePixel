@@ -32,7 +32,7 @@ static int run_zex(const char *path) {
     fclose(f);
     (void)n;
     Z80 z; memset(&z, 0, sizeof z);
-    z.rd = t_rd; z.wr = t_wr; z.in = t_in; z.out = t_out;
+    z.rd = t_rd; z.fetch = t_rd; z.wr = t_wr; z.in = t_in; z.out = t_out;
     z80_reset(&z);
     z.pc = 0x100; z.sp.w = 0xF000;
     mem[0] = 0x76; /* warm boot: HALT */

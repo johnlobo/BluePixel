@@ -653,17 +653,20 @@ static void advance(CPC *c, int nops) {
     for (int i = 0; i < nops; i++) {
         cpc_video_tick(c);
         audio_tick(c);
-        fdc_tick(c->fdc, 1);
-        tape_tick(c->tape, 1);
+        if (c->tape) tape_tick(c->tape, 1);
         rec_tick(c);
         c->cycles++;
     }
+    fdc_tick(c->fdc, nops);
     c->t_counter += nops;
 }
 
 int cpc_step(CPC *c) {
     if (c->player) replay_apply_due(c);
-    if (c->dbg) { c->z80.brk_enabled = c->dbg->break_instructions; if (dbg_check_code(c)) return 0; }
+    if (c->dbg) {
+        c->z80.brk_enabled = c->dbg->break_instructions;
+        if ((c->dbg->active || c->dbg->skip_once || c->dbg->temp_bp >= 0) && dbg_check_code(c)) return 0;
+    }
     if (c->dbg && c->dbg->hist_on) dbg_history_record(c);
     bool ret_op = false;          /* Step Out: is this a RET/RETcc/RETI/RETN? */
     if (c->dbg && c->dbg->step_out) {
