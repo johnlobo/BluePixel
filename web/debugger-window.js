@@ -100,10 +100,13 @@ function renderMemory(start = null, resetScroll = false) {
     const row = document.createElement("div"); row.className = "memory-row";
     const label = document.createElement("code"); label.className = "memory-row-label"; label.textContent = hex(rowAddress);
     row.append(label);
+    let ascii = "";
     for (let column = 0; column < 16; column++) {
       const address = (rowAddress + column) & 0xFFFF;
+      const value = bytes[rowIndex * 16 + column];
+      ascii += value >= 0x20 && value <= 0x7E ? String.fromCharCode(value) : ".";
       const byte = document.createElement("input");
-      byte.className = "memory-byte"; byte.value = bytes[rowIndex * 16 + column].toString(16).toUpperCase().padStart(2, "0");
+      byte.className = "memory-byte"; byte.value = value.toString(16).toUpperCase().padStart(2, "0");
       byte.maxLength = 2; byte.inputMode = "text"; byte.setAttribute("aria-label", `Memory ${hex(address)}`);
       byte.addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); byte.blur(); } });
       byte.addEventListener("change", () => {
@@ -118,6 +121,9 @@ function renderMemory(start = null, resetScroll = false) {
       });
       row.append(byte);
     }
+    const asciiView = document.createElement("code"); asciiView.className = "memory-ascii"; asciiView.textContent = ascii;
+    asciiView.setAttribute("aria-label", `ASCII ${hex(rowAddress)}: ${ascii}`);
+    row.append(asciiView);
     rows.push(row);
   }
   const bottom = document.createElement("div"); bottom.className = "virtual-spacer";
