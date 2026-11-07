@@ -26,30 +26,6 @@ canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; 
 .touch-controls button { display: grid; place-items: center; min-width: 0; padding: 0; border: 1px solid #dce7ff99; border-radius: 14px; background: #102044bb; color: white; font-size: clamp(18px, 4vw, 28px); font-weight: 700; touch-action: none; user-select: none; -webkit-user-select: none; }
 .touch-fire button { width: clamp(54px, 11vw, 76px); aspect-ratio: 1; border-radius: 50%; background: #1645aacc; font-size: 18px; }
 .touch-controls button:active { background: #2164edee; transform: scale(.96); }
-.debugger[hidden] { display: none; }
-.debugger { margin-top: 18px; padding: 18px; border: 1px solid #29416d; border-radius: 16px; background: #0b1830e8; box-shadow: 0 20px 60px #0005; }
-.debugger-header { display: flex; justify-content: space-between; align-items: start; gap: 16px; margin-bottom: 12px; }
-.debugger-header h2 { margin: 0; }
-.debugger-header p { color: #a8b8dc; font-size: .9rem; }
-.debugger-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
-.debugger-columns { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(320px, 1.2fr); gap: 16px; }
-.debugger-columns > section { min-width: 0; }
-.debugger-columns h3 { margin: 0 0 8px; font-size: .95rem; color: #c9d6f1; }
-.debugger-columns h3 span { color: #83a4ff; font: 12px ui-monospace, monospace; }
-.debugger-registers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
-.debugger-register { display: flex; justify-content: space-between; gap: 8px; padding: 5px 8px; border: 1px solid #263b62; border-radius: 5px; background: #081328; font: 12px ui-monospace, monospace; }
-.debugger-register span { color: #9ab1db; }
-.debugger-register code, .debugger-instruction code { color: #eaf0ff; font: inherit; }
-.debugger-breakpoint-form { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin: 12px 0 8px; }
-.debugger-breakpoint-form label { display: block; width: 100%; }
-.debugger-breakpoint-form input { width: 145px; border: 1px solid #354b72; border-radius: 6px; background: #071226; color: #fff; padding: 8px; font: 13px ui-monospace, monospace; }
-.debugger-breakpoints { display: flex; flex-wrap: wrap; gap: 6px; }
-.debugger-breakpoints button { padding: 5px 8px; font-size: 12px; }
-.debugger-disassembly { max-height: 430px; overflow: auto; border: 1px solid #263b62; border-radius: 6px; background: #081328; }
-.debugger-instruction { display: flex; align-items: center; gap: 7px; min-width: max-content; padding: 3px 8px; font: 12px/1.45 ui-monospace, monospace; }
-.debugger-instruction.current { background: #1a3261; }
-.debugger-bp-toggle { width: 20px; min-width: 20px; padding: 0; border: 0; background: transparent; color: #ff6b76; font: 14px/1 ui-monospace, monospace; }
-.debugger-bp-toggle:hover:not(:disabled) { background: #2d4266; }
 .menu-tip { position: absolute; top: 10px; left: 50%; z-index: 2; transform: translateX(-50%); padding: 5px 12px; border: 1px solid #8294b6; border-radius: 4px; background: #101010e8; color: #fff; font: 14px/1.4 ui-monospace, monospace; cursor: pointer; white-space: nowrap; }
 .menu-tip[hidden] { display: none; }
 .app-actions { position: fixed; left: 0; top: 0; z-index: -1; opacity: 0; }
@@ -71,5 +47,4 @@ select { width: 100%; border: 1px solid #354b72; border-radius: 8px; background:
 .type-line span { display: flex; gap: 8px; }
 .type-line input { flex: 1; min-width: 0; border: 1px solid #354b72; border-radius: 8px; background: #071226; color: #fff; padding: 9px 11px; font: inherit; }
 footer { padding: 18px 4px; font-size: .85rem; }
-@media (max-width: 720px) { .debugger-columns { grid-template-columns: 1fr; } }
-@media (max-width: 600px) { .shell { width: min(100% - 20px, 1000px); margin: 18px auto; } .machine, .files, .debugger { padding: 12px; } #status { width: 100%; margin: 2px 0 0; } }
+@media (max-width: 600px) { .shell { width: min(100% - 20px, 1000px); margin: 18px auto; } .machine, .files { padding: 12px; } #status { width: 100%; margin: 2px 0 0; } }

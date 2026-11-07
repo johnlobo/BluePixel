@@ -32,35 +32,7 @@
           </div>
         </div>
         <div class="screen-hint" id="screen-hint">Starting CPC 6128…</div>
-        <div class="menu-tip" id="menu-tip" hidden>F10 opens the main menu</div>
-      </div>
-    </section>
-
-    <section class="debugger" id="debugger" aria-label="CPC debugger" hidden>
-      <header class="debugger-header">
-        <div><h2>Debugger</h2><p id="debugger-status">Attach the debugger to inspect the Z80.</p></div>
-        <button type="button" id="debugger-close" aria-label="Close debugger">Close</button>
-      </header>
-      <div class="debugger-toolbar">
-        <button type="button" id="debugger-resume">Continue</button>
-        <button type="button" id="debugger-pause">Pause</button>
-        <button type="button" id="debugger-step">Step Into</button>
-      </div>
-      <div class="debugger-columns">
-        <section>
-          <h3>Z80 Registers</h3>
-          <div class="debugger-registers" id="debugger-registers"></div>
-          <form id="debugger-breakpoint-form" class="debugger-breakpoint-form">
-            <label for="debugger-breakpoint-address">Code breakpoint</label>
-            <input id="debugger-breakpoint-address" inputmode="text" maxlength="4" placeholder="Address e.g. C000" autocomplete="off">
-            <button type="submit">Add</button>
-          </form>
-          <div id="debugger-breakpoints" class="debugger-breakpoints"></div>
-        </section>
-        <section>
-          <h3>Disassembly <span id="debugger-disassembly-pc"></span></h3>
-          <div class="debugger-disassembly" id="debugger-disassembly"></div>
-        </section>
+        <div class="menu-tip" id="menu-tip" hidden>F10 opens menu · F7 opens debugger</div>
       </div>
     </section>
 

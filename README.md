@@ -6,7 +6,7 @@ Emulador de Amstrad CPC 6128 para macOS y navegador.
 
 No hace falta instalar nada. Abre [BluePixel Web](https://johnlobo.github.io/BluePixel/) en un navegador moderno con WebAssembly y JavaScript activados. La web carga las ROMs incluidas automáticamente y empieza a emular cuando están listas.
 
-- Haz clic en la pantalla para enfocarla y ver el aviso del menú, o pulsa **F10** para abrirlo. Usa las flechas y **Enter** para navegar; **F10** o **Escape** lo cierran.
+- Haz clic en la pantalla para ver los atajos **F10** (menú) y **F7** (depurador). Usa las flechas y **Enter** para navegar por el menú; **F10** o **Escape** lo cierran.
 - En **File → Drive A:** o **Drive B:** carga una imagen `.dsk` en cada unidad. Desde el mismo menú puedes descargar la copia modificada de cada disco.
 - En **File → Load Snapshot…** carga un snapshot `.sna`; usa **Save Snapshot…** para descargar el estado del CPC y retomarlo después. Los discos se guardan aparte desde el menú de cada unidad.
 - En **File → Tape** carga cintas `.cdt`, `.tzx`, `.voc` o `.wav`; desde ahí puedes iniciar/detener la reproducción, rebobinar o retirar la cinta. En el CPC ejecuta `RUN""` o `LOAD""` para cargar el programa.
@@ -14,7 +14,7 @@ No hace falta instalar nada. Abre [BluePixel Web](https://johnlobo.github.io/Blu
 - **Settings → Display** permite elegir monitor color/verde/grises, tamaño de pantalla y velocidad de emulación (50%–500%). Estas preferencias se guardan en el navegador.
 - El sonido está activado por defecto. El navegador lo habilita después del primer clic o pulsación de tecla.
 - El teclado, un gamepad estándar (cruceta o stick izquierdo; A/B para disparar) y los controles táctiles llevan el joystick del CPC. En pantallas táctiles aparecen automáticamente; puedes activarlos o desactivarlos en **Settings → Controls**.
-- **Debug → Open Debugger…** abre el panel de depuración con registros Z80, desensamblado, paso a paso y breakpoints de código.
+- **F7** o **Debug → Open Debugger…** abre el depurador en una ventana independiente y pausa la emulación. Muestra registros Z80 y desensamblado, permite avanzar instrucción a instrucción y gestionar breakpoints de código. Al cerrar la ventana, la máquina permanece pausada hasta que pulses **Continue**.
 - En **Settings** puedes cambiar las ROMs, pausar o reiniciar la máquina y activar o desactivar el sonido.
 
 Los cambios de disco permanecen en memoria durante la sesión. Descarga el disco desde su menú para conservarlos.

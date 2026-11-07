@@ -29,12 +29,12 @@ tools/build-web.sh
 - Load CDT/TZX, VOC or WAV cassette files from **File → Tape**. Play, stop, rewind or remove the tape there; type `RUN""` or `LOAD""` on the CPC to load a program.
 - Save a PNG of the CPC display with **File → Save Screenshot…**. Use **Settings → Machine → Full Screen** to enlarge the screen while preserving its 4:3 aspect ratio.
 - **Settings → Display** selects colour, green or greyscale monitor output, screen width, and emulation speed from 50% to 500%. These choices are stored in browser local storage.
-- Open the first web debugger from **Debug → Open Debugger…**. It shows Z80 registers and disassembly, supports single-step execution, and lets you add/remove code breakpoints from an address or directly from a disassembly line.
-- The CPC starts automatically after its default ROMs load. Click the screen to see the **F10** menu hint; the in-screen menu follows the macOS app structure (**BluePixel**, **File**, **Settings**, **Help**). Navigate with the arrow keys and Enter; use Left/Right for menu navigation. Press **F10** or **Escape** to close it. Click the screen and use the keyboard. Arrow keys also act as joystick directions; Control and Alt act as fire buttons. Standard gamepads use the D-pad or left stick, with A/B as fire buttons. Touch screens get an on-screen joystick automatically; change its visibility in **Settings → Controls**.
+- Open the web debugger in its own window with **F7** or **Debug → Open Debugger…**; opening it pauses emulation. It shows Z80 registers and disassembly, supports single-step execution, and lets you add/remove code breakpoints from an address or directly from a disassembly line. Closing the debugger window leaves the CPC paused until you choose **Continue**.
+- The CPC starts automatically after its default ROMs load. Click the screen to see the **F10** menu and **F7** debugger shortcuts; the in-screen menu follows the macOS app structure (**BluePixel**, **File**, **Settings**, **Debug**, **Help**). Navigate with the arrow keys and Enter; use Left/Right for menu navigation. Press **F10** or **Escape** to close it. Click the screen and use the keyboard. Arrow keys also act as joystick directions; Control and Alt act as fire buttons. Standard gamepads use the D-pad or left stick, with A/B as fire buttons. Touch screens get an on-screen joystick automatically; change its visibility in **Settings → Controls**.
 - Sound is enabled by default and starts after the first click or key press, as required by browser audio policies. Toggle it from **Settings → Sound**.
 - Disk writes are kept in memory independently for drives A and B. Use each drive’s **Download Changed Disc** menu item to save its DSK image.
 
-The web UI is intentionally separate from the macOS AppKit frontend. Debugger windows, recording/replay, cartridges, and Plus-specific configuration are not part of this browser version.
+The web UI is intentionally separate from the macOS AppKit frontend. Session recording/replay, cartridges, and Plus-specific configuration are not part of this browser version.
 
 ## Publishing
 

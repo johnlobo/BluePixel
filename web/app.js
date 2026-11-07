@@ -2,11 +2,6 @@ import createBluePixelCore from "./bluepixel.js";
 
 const canvas = document.querySelector("#screen");
 const screenWrap = document.querySelector(".screen-wrap");
-const debuggerPanel = document.querySelector("#debugger");
-const debuggerStatus = document.querySelector("#debugger-status");
-const debuggerRegisters = document.querySelector("#debugger-registers");
-const debuggerDisassembly = document.querySelector("#debugger-disassembly");
-const debuggerBreakpoints = document.querySelector("#debugger-breakpoints");
 const touchControls = document.querySelector("#touch-controls");
 const ctx = canvas.getContext("2d", { alpha: false });
 const image = ctx.createImageData(canvas.width, canvas.height);
@@ -29,6 +24,7 @@ let typeEntry = false;
 let typeBuffer = "";
 let soundEnabled = true;
 let menuTipTimer;
+let debuggerWindow = null;
 const menuTip = document.querySelector("#menu-tip");
 let touchControlsEnabled = matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
 const joystickSources = new Map();
@@ -138,11 +134,10 @@ function menuGroups() {
       ]),
     ] },
     { label: "Debug", items: [
-      menuItem(debuggerPanel.hidden ? "Open Debugger…" : "Hide Debugger", toggleDebugger),
+      menuItem(debuggerWindow && !debuggerWindow.closed ? "Focus Debugger" : "Open Debugger…", openDebuggerWindow),
       menuItem(running ? "Pause" : "Continue", () => runButton.click()),
       menuItem("Step Into", () => {
-        if (debuggerPanel.hidden) toggleDebugger();
-        document.querySelector("#debugger-step").click();
+        if (openDebuggerWindow()) window.bluePixelDebugger.stepInto();
       }),
     ] },
     { label: "Help", items: [
@@ -211,6 +206,12 @@ function handleMenuKey(event) {
 }
 
 window.addEventListener("keydown", event => {
+  if (event.code === "F7") {
+    event.preventDefault();
+    if (menuOpen) closeMenu();
+    openDebuggerWindow();
+    return;
+  }
   if (soundEnabled) resumeAudio();
   if (event.code === "F10") {
     event.preventDefault();
@@ -466,116 +467,74 @@ function toggleCodeBreakpoint(address) {
   debuggerMessage = core._bp_debug_has_code_bp(address)
     ? `Breakpoint added at ${debugHex(address)}.`
     : `Breakpoint removed from ${debugHex(address)}.`;
-  refreshDebugger();
 }
 
-function refreshDebugger() {
-  if (debuggerPanel.hidden || !core) return;
+function getDebuggerState() {
+  core._bp_debug_attach();
   const registerNames = ["AF", "BC", "DE", "HL", "IX", "IY", "SP", "PC"];
-  const values = registerNames.map((name, index) => [name, core._bp_debug_register(index)]);
-  values.push(["IM", core._bp_debug_register(8)], ["IFF", core._bp_debug_register(9)], ["T", core._bp_debug_register(10)]);
-  debuggerRegisters.replaceChildren(...values.map(([name, value]) => {
-    const cell = document.createElement("div");
-    cell.className = "debugger-register";
-    const label = document.createElement("span"); label.textContent = name;
-    const output = document.createElement("code"); output.textContent = debugHex(value, name === "T" ? 8 : name === "IM" || name === "IFF" ? 2 : 4);
-    cell.append(label, output);
-    return cell;
-  }));
-
+  const registers = Object.fromEntries(registerNames.map((name, index) => [name, core._bp_debug_register(index)]));
+  registers.IM = core._bp_debug_register(8);
+  registers.IFF = core._bp_debug_register(9);
+  registers.T = core._bp_debug_register(10);
   const pc = core._bp_debug_register(7) & 0xFFFF;
-  document.querySelector("#debugger-disassembly-pc").textContent = `PC ${debugHex(pc)}`;
-  const rows = [];
+  const instructions = [];
   let address = pc;
   for (let i = 0; i < 16; i++) {
-    const instructionAddress = address;
-    const instruction = readDebugString(instructionAddress);
-    const length = core._bp_debug_instruction_length(instructionAddress);
-    const row = document.createElement("div");
-    row.className = `debugger-instruction${instructionAddress === pc ? " current" : ""}`;
-    const breakpoint = document.createElement("button");
-    breakpoint.type = "button";
-    breakpoint.className = "debugger-bp-toggle";
-    breakpoint.textContent = core._bp_debug_has_code_bp(instructionAddress) ? "●" : "○";
-    breakpoint.title = `${core._bp_debug_has_code_bp(instructionAddress) ? "Remove" : "Add"} breakpoint at ${debugHex(instructionAddress)}`;
-    breakpoint.setAttribute("aria-label", breakpoint.title);
-    breakpoint.addEventListener("click", () => toggleCodeBreakpoint(instructionAddress));
-    const line = document.createElement("code");
-    line.textContent = `${debugHex(instructionAddress)}  ${instruction}`;
-    row.append(breakpoint, line);
-    rows.push(row);
-    address = (address + Math.max(1, length)) & 0xFFFF;
+    const text = readDebugString(address);
+    instructions.push({ address, text, length: core._bp_debug_instruction_length(address), breakpoint: Boolean(core._bp_debug_has_code_bp(address)) });
+    address = (address + Math.max(1, instructions.at(-1).length)) & 0xFFFF;
   }
-  debuggerDisassembly.replaceChildren(...rows);
-
-  const breakpointRows = [];
   const count = core._bp_debug_breakpoint_count();
-  for (let i = 0; i < count; i++) {
-    const address = core._bp_debug_breakpoint_address(i);
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = `Remove ${debugHex(address)}`;
-    button.addEventListener("click", () => toggleCodeBreakpoint(address));
-    breakpointRows.push(button);
-  }
-  debuggerBreakpoints.replaceChildren(...breakpointRows);
-  const mode = running ? "Running" : "Paused";
-  debuggerStatus.textContent = `${debuggerMessage} · ${mode} · PC ${debugHex(pc)}`;
+  const breakpoints = Array.from({ length: count }, (_, i) => core._bp_debug_breakpoint_address(i));
+  return { registers, pc, instructions, breakpoints, running, message: debuggerMessage };
 }
 
-function toggleDebugger() {
-  const opening = debuggerPanel.hidden;
-  debuggerPanel.hidden = !opening;
-  if (opening) {
-    core._bp_debug_attach();
-    debuggerMessage = "Debugger ready.";
-    refreshDebugger();
-    debuggerPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }
-}
-
-document.querySelector("#debugger-close").addEventListener("click", toggleDebugger);
-document.querySelector("#debugger-resume").addEventListener("click", () => {
-  core._bp_debug_resume();
-  running = true;
-  runButton.textContent = "Pause";
-  clearHintAfterFrame = true;
-  debuggerMessage = "Continuing execution.";
-  if (audioContext?.state === "suspended") audioContext.resume();
-  refreshDebugger();
-});
-document.querySelector("#debugger-pause").addEventListener("click", () => {
-  core._bp_debug_pause();
-  running = false;
-  runButton.textContent = "Resume";
-  debuggerMessage = "Execution paused.";
-  drawFrame();
-  refreshDebugger();
-});
-document.querySelector("#debugger-step").addEventListener("click", () => {
+function pauseForDebugger() {
   core._bp_debug_attach();
   core._bp_debug_pause();
   running = false;
   runButton.textContent = "Resume";
-  core._bp_debug_step_into();
-  debuggerMessage = "Executed one instruction.";
+  debuggerMessage = "Paused for debugger.";
+  status.textContent = debuggerMessage;
   drawFrame();
-  refreshDebugger();
-});
-document.querySelector("#debugger-breakpoint-form").addEventListener("submit", event => {
-  event.preventDefault();
-  const field = document.querySelector("#debugger-breakpoint-address");
-  const raw = field.value.trim().replace(/^(#|0x)/i, "");
-  if (!/^[\da-f]{1,4}$/i.test(raw)) {
-    debuggerMessage = "Enter a hexadecimal address from 0000 to FFFF.";
-    refreshDebugger();
-    return;
+}
+
+window.bluePixelDebugger = {
+  getState: getDebuggerState,
+  pause() {
+    core._bp_debug_pause(); running = false; runButton.textContent = "Resume";
+    debuggerMessage = "Execution paused."; status.textContent = debuggerMessage; drawFrame();
+  },
+  resume() {
+    core._bp_debug_resume(); running = true; runButton.textContent = "Pause"; clearHintAfterFrame = true;
+    debuggerMessage = "Continuing execution."; status.textContent = debuggerMessage;
+    if (audioContext?.state === "suspended") audioContext.resume();
+  },
+  stepInto() {
+    core._bp_debug_attach(); core._bp_debug_pause(); running = false; runButton.textContent = "Resume";
+    core._bp_debug_step_into(); debuggerMessage = "Executed one instruction."; drawFrame();
+  },
+  toggleBreakpoint: toggleCodeBreakpoint,
+  addBreakpoint(address) { if (!core._bp_debug_has_code_bp(address)) toggleCodeBreakpoint(address); },
+  removeBreakpoint(address) { if (core._bp_debug_has_code_bp(address)) toggleCodeBreakpoint(address); },
+  windowClosed() { debuggerWindow = null; },
+};
+
+function openDebuggerWindow() {
+  if (debuggerWindow && !debuggerWindow.closed) {
+    pauseForDebugger();
+    debuggerWindow.focus();
+    return true;
   }
-  core._bp_debug_attach();
-  toggleCodeBreakpoint(Number.parseInt(raw, 16));
-  field.value = "";
-});
-setInterval(refreshDebugger, 250);
+  const url = new URL("./debugger.html", import.meta.url).href;
+  debuggerWindow = window.open(url, "BluePixelDebugger", "popup=yes,width=1080,height=780,resizable=yes,scrollbars=yes");
+  if (!debuggerWindow) {
+    status.textContent = "The browser blocked the debugger window. Allow pop-ups for BluePixel, then press F7 again.";
+    return false;
+  }
+  pauseForDebugger();
+  return true;
+}
 
 function setTapePlaying(playing) {
   core._bp_tape_play(playing ? 1 : 0);
@@ -627,7 +586,6 @@ runButton.addEventListener("click", async () => {
   status.textContent = running ? "Running" : "Paused";
   if (running) clearHintAfterFrame = true;
   if (running && audioContext?.state === "suspended") await audioContext.resume();
-  refreshDebugger();
   canvas.focus();
 });
 
@@ -639,7 +597,6 @@ resetButton.addEventListener("click", () => {
   runButton.textContent = "Pause";
   status.textContent = "Machine restarted.";
   debuggerMessage = "Machine reset.";
-  refreshDebugger();
   canvas.focus();
 });
 
@@ -818,7 +775,7 @@ function pollGamepads() {
 }
 
 function setKey(event, down) {
-  if (event.code === "F10" || menuOpen) return;
+  if (event.code === "F10" || event.code === "F7" || menuOpen) return;
   if (event.target instanceof HTMLElement && event.target.closest("input, textarea, select, button")) return;
   const key = keyCodes[event.code];
   const joy = joystickBits[event.code];
@@ -978,7 +935,6 @@ function animate(time) {
         core._bp_debug_pause();
         debuggerMessage = `Breakpoint at ${debugHex(core._bp_debug_register(7))}.`;
         status.textContent = debuggerMessage;
-        refreshDebugger();
         break;
       }
     }

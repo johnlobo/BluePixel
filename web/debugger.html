@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#071226">
+  <title>BluePixel Debugger</title>
+  <link rel="stylesheet" href="debugger-window.css">
+</head>
+<body>
+  <main class="debugger-shell">
+    <header>
+      <div><h1>BluePixel Debugger</h1><p id="debugger-status">Connecting to the emulator…</p></div>
+      <button id="close-window" type="button">Close Window</button>
+    </header>
+    <nav class="toolbar" aria-label="Execution controls">
+      <button id="continue" type="button">Continue</button>
+      <button id="pause" type="button">Pause</button>
+      <button id="step" type="button">Step Into</button>
+    </nav>
+    <div class="debugger-columns">
+      <section class="panel">
+        <h2>Z80 Registers</h2>
+        <div id="registers" class="registers"></div>
+        <form id="breakpoint-form">
+          <label for="breakpoint-address">Add code breakpoint</label>
+          <div class="form-row">
+            <input id="breakpoint-address" inputmode="text" maxlength="6" placeholder="e.g. C000 or #C000" autocomplete="off">
+            <button type="submit">Add</button>
+          </div>
+        </form>
+        <h2>Breakpoints</h2>
+        <div id="breakpoints" class="breakpoints"></div>
+      </section>
+      <section class="panel">
+        <h2>Disassembly <span id="pc"></span></h2>
+        <div id="disassembly" class="disassembly"></div>
+      </section>
+    </div>
+    <footer>Click the circle beside an instruction to toggle its code breakpoint.</footer>
+  </main>
+  <script type="module" src="debugger-window.js"></script>
+</body>
+</html>
