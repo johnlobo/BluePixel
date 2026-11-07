@@ -15,6 +15,12 @@ jobs:
         run: LDFLAGS=-static tools/build-headless.sh
       - name: Check executable version
         run: ./build/bluepixel-headless --version
+      - name: Prepare disposable ROMs for API smoke
+        run: |
+          python3 Tests/headless/make_test_roms.py "$RUNNER_TEMP/bluepixel-test-roms"
+          echo "BLUEPIXEL_ROM_DIR=$RUNNER_TEMP/bluepixel-test-roms" >> "$GITHUB_ENV"
+      - name: Run headless API smoke on Linux
+        run: LDFLAGS=-static python3 Tests/headless/test_api.py
       - name: Verify static Linux executable
         run: |
           file build/bluepixel-headless
