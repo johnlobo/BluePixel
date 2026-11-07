@@ -2,6 +2,7 @@
 #include "dsk.h"
 #include "fdc.h"
 #include "snapshot.h"
+#include "tape.h"
 #include "cpc_keys.h"
 #include <emscripten.h>
 #include <stdlib.h>
@@ -66,6 +67,27 @@ EMSCRIPTEN_KEEPALIVE int bp_load_disc(int drive, const uint8_t *data, size_t siz
     return 1;
 }
 
+EMSCRIPTEN_KEEPALIVE int bp_load_tape(const uint8_t *data, size_t size, const char *name) {
+    if (!machine || !data || !size) return 0;
+    CPCTape *tape = tape_load(data, size, name ? name : "tape.cdt");
+    if (!tape) return 0;
+    tape_free(machine->tape);
+    machine->tape = tape;
+    tape_set_motor(tape, machine->tape_motor);
+    return 1;
+}
+
+EMSCRIPTEN_KEEPALIVE void bp_tape_play(int play) { if (machine) tape_play(machine->tape, play != 0); }
+EMSCRIPTEN_KEEPALIVE void bp_tape_rewind(void) { if (machine) tape_rewind(machine->tape); }
+EMSCRIPTEN_KEEPALIVE void bp_tape_remove(void) {
+    if (!machine) return;
+    tape_free(machine->tape);
+    machine->tape = NULL;
+}
+EMSCRIPTEN_KEEPALIVE int bp_tape_loaded(void) { return machine && machine->tape != NULL; }
+EMSCRIPTEN_KEEPALIVE int bp_tape_playing(void) { return machine && tape_playing(machine->tape); }
+EMSCRIPTEN_KEEPALIVE const char *bp_tape_name(void) { return machine ? tape_name(machine->tape) : ""; }
+
 EMSCRIPTEN_KEEPALIVE int bp_load_snapshot(const uint8_t *data, size_t size) {
     return machine && cpc_snapshot_load(machine, data, size);
 }
@@ -77,6 +99,12 @@ EMSCRIPTEN_KEEPALIVE uint8_t *bp_save_snapshot(size_t *size) {
 
 EMSCRIPTEN_KEEPALIVE void bp_run_frame(void) { if (machine) cpc_run_frame(machine); }
 EMSCRIPTEN_KEEPALIVE void bp_reset(void) { if (machine) cpc_reset(machine, true); }
+EMSCRIPTEN_KEEPALIVE void bp_set_monitor(int monitor) {
+    if (!machine || monitor < CPC_MONITOR_COLOUR || monitor > CPC_MONITOR_GREY) return;
+    CPCConfig cfg = machine->cfg;
+    cfg.monitor = (CPCMonitor)monitor;
+    cpc_configure(machine, &cfg);
+}
 EMSCRIPTEN_KEEPALIVE void bp_type(const char *text) { if (machine && text) cpc_autotype(machine, text); }
 EMSCRIPTEN_KEEPALIVE void bp_key(int key, int down) { if (machine) cpc_key(machine, key, down != 0); }
 EMSCRIPTEN_KEEPALIVE void bp_joystick(int bit, int down) { if (machine) cpc_joystick(machine, bit, down != 0); }

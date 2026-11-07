@@ -27,6 +27,20 @@ let menuTipTimer;
 const menuTip = document.querySelector("#menu-tip");
 let touchControlsEnabled = matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
 const joystickSources = new Map();
+function readPreference(key, fallback) {
+  try { return localStorage.getItem(`bluepixel-${key}`) ?? fallback; }
+  catch { return fallback; }
+}
+function writePreference(key, value) {
+  try { localStorage.setItem(`bluepixel-${key}`, String(value)); }
+  catch { /* Preferences are optional when browser storage is unavailable. */ }
+}
+let displayMonitor = Number(readPreference("monitor", "0"));
+if (![0, 1, 2].includes(displayMonitor)) displayMonitor = 0;
+let displayWidth = Number(readPreference("screen-width", "720"));
+if (![540, 720, 960].includes(displayWidth)) displayWidth = 720;
+let emulationSpeed = Number(readPreference("speed", "1"));
+if (![0.5, 1, 2, 5].includes(emulationSpeed)) emulationSpeed = 1;
 
 function closeMenu() {
   menuOpen = false;
@@ -62,6 +76,7 @@ function romItems(select) {
 function menuGroups() {
   const diskInputs = [document.querySelector("#disk-a"), document.querySelector("#disk-b")];
   const snapshotInput = document.querySelector("#snapshot");
+  const tapeInput = document.querySelector("#tape");
   const typeText = document.querySelector("#type-text");
   return [
     { label: "BluePixel", items: [menuItem("About BluePixel CPC", () => { status.textContent = "BluePixel — Amstrad CPC 6128 emulator."; })] },
@@ -70,6 +85,13 @@ function menuGroups() {
         menuItem("Insert Disc Image…", () => diskInputs[drive].click()),
         menuItem("Download Changed Disc…", () => saveDiskButtons[drive].click(), { disabled: saveDiskButtons[drive].disabled }),
       ])),
+      menuBranch("Tape", [
+        menuItem("Insert Tape…", () => tapeInput.click()),
+        menuItem(core?._bp_tape_playing() ? "Stop Tape" : "Play Tape", () => setTapePlaying(!core._bp_tape_playing()), { disabled: !loadedTapeName }),
+        menuItem("Rewind Tape", rewindTape, { disabled: !loadedTapeName }),
+        menuItem("Remove Tape", removeTape, { disabled: !loadedTapeName }),
+        menuItem(loadedTapeName ? `Loaded: ${loadedTapeName}` : "No tape loaded", () => {}, { disabled: true }),
+      ]),
       menuItem("Load Snapshot…", () => snapshotInput.click()),
       menuItem("Save Snapshot…", () => saveSnapshotButton.click(), { disabled: saveSnapshotButton.disabled }),
       menuItem("Save Screenshot…", saveScreenshot),
@@ -85,6 +107,17 @@ function menuGroups() {
         menuItem(running ? "Pause" : "Resume", () => runButton.click()),
         menuItem("Reset", () => resetButton.click()),
         menuItem(document.fullscreenElement === screenWrap ? "Exit Full Screen" : "Full Screen", toggleFullScreen),
+      ]),
+      menuBranch("Display", [
+        menuBranch("Monitor", [
+          ...["Colour", "Green", "Greyscale"].map((name, mode) => menuItem(`${name}${displayMonitor === mode ? "  ✓" : ""}`, () => setMonitorMode(mode))),
+        ]),
+        menuBranch("Screen Size", [
+          ...[[540, "Small"], [720, "Medium"], [960, "Large"]].map(([width, name]) => menuItem(`${name}${displayWidth === width ? "  ✓" : ""}`, () => setDisplaySize(width))),
+        ]),
+        menuBranch("Emulation Speed", [
+          ...[[0.5, "50%"], [1, "100%"], [2, "200%"], [5, "500%"]].map(([speed, name]) => menuItem(`${name}${emulationSpeed === speed ? "  ✓" : ""}`, () => setEmulationSpeed(speed))),
+        ]),
       ]),
       menuBranch("Sound", [
         menuItem(`Sound On${soundEnabled ? "  ✓" : ""}`, () => setSoundEnabled(true)),
@@ -219,6 +252,7 @@ let hasSnapshot = false;
 let currentSnapshotName = "";
 const loadedROMs = { os: null, basic: null, amsdos: null };
 const currentDiskNames = ["bluepixel-a.dsk", "bluepixel-b.dsk"];
+let loadedTapeName = "";
 let audioContext;
 let audioNode;
 let audioPtr;
@@ -228,6 +262,8 @@ let audioConnected = false;
 try {
   core = await createBluePixelCore({ locateFile: file => new URL(file, import.meta.url).href });
   if (!core._bp_init()) throw new Error("Could not allocate the CPC machine.");
+  core._bp_set_monitor(displayMonitor);
+  screenWrap.style.maxWidth = `${displayWidth}px`;
   try { initializeAudioGraph(); }
   catch (error) { soundEnabled = false; soundButton.textContent = "Sound Off"; console.warn(error.message); }
   status.textContent = "Loading the CPC 6128 ROM set…";
@@ -363,6 +399,74 @@ document.querySelector("#snapshot").addEventListener("change", async event => {
     status.textContent = `Snapshot error: ${error.message}`;
   }
 });
+
+document.querySelector("#tape").addEventListener("change", async event => {
+  const file = event.currentTarget.files?.[0];
+  if (!file) return;
+  let dataPtr = 0;
+  let namePtr = 0;
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const name = new TextEncoder().encode(file.name + "\0");
+    dataPtr = core._malloc(bytes.byteLength);
+    namePtr = core._malloc(name.byteLength);
+    if (!dataPtr || !namePtr) throw new Error("Not enough memory to load this tape.");
+    core.HEAPU8.set(bytes, dataPtr);
+    core.HEAPU8.set(name, namePtr);
+    if (!core._bp_load_tape(dataPtr, bytes.byteLength, namePtr)) {
+      throw new Error("This tape format is not supported or the file is damaged.");
+    }
+    loadedTapeName = file.name;
+    status.textContent = `${file.name} inserted. On the CPC, type RUN"" or LOAD"" to start loading.`;
+  } catch (error) {
+    status.textContent = `Tape error: ${error.message}`;
+  } finally {
+    if (dataPtr) core._free(dataPtr);
+    if (namePtr) core._free(namePtr);
+    event.currentTarget.value = "";
+  }
+});
+
+function setTapePlaying(playing) {
+  core._bp_tape_play(playing ? 1 : 0);
+  status.textContent = playing ? "Tape playback enabled. Use RUN\"\" or LOAD\"\" on the CPC." : "Tape stopped.";
+  if (menuOpen) drawFrame();
+}
+
+function rewindTape() {
+  core._bp_tape_rewind();
+  status.textContent = "Tape rewound.";
+  if (menuOpen) drawFrame();
+}
+
+function removeTape() {
+  core._bp_tape_remove();
+  loadedTapeName = "";
+  status.textContent = "Tape removed.";
+  if (menuOpen) drawFrame();
+}
+
+function setMonitorMode(mode) {
+  displayMonitor = mode;
+  core._bp_set_monitor(mode);
+  writePreference("monitor", mode);
+  status.textContent = `Monitor set to ${["colour", "green", "greyscale"][mode]}.`;
+  drawFrame();
+}
+
+function setDisplaySize(width) {
+  displayWidth = Number(width);
+  screenWrap.style.maxWidth = `${displayWidth}px`;
+  writePreference("screen-width", displayWidth);
+  status.textContent = `Screen size set to ${displayWidth}px.`;
+}
+
+function setEmulationSpeed(speed) {
+  emulationSpeed = Number(speed);
+  frameDebt = 0;
+  writePreference("speed", emulationSpeed);
+  status.textContent = `Emulation speed set to ${Math.round(emulationSpeed * 100)}%.`;
+}
 
 runButton.addEventListener("click", async () => {
   running = !running;
@@ -707,7 +811,7 @@ function animate(time) {
   const elapsed = Math.min(time - lastTime, 100);
   lastTime = time;
   if (running) {
-    frameDebt = Math.min(frameDebt + elapsed, 100);
+    frameDebt = Math.min(frameDebt + elapsed * emulationSpeed, 100);
     const frames = Math.min(Math.floor(frameDebt / 20), 5);
     for (let i = 0; i < frames; i++) {
       core._bp_run_frame();
