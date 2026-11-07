@@ -154,6 +154,12 @@ EMSCRIPTEN_KEEPALIVE void bp_debug_symbol_name(int index, char *out, int size) {
     if (machine && machine->dbg && index >= 0 && index < machine->dbg->nsyms)
         snprintf(out, (size_t)size, "%s", machine->dbg->syms[index].name);
 }
+EMSCRIPTEN_KEEPALIVE void bp_debug_reset_tstates(void) { if (machine) machine->t_counter = 0; }
+EMSCRIPTEN_KEEPALIVE void bp_debug_tstates(char *out, int size) {
+    if (!out || size <= 0) return;
+    out[0] = 0;
+    if (machine) snprintf(out, (size_t)size, "%llu", (unsigned long long)machine->t_counter);
+}
 EMSCRIPTEN_KEEPALIVE unsigned int bp_debug_register(int id) {
     if (!machine) return 0;
     Z80 *z = &machine->z80;

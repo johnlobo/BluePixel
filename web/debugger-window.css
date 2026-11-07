@@ -22,6 +22,10 @@ h2 span { color: #3869ae; font: 11px ui-monospace, SFMono-Regular, Menlo, monosp
 .register { display: flex; justify-content: space-between; gap: 4px; padding: 1px 3px; border-bottom: 1px solid #eee; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .register span { color: #555; }
 .register code, .instruction code, .stack code { color: #111; font: inherit; }
+.t-counter { display: flex; align-items: center; gap: 6px; margin: 0 0 5px; padding: 3px 5px; border: 1px solid #ddd; background: #fafafa; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.t-counter span { color: #555; }
+.t-counter code { flex: 1; text-align: right; }
+.t-counter button { padding: 2px 7px; color: #a22; }
 .subheading { margin-top: 8px; }
 .stack { max-height: 205px; overflow: auto; border: 1px solid #ddd; padding: 3px 5px; font: 11px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .stack-row { display: grid; grid-template-columns: 54px 38px minmax(0, 1fr); gap: 8px; }

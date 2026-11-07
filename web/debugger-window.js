@@ -6,6 +6,7 @@ const pcLabel = document.querySelector("#pc");
 const memoryGrid = document.querySelector("#memory-grid");
 const memoryAddressField = document.querySelector("#memory-address");
 const stack = document.querySelector("#stack");
+const tStates = document.querySelector("#t-states");
 const disassemblyAddressField = document.querySelector("#disassembly-address");
 let disassemblyStart = null;
 let followPC = true;
@@ -221,6 +222,7 @@ function render() {
 
   status.textContent = `${state.message} · ${state.running ? "Running" : "Paused"}`;
   pcLabel.textContent = `PC ${hex(state.pc)}`;
+  tStates.textContent = api.getTstates();
   const pcInView = state.pc >= disassemblyStart && state.pc < disassemblyStart + VIRTUAL_ROWS;
   if (disassemblyStart === null || (followPC && !pcInView)) {
     renderDisassembly(state.pc, state.pc, true);
@@ -228,7 +230,7 @@ function render() {
     for (const row of disassembly.children) if (row.dataset.address) row.classList.toggle("current", Number(row.dataset.address) === state.pc);
   }
   disassembly.dataset.pc = String(state.pc);
-  const items = Object.entries(state.registers);
+  const items = Object.entries(state.registers).filter(([name]) => name !== "T");
   registers.replaceChildren(...items.map(([name, value]) => {
     const cell = document.createElement("div");
     cell.className = "register";
@@ -260,6 +262,7 @@ document.querySelector("#continue").addEventListener("click", () => bridge()?.re
 document.querySelector("#pause").addEventListener("click", () => bridge()?.pause());
 document.querySelector("#step").addEventListener("click", () => bridge()?.stepInto());
 document.querySelector("#step-out").addEventListener("click", () => bridge()?.stepOut());
+document.querySelector("#reset-t-states").addEventListener("click", () => { bridge()?.resetTstates(); render(); });
 document.querySelector("#close-window").addEventListener("click", () => window.close());
 const symbolInput = document.querySelector("#symbol-file");
 document.querySelector("#load-symbols").addEventListener("click", () => symbolInput.click());

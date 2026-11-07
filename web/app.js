@@ -595,6 +595,17 @@ window.bluePixelDebugger = {
       }).filter(symbol => symbol.address >= 0 && symbol.address <= 0xFFFF);
     } finally { core._free(ptr); }
   },
+  getTstates() {
+    const ptr = core._malloc(32);
+    if (!ptr) return "0";
+    try { core._bp_debug_tstates(ptr, 32); return readDebugCString(ptr, 32); }
+    finally { core._free(ptr); }
+  },
+  resetTstates() {
+    core._bp_debug_reset_tstates();
+    debuggerMessage = "T-state counter reset.";
+    status.textContent = debuggerMessage;
+  },
   toggleBreakpoint: toggleCodeBreakpoint,
   addBreakpoint(address) { if (!core._bp_debug_has_code_bp(address)) toggleCodeBreakpoint(address); },
   addMemoryBreakpoint(start, end, write) {
