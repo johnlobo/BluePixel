@@ -14,7 +14,7 @@ No hace falta instalar nada. Abre [BluePixel Web](https://johnlobo.github.io/Blu
 - **Settings → Display** permite elegir monitor color/verde/grises, tamaño de pantalla y velocidad de emulación (50%–500%). Estas preferencias se guardan en el navegador.
 - El sonido está activado por defecto. El navegador lo habilita después del primer clic o pulsación de tecla.
 - El teclado, un gamepad estándar (cruceta o stick izquierdo; A/B para disparar) y los controles táctiles llevan el joystick del CPC. En pantallas táctiles aparecen automáticamente; puedes activarlos o desactivarlos en **Settings → Controls**.
-- **F7** o **Debug → Open Debugger…** abre el depurador en una ventana independiente y pausa la emulación. Muestra registros Z80 y desensamblado, permite avanzar instrucción a instrucción y gestionar breakpoints de código. Al cerrar la ventana, la máquina permanece pausada hasta que pulses **Continue**.
+- **F7** o **Debug → Open Debugger…** abre el depurador en una ventana independiente y pausa la emulación. Muestra registros Z80 y desensamblado, permite avanzar instrucción a instrucción, gestionar breakpoints de código y consultar/editar bytes de memoria. Al cerrar la ventana, la máquina permanece pausada hasta que pulses **Continue**.
 - En **Settings** puedes cambiar las ROMs, pausar o reiniciar la máquina y activar o desactivar el sonido.
 
 Los cambios de disco permanecen en memoria durante la sesión. Descarga el disco desde su menú para conservarlos.

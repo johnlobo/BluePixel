@@ -28,5 +28,14 @@ input { width: 170px; border: 1px solid #354b72; border-radius: 6px; background:
 .instruction { display: flex; align-items: center; gap: 7px; min-width: max-content; padding: 3px 8px; font: 12px/1.5 ui-monospace, monospace; }
 .instruction.current { background: #1a3261; }
 .bp-toggle { width: 20px; min-width: 20px; padding: 0; border: 0; background: transparent; color: #ff6b76; font: 14px/1 ui-monospace, monospace; }
+.memory-panel { margin-top: 14px; }
+.memory-panel h2 span { color: #a8b8dc; font: 11px system-ui, sans-serif; }
+.memory-form { margin: 0 0 10px; }
+.memory-grid { overflow: auto; padding: 8px; border: 1px solid #263b62; border-radius: 6px; background: #081328; }
+.memory-row { display: grid; grid-template-columns: 62px repeat(16, 34px); gap: 4px; width: max-content; margin-bottom: 4px; align-items: center; }
+.memory-row:last-child { margin-bottom: 0; }
+.memory-row-label { color: #83a4ff; font: 12px ui-monospace, monospace; }
+.memory-byte { width: 34px; padding: 4px 1px; text-align: center; font-size: 12px; }
+.memory-help { margin: 8px 0 0; color: #a8b8dc; font-size: 12px; }
 footer { padding: 12px 2px; font-size: 12px; }
 @media (max-width: 850px) { body { min-width: 0; } .debugger-columns { grid-template-columns: 1fr; } .disassembly { max-height: 50vh; min-height: 280px; } }

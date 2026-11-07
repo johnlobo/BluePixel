@@ -159,6 +159,16 @@ EMSCRIPTEN_KEEPALIVE int bp_debug_instruction_length(unsigned int addr) {
     char out[160];
     return bp_debug_disassemble(addr, out, sizeof out);
 }
+EMSCRIPTEN_KEEPALIVE void bp_debug_read_memory(unsigned int start, uint8_t *out, int count) {
+    if (!machine || !out || count <= 0) return;
+    DbgView view; dbg_view_current(machine, &view);
+    for (int i = 0; i < count; i++) out[i] = dbg_view_read(machine, &view, (uint16_t)(start + i));
+}
+EMSCRIPTEN_KEEPALIVE void bp_debug_write_memory(unsigned int addr, unsigned int value) {
+    if (!machine) return;
+    DbgView view; dbg_view_current(machine, &view);
+    dbg_view_write(machine, &view, (uint16_t)addr, (uint8_t)value);
+}
 EMSCRIPTEN_KEEPALIVE int bp_debug_toggle_code_bp(unsigned int addr) {
     if (!machine) return 0;
     dbg_toggle_code_bp(machine, (uint16_t)addr);

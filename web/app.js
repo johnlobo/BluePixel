@@ -517,6 +517,21 @@ window.bluePixelDebugger = {
   toggleBreakpoint: toggleCodeBreakpoint,
   addBreakpoint(address) { if (!core._bp_debug_has_code_bp(address)) toggleCodeBreakpoint(address); },
   removeBreakpoint(address) { if (core._bp_debug_has_code_bp(address)) toggleCodeBreakpoint(address); },
+  readMemory(start, count) {
+    const size = Math.max(1, Math.min(Number(count) || 1, 4096));
+    const ptr = core._malloc(size);
+    if (!ptr) throw new Error("Not enough memory to read this range.");
+    try {
+      core._bp_debug_read_memory(Number(start) & 0xFFFF, ptr, size);
+      return Array.from(core.HEAPU8.subarray(ptr, ptr + size));
+    } finally { core._free(ptr); }
+  },
+  writeMemory(address, value) {
+    if (running) this.pause();
+    core._bp_debug_write_memory(Number(address) & 0xFFFF, Number(value) & 0xFF);
+    debuggerMessage = `Wrote ${debugHex(value, 2)} at ${debugHex(address)}.`;
+    status.textContent = debuggerMessage;
+  },
   windowClosed() { debuggerWindow = null; },
 };
 
