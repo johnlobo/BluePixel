@@ -1,5 +1,6 @@
 import AppKit
 import CPCCore
+import CPCHost
 
 /// Session recording and replay (see CPCCore/include/replay.h). A recording is the machine state at the start
 /// plus every input with its emulated timestamp; replaying it reproduces the session exactly and can jump to

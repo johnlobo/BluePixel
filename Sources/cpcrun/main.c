@@ -6,6 +6,7 @@
 #include "cpc.h"
 #include "cpc_keys.h"
 #include "dsk.h"
+#include "cpc_host.h"
 #include "fdc.h"
 #include "tape.h"
 #include "snapshot.h"
@@ -13,6 +14,8 @@
 #include "replay.h"
 #include <time.h>
 #include "debug.h"
+
+static void io_trace_log(void *ctx, uint16_t port, uint8_t value, uint16_t pc) { (void)ctx; fprintf(stderr, "OUT %04X,%02X  pc=%04X\n", port, value, pc); }
 
 static uint8_t mem[65536];
 static int done;
@@ -788,7 +791,7 @@ static int run_boot(int argc, char **argv) {
     if (disc) { CPCDisc *d = dsk_load_file(disc); if (!d) fprintf(stderr, "cannot load %s\n", disc); else { fdc_insert(c->fdc, 0, d); } }
     for (int i = 0; i < frames; i++) {
         if (typed && i == wait) { char *t = strdup(typed); for (char *p = t; *p; p++) if (*p == '~') *p = '\n'; cpc_autotype(c, t); free(t); }
-        if (getenv("IOLOG") && i == (getenv("IOFROM") ? atoi(getenv("IOFROM")) : wait - 1)) { extern int cpc_trace_io; cpc_trace_io = 1; }
+        if (getenv("IOLOG") && i == (getenv("IOFROM") ? atoi(getenv("IOFROM")) : wait - 1)) c->trace_io = io_trace_log;
         if (i == space_at) cpc_key(c, CPCK_SPACE, true);
         if (i == space_at + 5) cpc_key(c, CPCK_SPACE, false);
         if (i == return_at) cpc_key(c, CPCK_RETURN, true);
