@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "machines": {
+    "cpc6128": {
+      "os": {"file": "os6128.rom", "size": 16384},
+      "basic": {"file": "basic6128.rom", "size": 16384},
+      "amsdos": {"file": "amsdos.rom", "size": 16384}
+    },
+    "cpc464": {
+      "os": {"file": "os464.rom", "size": 16384},
+      "basic": {"file": "basic464.rom", "size": 16384}
+    }
+  }
+}

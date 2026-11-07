@@ -1,0 +1,22 @@
+name: Headless H1
+on:
+  push:
+    branches: [main, h1-headless]
+  pull_request:
+    branches: [main, h1-headless]
+jobs:
+  linux-x86_64-static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install static zlib
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
+      - name: Build static Linux executable
+        run: LDFLAGS=-static tools/build-headless.sh
+      - name: Check executable version
+        run: ./build/bluepixel-headless --version
+      - name: Verify static Linux executable
+        run: |
+          file build/bluepixel-headless
+          output="$(ldd build/bluepixel-headless 2>&1 || true)"
+          case "$output" in *"not a dynamic executable"*) ;; *) echo "$output"; exit 1 ;; esac

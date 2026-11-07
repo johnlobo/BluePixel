@@ -4,7 +4,7 @@ Emulador de Amstrad CPC 6128 para macOS y navegador.
 
 ## Usar la versión web
 
-No hace falta instalar nada. Abre [BluePixel Web](https://johnlobo.github.io/BluePixel/) en un navegador moderno con WebAssembly y JavaScript activados. La web carga las ROMs incluidas automáticamente y empieza a emular cuando están listas.
+No hace falta instalar nada. Abre [BluePixel Web](https://johnlobo.github.io/BluePixel/) en un navegador moderno con WebAssembly y JavaScript activados. La web solicita los ficheros ROM necesarios y empieza a emular cuando están listos.
 
 - Haz clic en la pantalla para ver los atajos **F10** (menú) y **F7** (depurador). Usa las flechas y **Enter** para navegar por el menú; **F10** o **Escape** lo cierran.
 - En **File → Drive A:** o **Drive B:** carga una imagen `.dsk` en cada unidad. Desde el mismo menú puedes descargar la copia modificada de cada disco.
@@ -42,7 +42,7 @@ No necesitas Emscripten para usarla: el JavaScript y el WebAssembly compilados e
 
 BluePixel Web es una aplicación estática: no necesita Node.js, PHP, un proceso de emulación en el servidor ni Emscripten. Basta con copiar los archivos precompilados de `web/` a cualquier carpeta servida por tu web, por ejemplo `public_html/bluepixel/` o `/var/www/html/bluepixel/`.
 
-Copia el **contenido** de `web/` conservando la estructura y los nombres, incluidos `index.html`, `app.js`, `style.css`, `icon.png`, `bluepixel.js`, `bluepixel.wasm` y la carpeta `roms/`. Puedes subirlos desde el panel de tu hosting/FTP o, si tienes SSH y `rsync`, desde la raíz del repositorio:
+Copia el **contenido** de `web/` conservando la estructura y los nombres, incluidos `index.html`, `app.js`, `style.css`, `icon.png`, `bluepixel.js` y `bluepixel.wasm`. Puedes subirlos desde el panel de tu hosting/FTP o, si tienes SSH y `rsync`, desde la raíz del repositorio:
 
 ```sh
 rsync -av web/ usuario@servidor:/ruta/de/tu/sitio/bluepixel/
@@ -51,3 +51,16 @@ rsync -av web/ usuario@servidor:/ruta/de/tu/sitio/bluepixel/
 Después abre `https://tu-dominio/bluepixel/`. El servidor debe ofrecer los archivos WebAssembly con el tipo MIME `application/wasm` y servir la web por HTTPS (o HTTP en una red local); no abras `index.html` como archivo `file://`. Si el navegador informa de un error al cargar WebAssembly, revisa el tipo MIME de `bluepixel.wasm` en la configuración del servidor o consulta con el proveedor del hosting.
 
 Para actualizar la instalación, vuelve a copiar el contenido actualizado de `web/` a esa misma carpeta. El despliegue de GitHub Pages se actualiza automáticamente, pero los otros servidores no: hay que subir allí los archivos de nuevo.
+
+## Emulador headless para Linux
+
+La rama `h1-headless` añade una interfaz JSON-RPC por stdin/stdout para automatización y herramientas. En Ubuntu 24.04 instala `build-essential`, `zlib1g-dev` y `python3`; coloca las ROMs externas junto a un `roms.json` válido y configura `BLUEPIXEL_ROM_DIR`. Para ejecutar la aceptación con la fixture `nave`, configura también `BLUEPIXEL_FIXTURE_DIR`:
+
+```sh
+LDFLAGS="-static" tools/build-headless.sh
+./build/bluepixel-headless --version
+python3 Tests/headless/test_api.py
+python3 Tests/headless/test_acceptance_nave.py
+```
+
+La guía completa, el protocolo y los formatos están en [docs/HEADLESS.md](docs/HEADLESS.md) y [api/schema.json](api/schema.json).

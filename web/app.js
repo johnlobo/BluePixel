@@ -286,7 +286,7 @@ try {
   screenWrap.style.maxWidth = `${displayWidth}px`;
   try { initializeAudioGraph(); }
   catch (error) { soundEnabled = false; soundButton.textContent = "Sound Off"; console.warn(error.message); }
-  status.textContent = "Loading the CPC 6128 ROM set…";
+  status.textContent = "Select the CPC 6128 OS and BASIC ROM files to start.";
 } catch (error) {
   status.textContent = `Could not start WebAssembly: ${error.message}`;
   throw error;
@@ -318,70 +318,38 @@ function updateReady(message) {
   }
 }
 
-async function installROM(select, slot, key, bytes, name) {
-  const ok = bytes
-    ? transfer(bytes, (ptr, size) => core._bp_load_rom(slot, ptr, size))
-    : core._bp_load_rom(slot, 0, 0);
+async function installROM(input, slot, key, bytes, name) {
+  const ok = transfer(bytes, (ptr, size) => core._bp_load_rom(slot, ptr, size));
   if (!ok) throw new Error("The ROM could not be loaded.");
-  if (key === "os") hasOS = Boolean(bytes);
-  if (key === "basic") hasBasic = Boolean(bytes);
-  loadedROMs[key] = select.value;
+  if (key === "os") hasOS = true;
+  if (key === "basic") hasBasic = true;
+  loadedROMs[key] = name;
   if ((key === "os" || key === "basic") && hasOS && hasBasic) core._bp_reset();
   status.textContent = bytes ? `${name} loaded.` : "Disk ROM removed.";
   updateReady();
 }
 
-async function loadROMFromFolder(select, slot, key) {
-  const name = select.value;
-  if (!name && key === "amsdos") {
-    try { await installROM(select, slot, key, null, ""); }
-    catch (error) { status.textContent = `ROM error: ${error.message}`; }
-    return true;
-  }
-  if (!name) return false;
+async function loadROMFile(input, slot, key) {
+  const file = input.files?.[0];
+  if (!file) return;
   try {
-    const url = new URL(`./roms/${encodeURIComponent(name)}`, import.meta.url);
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`${name} was not found in the bundled ROM folder.`);
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    await installROM(select, slot, key, bytes, name);
-    return true;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (bytes.byteLength !== 16384) throw new Error("A CPC ROM must contain exactly 16 KiB.");
+    await installROM(input, slot, key, bytes, file.name);
   } catch (error) {
     status.textContent = `ROM error: ${error.message}`;
-    if (loadedROMs[key] !== null) select.value = loadedROMs[key];
-    return false;
+    input.value = "";
   }
 }
 
 const osROM = document.querySelector("#os-rom");
 const basicROM = document.querySelector("#basic-rom");
 const amsdosROM = document.querySelector("#amsdos-rom");
-osROM.addEventListener("change", () => loadROMFromFolder(osROM, -1, "os"));
-basicROM.addEventListener("change", () => loadROMFromFolder(basicROM, 0, "basic"));
-amsdosROM.addEventListener("change", () => loadROMFromFolder(amsdosROM, 7, "amsdos"));
+osROM.addEventListener("change", () => loadROMFile(osROM, -1, "os"));
+basicROM.addEventListener("change", () => loadROMFile(basicROM, 0, "basic"));
+amsdosROM.addEventListener("change", () => loadROMFile(amsdosROM, 7, "amsdos"));
 
-async function loadDefaultROMs() {
-  const results = await Promise.all([
-    loadROMFromFolder(osROM, -1, "os"),
-    loadROMFromFolder(basicROM, 0, "basic"),
-    loadROMFromFolder(amsdosROM, 7, "amsdos"),
-  ]);
-  if (!hasOS || !hasBasic) {
-    const missing = [];
-    if (!hasOS) missing.push("OS");
-    if (!hasBasic) missing.push("BASIC");
-    updateReady(`${missing.join(" and ")} ROM not found in the bundled ROM folder. Choose another ROM from its menu.`);
-  } else {
-    running = true;
-    runButton.textContent = "Pause";
-    clearHintAfterFrame = true;
-    status.textContent = results[2]
-      ? "CPC 6128 ROM set loaded. Running."
-      : "CPC 6128 is running; optional disk ROM was not found.";
-  }
-}
-
-loadDefaultROMs();
+updateReady("Choose an OS and BASIC ROM to start the CPC.");
 
 [0, 1].forEach(drive => {
   const input = document.querySelector(drive === 0 ? "#disk-a" : "#disk-b");
