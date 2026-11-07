@@ -515,6 +515,19 @@ function getDebuggerState() {
   return { registers, pc, instructions, breakpoints, running, message: debuggerMessage };
 }
 
+function getDebuggerInstructions(start, count = 64) {
+  core._bp_debug_attach();
+  const instructions = [];
+  let address = Number(start) & 0xFFFF;
+  for (let i = 0; i < Math.max(1, Math.min(Number(count) || 64, 256)); i++) {
+    const text = readDebugString(address);
+    const length = Math.max(1, core._bp_debug_instruction_length(address));
+    instructions.push({ address, text, length, breakpoint: Boolean(core._bp_debug_has_code_bp(address)) });
+    address = (address + length) & 0xFFFF;
+  }
+  return instructions;
+}
+
 function pauseForDebugger() {
   core._bp_debug_attach();
   core._bp_debug_pause();
@@ -527,6 +540,7 @@ function pauseForDebugger() {
 
 window.bluePixelDebugger = {
   getState: getDebuggerState,
+  getInstructions: getDebuggerInstructions,
   pause() {
     core._bp_debug_pause(); running = false; runButton.textContent = "Resume";
     debuggerMessage = "Execution paused."; status.textContent = debuggerMessage; drawFrame();

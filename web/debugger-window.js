@@ -6,6 +6,10 @@ const pcLabel = document.querySelector("#pc");
 const memoryGrid = document.querySelector("#memory-grid");
 const memoryAddressField = document.querySelector("#memory-address");
 const stack = document.querySelector("#stack");
+const disassemblyAddressField = document.querySelector("#disassembly-address");
+let disassemblyStart = null;
+let disassemblyEnd = null;
+let followPC = true;
 let memoryRendered = false;
 
 function bridge() {
@@ -32,10 +36,10 @@ function renderMemory(start = parseHexAddress(memoryAddressField.value)) {
   }
   memoryAddressField.value = start.toString(16).toUpperCase().padStart(4, "0");
   let bytes;
-  try { bytes = api.readMemory(start, 256); }
+  try { bytes = api.readMemory(start, 1024); }
   catch (error) { status.textContent = `Could not read memory: ${error.message}`; return; }
   const rows = [];
-  for (let rowIndex = 0; rowIndex < 16; rowIndex++) {
+  for (let rowIndex = 0; rowIndex < 64; rowIndex++) {
     const rowAddress = (start + rowIndex * 16) & 0xFFFF;
     const row = document.createElement("div"); row.className = "memory-row";
     const label = document.createElement("code"); label.className = "memory-row-label"; label.textContent = hex(rowAddress);
@@ -103,6 +107,29 @@ function renderBreakpoints(items) {
   }));
 }
 
+function renderDisassembly(start, pc, resetScroll = false) {
+  const api = bridge(); if (!api) return;
+  disassemblyStart = start & 0xFFFF;
+  disassemblyAddressField.value = disassemblyStart.toString(16).toUpperCase().padStart(4, "0");
+  const instructions = api.getInstructions(disassemblyStart, 64);
+  const rows = instructions.map(instruction => {
+    const row = document.createElement("div");
+    row.className = `instruction${instruction.address === pc ? " current" : ""}`;
+    const toggle = document.createElement("button");
+    toggle.type = "button"; toggle.className = "bp-toggle";
+    toggle.textContent = instruction.breakpoint ? "●" : "○";
+    toggle.title = `${instruction.breakpoint ? "Remove" : "Add"} breakpoint at ${hex(instruction.address)}`;
+    toggle.setAttribute("aria-label", toggle.title);
+    toggle.addEventListener("click", () => { api.toggleBreakpoint(instruction.address); renderDisassembly(disassemblyStart, pc); });
+    const text = document.createElement("code"); text.textContent = `${hex(instruction.address)}  ${instruction.text}`;
+    row.append(toggle, text); return row;
+  });
+  const last = instructions.at(-1);
+  disassemblyEnd = ((last?.address ?? disassemblyStart) + (last?.length ?? 1)) & 0xFFFF;
+  disassembly.replaceChildren(...rows);
+  if (resetScroll) disassembly.scrollTop = 0;
+}
+
 function render() {
   const api = bridge();
   if (!api) {
@@ -115,6 +142,15 @@ function render() {
 
   status.textContent = `${state.message} · ${state.running ? "Running" : "Paused"}`;
   pcLabel.textContent = `PC ${hex(state.pc)}`;
+  const pcInView = disassemblyEnd !== null && (disassemblyStart <= disassemblyEnd
+    ? state.pc >= disassemblyStart && state.pc < disassemblyEnd
+    : state.pc >= disassemblyStart || state.pc < disassemblyEnd);
+  if (disassemblyStart === null || (followPC && !pcInView)) {
+    renderDisassembly(state.pc, state.pc, true);
+  } else {
+    for (const row of disassembly.children) row.classList.toggle("current", Number.parseInt(row.children[1]?.textContent.slice(1, 5), 16) === state.pc);
+  }
+  disassembly.dataset.pc = String(state.pc);
   const items = Object.entries(state.registers);
   registers.replaceChildren(...items.map(([name, value]) => {
     const cell = document.createElement("div");
@@ -135,20 +171,6 @@ function render() {
     const addr = document.createElement("code"); addr.textContent = hex(address);
     const word = document.createElement("code"); word.textContent = hex(value);
     row.append(addr, word); return row;
-  }));
-
-  disassembly.replaceChildren(...state.instructions.map(instruction => {
-    const row = document.createElement("div");
-    row.className = `instruction${instruction.address === state.pc ? " current" : ""}`;
-    const toggle = document.createElement("button");
-    toggle.type = "button"; toggle.className = "bp-toggle";
-    toggle.textContent = instruction.breakpoint ? "●" : "○";
-    toggle.title = `${instruction.breakpoint ? "Remove" : "Add"} breakpoint at ${hex(instruction.address)}`;
-    toggle.setAttribute("aria-label", toggle.title);
-    toggle.addEventListener("click", () => api.toggleBreakpoint(instruction.address));
-    const text = document.createElement("code"); text.textContent = `${hex(instruction.address)}  ${instruction.text}`;
-    row.append(toggle, text);
-    return row;
   }));
 
   if (!breakpoints.contains(document.activeElement)) renderBreakpoints(state.breakpoints);
@@ -212,6 +234,25 @@ document.querySelector("#memory-form").addEventListener("submit", event => {
   event.preventDefault();
   renderMemory(parseHexAddress(memoryAddressField.value));
   memoryRendered = true;
+});
+document.querySelector("#disassembly-form").addEventListener("submit", event => {
+  event.preventDefault();
+  const address = parseHexAddress(disassemblyAddressField.value);
+  if (address === null) { status.textContent = "Enter a hexadecimal address from 0000 to FFFF."; return; }
+  followPC = false; document.querySelector("#follow-pc").classList.remove("active");
+  renderDisassembly(address, Number(bridge()?.getState().pc) & 0xFFFF, true);
+});
+document.querySelector("#disassembly-prev").addEventListener("click", () => {
+  followPC = false; document.querySelector("#follow-pc").classList.remove("active");
+  renderDisassembly((disassemblyStart - 0x100) & 0xFFFF, Number(bridge()?.getState().pc) & 0xFFFF, true);
+});
+document.querySelector("#disassembly-next").addEventListener("click", () => {
+  followPC = false; document.querySelector("#follow-pc").classList.remove("active");
+  renderDisassembly((disassemblyStart + 0x100) & 0xFFFF, Number(bridge()?.getState().pc) & 0xFFFF, true);
+});
+document.querySelector("#follow-pc").addEventListener("click", () => {
+  followPC = true; document.querySelector("#follow-pc").classList.add("active");
+  const pc = Number(bridge()?.getState().pc) & 0xFFFF; renderDisassembly(pc, pc, true);
 });
 document.querySelector("#memory-breakpoint-form").addEventListener("submit", event => {
   event.preventDefault();

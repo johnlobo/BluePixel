@@ -27,6 +27,14 @@
       <div class="left-column">
         <section class="panel disassembly-panel">
           <h2>Disassembly <span id="pc"></span></h2>
+          <form id="disassembly-form" class="memory-form">
+            <label for="disassembly-address">Address</label>
+            <button id="disassembly-prev" type="button" aria-label="Previous page">◀</button>
+            <input id="disassembly-address" inputmode="text" maxlength="6" value="0000" autocomplete="off">
+            <button type="submit">Go</button>
+            <button id="disassembly-next" type="button" aria-label="Next page">▶</button>
+            <button id="follow-pc" type="button">Follow PC</button>
+          </form>
           <div id="disassembly" class="disassembly"></div>
         </section>
         <section class="panel memory-panel">
