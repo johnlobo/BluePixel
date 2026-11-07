@@ -57,15 +57,22 @@ input:focus, select:focus { outline: 1px solid #6d97da; }
 .instruction-bytes { min-width: 92px; color: #237328 !important; }
 .instruction-symbol { min-width: 110px; color: #3869ae; }
 .instruction-asm { color: #111; }
-.instruction-code .instruction-asm { color: #2456a0; }
-.instruction-data .instruction-asm { color: #a45d00; }
+.instruction-mnemonic { color: #2456a0; font-weight: 600; }
+.instruction-literal { color: #237328; }
+.instruction-data .instruction-mnemonic { color: #a45d00; }
+.instruction-data .instruction-literal { color: #a45d00; }
 .instruction-data .instruction-bytes { color: #a45d00 !important; }
 .virtual-spacer { width: 1px; min-height: 0; padding: 0; margin: 0; }
 .instruction.current { background: #9ba9c8; color: #fff; }
 .instruction.current code { color: #fff; }
+.instruction.current .instruction-mnemonic { color: #fff; }
+.instruction.current .instruction-literal { color: #d9ffd5; }
+.instruction.current.instruction-data .instruction-mnemonic,
+.instruction.current.instruction-data .instruction-literal { color: #ffe0a6; }
 .disassembly-meta { display: flex; align-items: center; gap: 8px; font: 10px system-ui, sans-serif; }
 .disassembly-meta #pc { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .legend-code { color: #2456a0 !important; }
+.legend-literal { color: #237328 !important; }
 .legend-data { color: #a45d00 !important; }
 .bp-toggle { width: 14px; min-width: 14px; padding: 0; border: 0; background: transparent; color: #d44; font: 12px/1 ui-monospace, monospace; }
 .memory-panel h2 span { color: #666; font: 10px system-ui, sans-serif; }

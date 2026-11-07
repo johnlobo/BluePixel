@@ -200,7 +200,18 @@ function renderDisassembly(start, pc, resetScroll = false) {
     bytes.textContent = instruction.bytes.map(value => value.toString(16).toUpperCase().padStart(2, "0")).join(" ");
     const symbol = document.createElement("span"); symbol.className = "instruction-symbol";
     symbol.textContent = symbolsAtAddress.get(instruction.address)?.join(", ") || "";
-    const text = document.createElement("code"); text.className = "instruction-asm"; text.textContent = instruction.text;
+    const text = document.createElement("code"); text.className = "instruction-asm";
+    const parts = /^(\S+)([\s\S]*)$/.exec(instruction.text);
+    if (parts) {
+      const mnemonic = document.createElement("span"); mnemonic.className = "instruction-mnemonic";
+      mnemonic.textContent = parts[1]; text.append(mnemonic);
+      for (const part of parts[2].split(/(#[\da-f]+|0x[\da-f]+|\$[\da-f]+|&[\da-f]+|%[01]+|\b\d+\b)/i).filter(Boolean)) {
+        if (/^(?:#[\da-f]+|0x[\da-f]+|\$[\da-f]+|&[\da-f]+|%[01]+|\d+)$/i.test(part)) {
+          const literal = document.createElement("span"); literal.className = "instruction-literal";
+          literal.textContent = part; text.append(literal);
+        } else text.append(document.createTextNode(part));
+      }
+    } else text.textContent = instruction.text;
     row.append(toggle, address, bytes, text, symbol); return row;
   });
   const top = document.createElement("div"); top.className = "virtual-spacer";
