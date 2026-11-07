@@ -498,10 +498,14 @@ static bool parse_num(const char *s, int32_t *v) {
     *v = (int32_t)n; return true;
 }
 
-int dbg_symbols_load(CPC *c, const char *path) {
-    FILE *f = fopen(path, "r"); if (!f) return -1;
+int dbg_symbols_parse(CPC *c, const char *text, size_t size) {
     char line[256]; int count = 0;
-    while (fgets(line, sizeof line, f)) {
+    const char *p = text, *end = text + size;
+    while (p < end) {
+        const char *e = p; while (e < end && *e != '\n' && *e != '\r') e++;
+        size_t len = (size_t)(e - p); if (len >= sizeof line) len = sizeof line - 1;
+        memcpy(line, p, len); line[len] = 0;
+        p = e; while (p < end && (*p == '\n' || *p == '\r')) p++;
         char *tok[6]; int nt = 0; char *sv;
         for (char *t = strtok_r(line, " \t\r\n=", &sv); t && nt < 6; t = strtok_r(NULL, " \t\r\n=", &sv)) tok[nt++] = t;
         if (nt < 2) continue;
@@ -533,7 +537,7 @@ int dbg_symbols_load(CPC *c, const char *path) {
         if (name[0] == ';' || !name[0]) continue;
         dbg_symbol_set(c, name, v); count++;
     }
-    fclose(f); return count;
+    return count;
 }
 
 void dbg_area_add(CPC *c, uint16_t start, uint16_t end, bool words) {

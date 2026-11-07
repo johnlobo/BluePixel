@@ -165,6 +165,8 @@ struct CPC {
     struct CPCRecording *recorder;
     struct CPCRecording *stopped_recording;   /* finished by an action replay cannot reproduce, waiting to be collected */
     struct CPCPlayer *player;
+    void (*trace_io)(void *ctx, uint16_t port, uint8_t value, uint16_t pc); /* optional host instrumentation callback */
+    void *trace_io_ctx;
 };
 
 CPC *cpc_create(CPCModel model);
@@ -248,7 +250,6 @@ bool cpc_multiface_stop(CPC *c);
 /* internal */
 void cpc_update_mapping(CPC *c);
 void cpc_compute_mapping(CPC *c, uint8_t ram_cfg, bool lower_en, bool upper_en, uint8_t upper_sel, uint8_t lower_base, uint8_t cart_bank, uint8_t **rd, uint8_t **wr);
-extern int cpc_trace_io;
 bool cpc_dbg_break(const CPC *c);
 void cpc_video_tick(CPC *c);
 void cpc_io_write(void *ctx, uint16_t port, uint8_t v);

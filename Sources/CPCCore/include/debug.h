@@ -131,7 +131,7 @@ void dbg_symbol_set(CPC *c, const char *name, int32_t value);
 void dbg_symbol_clear(CPC *c);
 bool dbg_symbol_lookup(const Debugger *d, const char *name, int32_t *v);
 const char *dbg_symbol_for_address(const Debugger *d, uint16_t addr);
-int dbg_symbols_load(CPC *c, const char *path);
+int dbg_symbols_parse(CPC *c, const char *text, size_t size);
 void dbg_area_add(CPC *c, uint16_t start, uint16_t end, bool words);
 void dbg_area_remove(CPC *c, uint16_t addr);
 const DbgDataArea *dbg_area_at(const Debugger *d, uint16_t addr);

@@ -4,7 +4,6 @@
 #include "cpc_keys.h"
 #include "debug.h"
 #include "replay.h"
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -351,10 +350,9 @@ static void ppi_write(CPC *c, int func, uint8_t v) {
 }
 
 /* ---------------- I/O decode ---------------- */
-int cpc_trace_io;
 void cpc_io_write(void *ctx, uint16_t port, uint8_t v) {
     CPC *c = ctx;
-    if (cpc_trace_io) fprintf(stderr, "OUT %04X,%02X  pc=%04X\n", port, v, c->z80.pc);
+    if (c->trace_io) c->trace_io(c->trace_io_ctx, port, v, c->z80.pc);
     if (c->dbg && c->dbg->io_bps) dbg_io_event(c, port, v, true);
     if (c->cfg.multiface && c->rom_multiface) {
         if (port == 0xFEE8 && !c->mf_active) { c->mf_active = true; cpc_update_mapping(c); }
