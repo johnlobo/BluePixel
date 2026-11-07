@@ -193,7 +193,7 @@ function renderDisassembly(start, pc, resetScroll = false) {
     const symbol = document.createElement("span"); symbol.className = "instruction-symbol";
     symbol.textContent = symbolsAtAddress.get(instruction.address)?.join(", ") || "";
     const text = document.createElement("code"); text.className = "instruction-asm"; text.textContent = instruction.text;
-    row.append(toggle, address, bytes, symbol, text); return row;
+    row.append(toggle, address, bytes, text, symbol); return row;
   });
   const top = document.createElement("div"); top.className = "virtual-spacer";
   top.style.height = `${firstAddress * DISASSEMBLY_ROW_HEIGHT}px`;
