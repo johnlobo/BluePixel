@@ -54,7 +54,7 @@ Para actualizar la instalación, vuelve a copiar el contenido actualizado de `we
 
 ## Emulador headless para Linux
 
-La rama `h1-headless` añade una interfaz JSON-RPC por stdin/stdout para automatización y herramientas. En Ubuntu 24.04 instala `build-essential`, `zlib1g-dev` y `python3`; coloca las ROMs externas junto a un `roms.json` válido y configura `BLUEPIXEL_ROM_DIR`. Para ejecutar la aceptación con la fixture `nave`, configura también `BLUEPIXEL_FIXTURE_DIR`:
+La rama `h1-headless` añade una interfaz JSON-RPC por stdin/stdout para automatización y herramientas. En Ubuntu 24.04 instala `build-essential`, `zlib1g-dev` y `python3`; coloca las ROMs externas junto a un `roms.json` válido y configura `BLUEPIXEL_ROM_DIR`. La fixture `nave` viene en `Tests/fixtures/nave/` y se usa por defecto (`BLUEPIXEL_FIXTURE_DIR` solo si quieres otra copia):
 
 ```sh
 LDFLAGS="-static" tools/build-headless.sh

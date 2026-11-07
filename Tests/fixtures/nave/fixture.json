@@ -1,0 +1,71 @@
+{
+  "name": "glasnost-nave",
+  "version": 1,
+  "source": "GlasnostFWK examples/nave (finished game from docs/first-game)",
+  "machine": {
+    "model": "6128",
+    "ram_kb": 128,
+    "note": "also boots on a 464 (slower load); the acceptance uses 6128"
+  },
+  "disk": {
+    "file": "nave.dsk",
+    "sha256": "59aef59b6a25b26708a3892b5604bc2a4da5b519d792358a71ef75efb7f087a3",
+    "amsdos_name": "NAVE.BIN",
+    "command": "run\"nave"
+  },
+  "binary": {
+    "file": "nave.bin",
+    "sha256": "84b8e2c6f550256a2dd3793e699d58bdae26e34b13e82fe7f38bc139062bf331",
+    "size": 8294,
+    "load": "0x0200"
+  },
+  "symbols": {
+    "file": "nave.noi",
+    "format": "sdcc .noi, lines 'DEF name 0xADDR'",
+    "game_status": "0x1FFC",
+    "game_hits": "0x1FFF",
+    "game_storage": "0x204D",
+    "fwk_input_held": "0x225A",
+    "fwk_system_frame_count": "0x2262"
+  },
+  "entity": {
+    "size": 37,
+    "player_index": 0,
+    "x_offset": 4,
+    "y_offset": 5,
+    "player_x_address": "0x2051 = game_storage + 0*37 + 4",
+    "player_y_address": "0x2052 = game_storage + 0*37 + 5",
+    "drones": "indexes 1..3"
+  },
+  "limits": {
+    "x_min": 0,
+    "x_max": 76,
+    "y_min": 44,
+    "y_max": 192
+  },
+  "game_status_running": "0x5A",
+  "keyboard_matrix": {
+    "note": "active low: a pressed key clears its bit; rows 0..9 read through PPI port C",
+    "cursor_up": {
+      "row": 0,
+      "mask": "0xFE"
+    },
+    "cursor_right": {
+      "row": 0,
+      "mask": "0xFD"
+    },
+    "cursor_down": {
+      "row": 0,
+      "mask": "0xFB"
+    },
+    "cursor_left": {
+      "row": 1,
+      "mask": "0xFE"
+    }
+  },
+  "entry": {
+    "address": "0x0B72",
+    "symbol": "_main",
+    "note": "AMSDOS run address (binaryAddresses.log); boot_ready.configure address for H1"
+  }
+}

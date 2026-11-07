@@ -158,7 +158,7 @@ def cold_run(fixture_dir, image_path=None):
 
 
 def main():
-    fixture_dir = Path(os.environ["BLUEPIXEL_FIXTURE_DIR"])
+    fixture_dir = Path(os.environ.get("BLUEPIXEL_FIXTURE_DIR") or Path(__file__).resolve().parents[1] / "fixtures" / "nave")
     rom_dir = Path(os.environ["BLUEPIXEL_ROM_DIR"])
     require(BINARY.exists(), "build/bluepixel-headless is missing; run tools/build-headless.sh first")
     expected = {}
