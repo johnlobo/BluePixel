@@ -521,7 +521,7 @@ function getDebuggerState() {
   return { registers, pc, instructions, breakpoints, running, message: debuggerMessage };
 }
 
-function getDebuggerInstructions(start, count = 64) {
+function getDebuggerInstructions(start, count = 64, byByte = false) {
   core._bp_debug_attach();
   const instructions = [];
   let address = Number(start) & 0xFFFF;
@@ -529,7 +529,7 @@ function getDebuggerInstructions(start, count = 64) {
     const text = readDebugString(address);
     const length = Math.max(1, core._bp_debug_instruction_length(address));
     instructions.push({ address, text, length, breakpoint: Boolean(core._bp_debug_has_code_bp(address)) });
-    address = (address + length) & 0xFFFF;
+    address = (address + (byByte ? 1 : length)) & 0xFFFF;
   }
   return instructions;
 }

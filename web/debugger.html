@@ -33,9 +33,9 @@
             <input id="disassembly-address" inputmode="text" maxlength="6" value="0000" autocomplete="off">
             <button type="submit">Go</button>
             <button id="disassembly-next" type="button" aria-label="Next page">▶</button>
-            <button id="follow-pc" type="button">Follow PC</button>
+            <button id="follow-pc" class="active" type="button">Follow PC</button>
           </form>
-          <div id="disassembly" class="disassembly"></div>
+          <div id="disassembly" class="disassembly" tabindex="0" aria-label="Disassembly for the full 64 KB memory space"></div>
         </section>
         <section class="panel memory-panel">
           <h2>Memory <span>current map</span></h2>
@@ -44,7 +44,7 @@
             <input id="memory-address" inputmode="text" maxlength="6" value="0000" autocomplete="off">
             <button type="submit">Go / Refresh</button>
           </form>
-          <div class="memory-grid" id="memory-grid" aria-label="Memory bytes"></div>
+          <div class="memory-grid" id="memory-grid" tabindex="0" aria-label="Memory bytes across 64 KB"></div>
           <p class="memory-help">Edit a byte and press Enter to write.</p>
         </section>
       </div>

@@ -46,18 +46,19 @@ input:focus, select:focus { outline: 1px solid #6d97da; }
 .memory-breakpoint-form input { width: 65px; }
 .memory-breakpoint-form select { width: 68px; padding: 4px 2px; }
 .condition-help, .memory-help { margin: 5px 0 0; color: #666; font-size: 10px; }
-.disassembly { height: min(43vh, 380px); min-height: 260px; overflow: auto; border: 1px solid #ddd; background: #fff; }
-.instruction { display: flex; align-items: center; gap: 5px; min-width: max-content; padding: 1px 5px; font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.disassembly { height: min(43vh, 380px); min-height: 260px; overflow: auto; overflow-anchor: none; border: 1px solid #ddd; background: #fff; }
+.instruction { display: flex; height: 16px; align-items: center; gap: 5px; min-width: max-content; padding: 0 5px; font: 11px/16px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.virtual-spacer { width: 1px; min-height: 0; padding: 0; margin: 0; }
 .instruction.current { background: #9ba9c8; color: #fff; }
 .instruction.current code { color: #fff; }
 .bp-toggle { width: 14px; min-width: 14px; padding: 0; border: 0; background: transparent; color: #d44; font: 12px/1 ui-monospace, monospace; }
 .memory-panel h2 span { color: #666; font: 10px system-ui, sans-serif; }
 .memory-form { display: flex; align-items: center; gap: 5px; }
 .memory-form input { width: 78px; }
-.memory-grid { max-height: 175px; overflow: auto; padding: 4px; border: 1px solid #ddd; background: #fff; }
-.memory-row { display: grid; grid-template-columns: 46px repeat(16, minmax(20px, 1fr)); gap: 2px; min-width: 460px; margin-bottom: 2px; align-items: center; }
+.memory-grid { max-height: 175px; overflow: auto; overflow-anchor: none; padding: 4px; border: 1px solid #ddd; background: #fff; }
+.memory-row { display: grid; height: 20px; grid-template-columns: 46px repeat(16, minmax(20px, 1fr)); gap: 2px; min-width: 460px; margin: 0; align-items: center; }
 .memory-row:last-child { margin-bottom: 0; }
 .memory-row-label { color: #42689d; font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
-.memory-byte { width: 100%; padding: 2px 0; text-align: center; font-size: 10px; }
+.memory-byte { width: 100%; height: 17px; padding: 1px 0; text-align: center; font-size: 10px; }
 footer { padding: 5px 2px 0; color: #666; font-size: 10px; }
 @media (max-width: 820px) { body { min-width: 0; } .debugger-columns { grid-template-columns: 1fr; } .disassembly { height: 38vh; } .registers { grid-template-columns: repeat(4, 1fr); } }

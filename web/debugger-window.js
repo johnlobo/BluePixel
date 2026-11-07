@@ -8,9 +8,16 @@ const memoryAddressField = document.querySelector("#memory-address");
 const stack = document.querySelector("#stack");
 const disassemblyAddressField = document.querySelector("#disassembly-address");
 let disassemblyStart = null;
-let disassemblyEnd = null;
 let followPC = true;
 let memoryRendered = false;
+const MEMORY_BYTES = 0x10000;
+const MEMORY_ROW_HEIGHT = 20;
+const DISASSEMBLY_ROW_HEIGHT = 16;
+const VIRTUAL_ROWS = 48;
+let disassemblyRenderStart = -1;
+let memoryRenderStart = -1;
+let disassemblyScrollQueued = false;
+let memoryScrollQueued = false;
 
 function bridge() {
   if (!window.opener || window.opener.closed) return null;
@@ -27,20 +34,30 @@ function parseHexAddress(value) {
   return /^[\da-f]{1,4}$/i.test(raw) ? Number.parseInt(raw, 16) : null;
 }
 
-function renderMemory(start = parseHexAddress(memoryAddressField.value)) {
+function renderMemory(start = null, resetScroll = false) {
   const api = bridge();
   if (!api) return;
-  if (start === null) {
-    status.textContent = "Enter a hexadecimal address from 0000 to FFFF.";
-    return;
+  if (start !== null) {
+    if (start < 0 || start > 0xFFFF) {
+      status.textContent = "Enter a hexadecimal address from 0000 to FFFF.";
+      return;
+    }
   }
-  memoryAddressField.value = start.toString(16).toUpperCase().padStart(4, "0");
+  const firstRow = Math.max(0, Math.min(0xFFF, Math.floor(start !== null && resetScroll ? start / 16 : memoryGrid.scrollTop / MEMORY_ROW_HEIGHT)));
+  if (firstRow === memoryRenderStart && !resetScroll) return;
+  memoryRenderStart = firstRow;
+  const startAddress = firstRow * 16;
+  memoryAddressField.value = startAddress.toString(16).toUpperCase().padStart(4, "0");
+  const rowCount = Math.min(VIRTUAL_ROWS, 0x1000 - firstRow);
   let bytes;
-  try { bytes = api.readMemory(start, 1024); }
+  try { bytes = api.readMemory(startAddress, rowCount * 16); }
   catch (error) { status.textContent = `Could not read memory: ${error.message}`; return; }
   const rows = [];
-  for (let rowIndex = 0; rowIndex < 64; rowIndex++) {
-    const rowAddress = (start + rowIndex * 16) & 0xFFFF;
+  const top = document.createElement("div"); top.className = "virtual-spacer";
+  top.style.height = `${firstRow * MEMORY_ROW_HEIGHT}px`;
+  rows.push(top);
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+    const rowAddress = startAddress + rowIndex * 16;
     const row = document.createElement("div"); row.className = "memory-row";
     const label = document.createElement("code"); label.className = "memory-row-label"; label.textContent = hex(rowAddress);
     row.append(label);
@@ -58,13 +75,17 @@ function renderMemory(start = parseHexAddress(memoryAddressField.value)) {
           return;
         }
         bridge()?.writeMemory(address, Number.parseInt(raw, 16));
-        renderMemory(start);
+        memoryRenderStart = -1; renderMemory();
       });
       row.append(byte);
     }
     rows.push(row);
   }
+  const bottom = document.createElement("div"); bottom.className = "virtual-spacer";
+  bottom.style.height = `${(0x1000 - firstRow - rowCount) * MEMORY_ROW_HEIGHT}px`;
+  rows.push(bottom);
   memoryGrid.replaceChildren(...rows);
+  if (resetScroll && start !== null) memoryGrid.scrollTop = firstRow * MEMORY_ROW_HEIGHT;
 }
 
 function renderBreakpoints(items) {
@@ -109,9 +130,14 @@ function renderBreakpoints(items) {
 
 function renderDisassembly(start, pc, resetScroll = false) {
   const api = bridge(); if (!api) return;
-  disassemblyStart = start & 0xFFFF;
-  disassemblyAddressField.value = disassemblyStart.toString(16).toUpperCase().padStart(4, "0");
-  const instructions = api.getInstructions(disassemblyStart, 64);
+  const targetAddress = start & 0xFFFF;
+  const firstAddress = Math.max(0, Math.min(0xFFFF, Math.floor(resetScroll ? targetAddress : disassembly.scrollTop / DISASSEMBLY_ROW_HEIGHT)));
+  disassemblyStart = firstAddress;
+  if (firstAddress === disassemblyRenderStart && !resetScroll) return;
+  disassemblyRenderStart = firstAddress;
+  disassemblyAddressField.value = firstAddress.toString(16).toUpperCase().padStart(4, "0");
+  const rowCount = Math.min(VIRTUAL_ROWS, 0x10000 - firstAddress);
+  const instructions = api.getInstructions(firstAddress, rowCount, true);
   const rows = instructions.map(instruction => {
     const row = document.createElement("div");
     row.className = `instruction${instruction.address === pc ? " current" : ""}`;
@@ -120,14 +146,16 @@ function renderDisassembly(start, pc, resetScroll = false) {
     toggle.textContent = instruction.breakpoint ? "●" : "○";
     toggle.title = `${instruction.breakpoint ? "Remove" : "Add"} breakpoint at ${hex(instruction.address)}`;
     toggle.setAttribute("aria-label", toggle.title);
-    toggle.addEventListener("click", () => { api.toggleBreakpoint(instruction.address); renderDisassembly(disassemblyStart, pc); });
+    toggle.addEventListener("click", () => { api.toggleBreakpoint(instruction.address); disassemblyRenderStart = -1; renderDisassembly(disassemblyStart, pc); });
     const text = document.createElement("code"); text.textContent = `${hex(instruction.address)}  ${instruction.text}`;
     row.append(toggle, text); return row;
   });
-  const last = instructions.at(-1);
-  disassemblyEnd = ((last?.address ?? disassemblyStart) + (last?.length ?? 1)) & 0xFFFF;
-  disassembly.replaceChildren(...rows);
-  if (resetScroll) disassembly.scrollTop = 0;
+  const top = document.createElement("div"); top.className = "virtual-spacer";
+  top.style.height = `${firstAddress * DISASSEMBLY_ROW_HEIGHT}px`;
+  const bottom = document.createElement("div"); bottom.className = "virtual-spacer";
+  bottom.style.height = `${(0x10000 - firstAddress - rowCount) * DISASSEMBLY_ROW_HEIGHT}px`;
+  disassembly.replaceChildren(top, ...rows, bottom);
+  if (resetScroll) disassembly.scrollTop = targetAddress * DISASSEMBLY_ROW_HEIGHT;
 }
 
 function render() {
@@ -142,9 +170,7 @@ function render() {
 
   status.textContent = `${state.message} · ${state.running ? "Running" : "Paused"}`;
   pcLabel.textContent = `PC ${hex(state.pc)}`;
-  const pcInView = disassemblyEnd !== null && (disassemblyStart <= disassemblyEnd
-    ? state.pc >= disassemblyStart && state.pc < disassemblyEnd
-    : state.pc >= disassemblyStart || state.pc < disassemblyEnd);
+  const pcInView = state.pc >= disassemblyStart && state.pc < disassemblyStart + VIRTUAL_ROWS;
   if (disassemblyStart === null || (followPC && !pcInView)) {
     renderDisassembly(state.pc, state.pc, true);
   } else {
@@ -232,7 +258,9 @@ document.querySelector("#breakpoint-form").addEventListener("submit", event => {
 });
 document.querySelector("#memory-form").addEventListener("submit", event => {
   event.preventDefault();
-  renderMemory(parseHexAddress(memoryAddressField.value));
+  const address = parseHexAddress(memoryAddressField.value);
+  if (address === null) { status.textContent = "Enter a hexadecimal address from 0000 to FFFF."; return; }
+  memoryRenderStart = -1; renderMemory(address, true);
   memoryRendered = true;
 });
 document.querySelector("#disassembly-form").addEventListener("submit", event => {
@@ -240,19 +268,40 @@ document.querySelector("#disassembly-form").addEventListener("submit", event => 
   const address = parseHexAddress(disassemblyAddressField.value);
   if (address === null) { status.textContent = "Enter a hexadecimal address from 0000 to FFFF."; return; }
   followPC = false; document.querySelector("#follow-pc").classList.remove("active");
-  renderDisassembly(address, Number(bridge()?.getState().pc) & 0xFFFF, true);
+  disassemblyRenderStart = -1; renderDisassembly(address, Number(bridge()?.getState().pc) & 0xFFFF, true);
 });
 document.querySelector("#disassembly-prev").addEventListener("click", () => {
   followPC = false; document.querySelector("#follow-pc").classList.remove("active");
-  renderDisassembly((disassemblyStart - 0x100) & 0xFFFF, Number(bridge()?.getState().pc) & 0xFFFF, true);
+  disassemblyRenderStart = -1; renderDisassembly(Math.max(0, disassemblyStart - 0x100), Number(bridge()?.getState().pc) & 0xFFFF, true);
 });
 document.querySelector("#disassembly-next").addEventListener("click", () => {
   followPC = false; document.querySelector("#follow-pc").classList.remove("active");
-  renderDisassembly((disassemblyStart + 0x100) & 0xFFFF, Number(bridge()?.getState().pc) & 0xFFFF, true);
+  disassemblyRenderStart = -1; renderDisassembly(Math.min(0xFFFF, disassemblyStart + 0x100), Number(bridge()?.getState().pc) & 0xFFFF, true);
 });
 document.querySelector("#follow-pc").addEventListener("click", () => {
   followPC = true; document.querySelector("#follow-pc").classList.add("active");
-  const pc = Number(bridge()?.getState().pc) & 0xFFFF; renderDisassembly(pc, pc, true);
+  const pc = Number(bridge()?.getState().pc) & 0xFFFF; disassemblyRenderStart = -1; renderDisassembly(pc, pc, true);
+});
+const stopFollowingPC = () => {
+  if (!followPC) return;
+  followPC = false;
+  document.querySelector("#follow-pc").classList.remove("active");
+};
+disassembly.addEventListener("wheel", stopFollowingPC, { passive: true });
+disassembly.addEventListener("pointerdown", stopFollowingPC);
+disassembly.addEventListener("keydown", event => {
+  if (["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End", " "].includes(event.key)) stopFollowingPC();
+});
+
+disassembly.addEventListener("scroll", () => {
+  if (disassemblyScrollQueued) return;
+  disassemblyScrollQueued = true;
+  requestAnimationFrame(() => { disassemblyScrollQueued = false; renderDisassembly(disassemblyStart ?? 0, Number(bridge()?.getState().pc) & 0xFFFF); });
+});
+memoryGrid.addEventListener("scroll", () => {
+  if (memoryScrollQueued) return;
+  memoryScrollQueued = true;
+  requestAnimationFrame(() => { memoryScrollQueued = false; renderMemory(); });
 });
 document.querySelector("#memory-breakpoint-form").addEventListener("submit", event => {
   event.preventDefault();
