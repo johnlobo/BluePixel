@@ -47,7 +47,10 @@ input:focus, select:focus { outline: 1px solid #6d97da; }
 .memory-breakpoint-form select { width: 68px; padding: 4px 2px; }
 .condition-help, .memory-help { margin: 5px 0 0; color: #666; font-size: 10px; }
 .disassembly { height: min(43vh, 380px); min-height: 260px; overflow: auto; overflow-anchor: none; border: 1px solid #ddd; background: #fff; }
-.instruction { display: flex; height: 16px; align-items: center; gap: 5px; min-width: max-content; padding: 0 5px; font: 11px/16px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.instruction { display: flex; height: 16px; align-items: center; gap: 7px; min-width: max-content; padding: 0 5px; font: 11px/16px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.instruction-address { width: 42px; color: #555 !important; }
+.instruction-bytes { min-width: 92px; color: #237328 !important; }
+.instruction-asm { color: #111; }
 .virtual-spacer { width: 1px; min-height: 0; padding: 0; margin: 0; }
 .instruction.current { background: #9ba9c8; color: #fff; }
 .instruction.current code { color: #fff; }

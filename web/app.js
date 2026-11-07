@@ -468,6 +468,16 @@ function readDebugString(address, size = 160) {
   }
 }
 
+function readDebugBytes(address, count) {
+  const size = Math.max(1, Math.min(Number(count) || 1, 16));
+  const ptr = core._malloc(size);
+  if (!ptr) return [];
+  try {
+    core._bp_debug_read_memory(address & 0xFFFF, ptr, size);
+    return Array.from(core.HEAPU8.subarray(ptr, ptr + size));
+  } finally { core._free(ptr); }
+}
+
 function readDebugCString(ptr, maxSize = 256) {
   if (!ptr) return "";
   let end = ptr;
@@ -528,7 +538,7 @@ function getDebuggerInstructions(start, count = 64, byByte = false) {
   for (let i = 0; i < Math.max(1, Math.min(Number(count) || 64, 256)); i++) {
     const text = readDebugString(address);
     const length = Math.max(1, core._bp_debug_instruction_length(address));
-    instructions.push({ address, text, length, breakpoint: Boolean(core._bp_debug_has_code_bp(address)) });
+    instructions.push({ address, text, length, bytes: readDebugBytes(address, length), breakpoint: Boolean(core._bp_debug_has_code_bp(address)) });
     address = (address + (byByte ? 1 : length)) & 0xFFFF;
   }
   return instructions;

@@ -140,6 +140,7 @@ function renderDisassembly(start, pc, resetScroll = false) {
   const instructions = api.getInstructions(firstAddress, rowCount, true);
   const rows = instructions.map(instruction => {
     const row = document.createElement("div");
+    row.dataset.address = String(instruction.address);
     row.className = `instruction${instruction.address === pc ? " current" : ""}`;
     const toggle = document.createElement("button");
     toggle.type = "button"; toggle.className = "bp-toggle";
@@ -147,8 +148,11 @@ function renderDisassembly(start, pc, resetScroll = false) {
     toggle.title = `${instruction.breakpoint ? "Remove" : "Add"} breakpoint at ${hex(instruction.address)}`;
     toggle.setAttribute("aria-label", toggle.title);
     toggle.addEventListener("click", () => { api.toggleBreakpoint(instruction.address); disassemblyRenderStart = -1; renderDisassembly(disassemblyStart, pc); });
-    const text = document.createElement("code"); text.textContent = `${hex(instruction.address)}  ${instruction.text}`;
-    row.append(toggle, text); return row;
+    const address = document.createElement("code"); address.className = "instruction-address"; address.textContent = hex(instruction.address);
+    const bytes = document.createElement("code"); bytes.className = "instruction-bytes";
+    bytes.textContent = instruction.bytes.map(value => value.toString(16).toUpperCase().padStart(2, "0")).join(" ");
+    const text = document.createElement("code"); text.className = "instruction-asm"; text.textContent = instruction.text;
+    row.append(toggle, address, bytes, text); return row;
   });
   const top = document.createElement("div"); top.className = "virtual-spacer";
   top.style.height = `${firstAddress * DISASSEMBLY_ROW_HEIGHT}px`;
@@ -174,7 +178,7 @@ function render() {
   if (disassemblyStart === null || (followPC && !pcInView)) {
     renderDisassembly(state.pc, state.pc, true);
   } else {
-    for (const row of disassembly.children) row.classList.toggle("current", Number.parseInt(row.children[1]?.textContent.slice(1, 5), 16) === state.pc);
+    for (const row of disassembly.children) if (row.dataset.address) row.classList.toggle("current", Number(row.dataset.address) === state.pc);
   }
   disassembly.dataset.pc = String(state.pc);
   const items = Object.entries(state.registers);
