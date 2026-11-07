@@ -6,7 +6,7 @@ Input lines are limited to 1 MiB. Oversized lines receive a JSON-RPC invalid-req
 
 ## Probar en Linux
 
-En Ubuntu 24.04 instala `build-essential` (gcc and libc headers), `zlib1g-dev` (including static `libz.a`) and `python3`. No cmake, Node.js or Emscripten is needed. Configure `BLUEPIXEL_ROM_DIR` to a directory with `roms.json` and the external ROM images; configure `BLUEPIXEL_FIXTURE_DIR` to the supplied `nave` fixture directory.
+En Ubuntu 24.04 instala `build-essential` (gcc and libc headers), `zlib1g-dev` (including static `libz.a`) and `python3`. No cmake, Node.js or Emscripten is needed. Configure `BLUEPIXEL_ROM_DIR` to a directory with `roms.json` and the external ROM images; the `nave` fixture is in `Tests/fixtures/nave/` and is used by default; set `BLUEPIXEL_FIXTURE_DIR` only to test another copy.
 
 ```sh
 LDFLAGS="-static" tools/build-headless.sh
@@ -14,7 +14,7 @@ python3 Tests/headless/test_api.py
 python3 Tests/headless/test_acceptance_nave.py
 ```
 
-`build-headless.sh` reads `CC` (default `cc`), `CFLAGS` (default `-O2`) and `LDFLAGS` (empty by default). The executable accepts `--rom-dir PATH`; otherwise it checks `BLUEPIXEL_ROM_DIR`, `roms/` beside the executable, then `~/.config/bluepixel/roms`. The tests read `BLUEPIXEL_ROM_DIR` and `BLUEPIXEL_FIXTURE_DIR` and do not contain fixed local paths.
+`build-headless.sh` reads `CC` (default `cc`), `CFLAGS` (default `-O2`) and `LDFLAGS` (empty by default). The executable accepts `--rom-dir PATH`; otherwise it checks `BLUEPIXEL_ROM_DIR`, `roms/` beside the executable, then `~/.config/bluepixel/roms`. The tests read `BLUEPIXEL_ROM_DIR` (required; ROMs are never in the repository) and optionally `BLUEPIXEL_FIXTURE_DIR` (default `Tests/fixtures/nave/`), and do not contain fixed local paths.
 
 Example:
 

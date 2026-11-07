@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.dont_write_bytecode = True
-fixture_dir = Path(os.environ["BLUEPIXEL_FIXTURE_DIR"])
+fixture_dir = Path(os.environ.get("BLUEPIXEL_FIXTURE_DIR") or Path(__file__).resolve().parents[1] / "fixtures" / "nave")
 if not os.environ.get("BLUEPIXEL_ROM_DIR"):
     raise SystemExit("BLUEPIXEL_ROM_DIR must point to the external ROM directory")
 for line in (fixture_dir / "SHA256SUMS").read_text().splitlines():

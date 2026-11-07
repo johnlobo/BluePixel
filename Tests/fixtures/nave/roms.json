@@ -1,0 +1,35 @@
+{
+  "format": 1,
+  "note": "Amstrad firmware, supplied by the user; never committed or redistributed. Roles map to files; sha256 pins the exact image.",
+  "machines": {
+    "cpc6128": {
+      "os": {
+        "file": "os6128.rom",
+        "size": 16384,
+        "sha256": "ce133ea170940147f6c73d6c9f9e7a05be81fc8ff9aae8386011c47e593852bf"
+      },
+      "basic": {
+        "file": "basic6128.rom",
+        "size": 16384,
+        "sha256": "58503070d553d7152a2dbce40976418281a8bf1f4a5a7ede75269f2e39275977"
+      },
+      "amsdos": {
+        "file": "amsdos.rom",
+        "size": 16384,
+        "sha256": "ea65e0fb44ee93ede4b6c507509b7e5ddf497fb7155023bea91ef229469fa04d"
+      }
+    },
+    "cpc464": {
+      "os": {
+        "file": "os464.rom",
+        "size": 16384,
+        "sha256": "edca8a0beddc281f2c72d74d783356fa670833cbdedda167c544264f1876c85d"
+      },
+      "basic": {
+        "file": "basic464.rom",
+        "size": 16384,
+        "sha256": "4b650a78149b1c679224621473594c0e15b97a0113bbe73c0c8d51ef14bfb77e"
+      }
+    }
+  }
+}
