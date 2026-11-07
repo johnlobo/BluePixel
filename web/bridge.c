@@ -160,6 +160,12 @@ EMSCRIPTEN_KEEPALIVE void bp_debug_tstates(char *out, int size) {
     out[0] = 0;
     if (machine) snprintf(out, (size_t)size, "%llu", (unsigned long long)machine->t_counter);
 }
+EMSCRIPTEN_KEEPALIVE void bp_debug_mark_data(unsigned int start, unsigned int end) {
+    if (machine) dbg_area_add(machine, (uint16_t)start, (uint16_t)end, false);
+}
+EMSCRIPTEN_KEEPALIVE void bp_debug_clear_data(unsigned int address) {
+    if (machine) dbg_area_remove(machine, (uint16_t)address);
+}
 EMSCRIPTEN_KEEPALIVE unsigned int bp_debug_register(int id) {
     if (!machine) return 0;
     Z80 *z = &machine->z80;

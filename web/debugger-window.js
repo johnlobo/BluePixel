@@ -187,7 +187,8 @@ function renderDisassembly(start, pc, resetScroll = false) {
   const rows = instructions.map(instruction => {
     const row = document.createElement("div");
     row.dataset.address = String(instruction.address);
-    row.className = `instruction${instruction.address === pc ? " current" : ""}`;
+    const dataRow = /^(DB|DW)\b/i.test(instruction.text.trim());
+    row.className = `instruction ${dataRow ? "instruction-data" : "instruction-code"}${instruction.address === pc ? " current" : ""}`;
     const toggle = document.createElement("button");
     toggle.type = "button"; toggle.className = "bp-toggle";
     toggle.textContent = instruction.breakpoint ? "●" : "○";
@@ -336,6 +337,29 @@ document.querySelector("#disassembly-form").addEventListener("submit", event => 
   if (address === null) { status.textContent = "Enter a hexadecimal address from 0000 to FFFF."; return; }
   followPC = false; document.querySelector("#follow-pc").classList.remove("active");
   disassemblyRenderStart = -1; renderDisassembly(address, Number(bridge()?.getState().pc) & 0xFFFF, true);
+});
+document.querySelector("#data-range-form").addEventListener("submit", event => {
+  event.preventDefault();
+  const start = parseHexAddress(document.querySelector("#data-range-start").value);
+  const end = parseHexAddress(document.querySelector("#data-range-end").value);
+  if (start === null || end === null || start > end) {
+    status.textContent = "Enter a valid data range from 0000 to FFFF, with start ≤ end.";
+    return;
+  }
+  const api = bridge(); api?.markData(start, end);
+  document.querySelector("#data-range-start").value = "";
+  document.querySelector("#data-range-end").value = "";
+  status.textContent = `Marked ${hex(start)}–${hex(end)} as data.`;
+  const pc = Number(api?.getState().pc) & 0xFFFF;
+  disassemblyRenderStart = -1; renderDisassembly(disassemblyStart, pc);
+});
+document.querySelector("#clear-data").addEventListener("click", () => {
+  const address = parseHexAddress(document.querySelector("#disassembly-address").value);
+  if (address === null) return;
+  const api = bridge(); api?.clearData(address);
+  status.textContent = `Cleared data marking at ${hex(address)}.`;
+  const pc = Number(api?.getState().pc) & 0xFFFF;
+  disassemblyRenderStart = -1; renderDisassembly(disassemblyStart, pc);
 });
 document.querySelector("#disassembly-prev").addEventListener("click", () => {
   followPC = false; document.querySelector("#follow-pc").classList.remove("active");

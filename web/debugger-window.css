@@ -57,13 +57,24 @@ input:focus, select:focus { outline: 1px solid #6d97da; }
 .instruction-bytes { min-width: 92px; color: #237328 !important; }
 .instruction-symbol { min-width: 110px; color: #3869ae; }
 .instruction-asm { color: #111; }
+.instruction-code .instruction-asm { color: #2456a0; }
+.instruction-data .instruction-asm { color: #a45d00; }
+.instruction-data .instruction-bytes { color: #a45d00 !important; }
 .virtual-spacer { width: 1px; min-height: 0; padding: 0; margin: 0; }
 .instruction.current { background: #9ba9c8; color: #fff; }
 .instruction.current code { color: #fff; }
+.disassembly-meta { display: flex; align-items: center; gap: 8px; font: 10px system-ui, sans-serif; }
+.disassembly-meta #pc { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.legend-code { color: #2456a0 !important; }
+.legend-data { color: #a45d00 !important; }
 .bp-toggle { width: 14px; min-width: 14px; padding: 0; border: 0; background: transparent; color: #d44; font: 12px/1 ui-monospace, monospace; }
 .memory-panel h2 span { color: #666; font: 10px system-ui, sans-serif; }
 .memory-form { display: flex; align-items: center; gap: 5px; }
 .memory-form input { width: 78px; }
+.data-range-form { flex-wrap: wrap; }
+.data-range-form label { margin-right: 3px; }
+.data-range-form input { width: 68px; }
+.data-range-form button { padding: 3px 6px; font-size: 10px; }
 .memory-grid { max-height: 175px; overflow: auto; overflow-anchor: none; padding: 4px; border: 1px solid #ddd; background: #fff; }
 .memory-row { display: grid; height: 20px; grid-template-columns: 46px repeat(16, minmax(20px, 1fr)) 130px; gap: 2px; min-width: 600px; margin: 0; align-items: center; }
 .memory-row:last-child { margin-bottom: 0; }

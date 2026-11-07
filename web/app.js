@@ -606,6 +606,8 @@ window.bluePixelDebugger = {
     debuggerMessage = "T-state counter reset.";
     status.textContent = debuggerMessage;
   },
+  markData(start, end) { core._bp_debug_mark_data(Number(start) & 0xFFFF, Number(end) & 0xFFFF); },
+  clearData(address) { core._bp_debug_clear_data(Number(address) & 0xFFFF); },
   toggleBreakpoint: toggleCodeBreakpoint,
   addBreakpoint(address) { if (!core._bp_debug_has_code_bp(address)) toggleCodeBreakpoint(address); },
   addMemoryBreakpoint(start, end, write) {

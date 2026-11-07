@@ -27,7 +27,7 @@
     <div class="debugger-columns">
       <div class="left-column">
         <section class="panel disassembly-panel">
-          <h2>Disassembly <span id="pc"></span></h2>
+          <h2>Disassembly <span class="disassembly-meta"><span id="pc"></span><span class="legend-code">Instruction</span><span class="legend-data">Data</span></span></h2>
           <form id="disassembly-form" class="memory-form">
             <label for="disassembly-address">Address</label>
             <button id="disassembly-prev" type="button" aria-label="Previous page">◀</button>
@@ -35,6 +35,13 @@
             <button type="submit">Go</button>
             <button id="disassembly-next" type="button" aria-label="Next page">▶</button>
             <button id="follow-pc" class="active" type="button">Follow PC</button>
+          </form>
+          <form id="data-range-form" class="memory-form data-range-form">
+            <label for="data-range-start">Data range</label>
+            <input id="data-range-start" inputmode="text" maxlength="6" placeholder="Start" autocomplete="off">
+            <input id="data-range-end" inputmode="text" maxlength="6" placeholder="End" autocomplete="off">
+            <button type="submit">Mark DB</button>
+            <button id="clear-data" type="button">Clear at address</button>
           </form>
           <div id="disassembly" class="disassembly" tabindex="0" aria-label="Disassembly for the full 64 KB memory space"></div>
         </section>
