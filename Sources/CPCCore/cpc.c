@@ -4,7 +4,6 @@
 #include "cpc_keys.h"
 #include "debug.h"
 #include "replay.h"
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -351,10 +350,9 @@ static void ppi_write(CPC *c, int func, uint8_t v) {
 }
 
 /* ---------------- I/O decode ---------------- */
-int cpc_trace_io;
 void cpc_io_write(void *ctx, uint16_t port, uint8_t v) {
     CPC *c = ctx;
-    if (cpc_trace_io) fprintf(stderr, "OUT %04X,%02X  pc=%04X\n", port, v, c->z80.pc);
+    if (c->trace_io) c->trace_io(c->trace_io_ctx, port, v, c->z80.pc);
     if (c->dbg && c->dbg->io_bps) dbg_io_event(c, port, v, true);
     if (c->cfg.multiface && c->rom_multiface) {
         if (port == 0xFEE8 && !c->mf_active) { c->mf_active = true; cpc_update_mapping(c); }
@@ -655,17 +653,20 @@ static void advance(CPC *c, int nops) {
     for (int i = 0; i < nops; i++) {
         cpc_video_tick(c);
         audio_tick(c);
-        fdc_tick(c->fdc, 1);
-        tape_tick(c->tape, 1);
+        if (c->tape) tape_tick(c->tape, 1);
         rec_tick(c);
         c->cycles++;
     }
+    fdc_tick(c->fdc, nops);
     c->t_counter += nops;
 }
 
 int cpc_step(CPC *c) {
     if (c->player) replay_apply_due(c);
-    if (c->dbg) { c->z80.brk_enabled = c->dbg->break_instructions; if (dbg_check_code(c)) return 0; }
+    if (c->dbg) {
+        c->z80.brk_enabled = c->dbg->break_instructions;
+        if ((c->dbg->active || c->dbg->skip_once || c->dbg->temp_bp >= 0) && dbg_check_code(c)) return 0;
+    }
     if (c->dbg && c->dbg->hist_on) dbg_history_record(c);
     bool ret_op = false;          /* Step Out: is this a RET/RETcc/RETI/RETN? */
     if (c->dbg && c->dbg->step_out) {

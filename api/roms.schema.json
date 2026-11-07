@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bluepixel.invalid/api/roms.schema.json",
+  "title": "BluePixel ROM manifest",
+  "type": "object",
+  "required": ["format", "machines"],
+  "properties": {
+    "format": {"const": 1},
+    "machines": {
+      "type": "object",
+      "properties": {
+        "cpc6128": {"$ref": "#/$defs/romSet6128"},
+        "cpc464": {"$ref": "#/$defs/romSet464"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "rom": {
+      "type": "object",
+      "required": ["file", "size"],
+      "properties": {
+        "file": {"type": "string", "minLength": 1},
+        "size": {"const": 16384},
+        "sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"}
+      },
+      "additionalProperties": false
+    },
+    "romSet6128": {
+      "type": "object",
+      "required": ["os", "basic", "amsdos"],
+      "properties": {
+        "os": {"$ref": "#/$defs/rom"},
+        "basic": {"$ref": "#/$defs/rom"},
+        "amsdos": {"$ref": "#/$defs/rom"}
+      },
+      "additionalProperties": false
+    },
+    "romSet464": {
+      "type": "object",
+      "required": ["os", "basic"],
+      "properties": {
+        "os": {"$ref": "#/$defs/rom"},
+        "basic": {"$ref": "#/$defs/rom"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

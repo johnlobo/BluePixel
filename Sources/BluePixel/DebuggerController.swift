@@ -1,5 +1,6 @@
 import AppKit
 import CPCCore
+import CPCHost
 import UniformTypeIdentifiers
 
 func promptText(_ title: String, _ message: String, _ initial: String = "") -> String? {

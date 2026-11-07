@@ -1,5 +1,4 @@
 #include "state.h"
-#include <stdio.h>
 #include "fdc.h"
 #include "tape.h"
 #include "dsk.h"
@@ -8,7 +7,7 @@
 #include <zlib.h>
 
 #define STATE_MAGIC 0x53435043u        /* "CPCS" */
-#define STATE_VERSION 2u
+#define STATE_VERSION 3u
 
 struct CPCState {
     uint32_t magic, version, cpc_size, raw_size, zsize;
@@ -23,7 +22,7 @@ struct CPCState {
     X(cfg) X(model) X(hw_rgb) \
     X(ram) X(ram_size) X(rom_lower) X(rom_upper) X(rom_multiface) X(cartridge) X(cartridge_banks) X(rd_map) X(wr_map) \
     X(frame) X(frame_done) X(frame_ready) X(audio) X(audio_cap) X(audio_w) X(audio_r) \
-    X(fdc) X(tape) X(rec_active) X(rec_buf) X(rec_len) X(rec_cap) X(rec_phase) X(t_counter) X(dbg) X(recorder) X(stopped_recording) X(player) \
+    X(fdc) X(tape) X(rec_active) X(rec_buf) X(rec_len) X(rec_cap) X(rec_phase) X(t_counter) X(dbg) X(recorder) X(stopped_recording) X(player) X(trace_io) X(trace_io_ctx) \
     X(asic.pal_rgb) X(asic.spal_rgb)
 
 typedef struct {                       /* hardware configuration the state depends on */
@@ -116,7 +115,26 @@ CPCState *cpc_state_save(CPC *c) {
 
 uint64_t cpc_state_hash(CPC *c) {
     Sink s = {0}; s.hash_only = true; s.h = 1469598103934665603ULL;
-    write_image(c, &s); return s.h;
+    write_image(c, &s);
+    /* Mounted media affects future reads. It is intentionally external to CPCState, but hashes
+     * must identify it even before the first disk write. */
+    for (int i = 0; i < 4; i++) {
+        const CPCDisc *d = fdc_disc(c->fdc, i);
+        put_u32(&s, d ? 1u : 0u);
+        if (d) put_u32(&s, dsk_content_crc(d));
+    }
+    /* ROM bytes are external to CPCState, like the base disk image. Include the ROM set so two
+     * otherwise equal machines with different ROM contents cannot report the same state hash. */
+    for (int i = -1; i < 32; i++) {
+        const uint8_t *rom = i < 0 ? c->rom_lower : c->rom_upper[i];
+        put_u32(&s, rom ? 1u : 0u);
+        if (rom) put(&s, rom, 16384);
+    }
+    put_u32(&s, c->rom_multiface ? 1u : 0u);
+    if (c->rom_multiface) put(&s, c->rom_multiface, 16384);
+    put_u32(&s, (uint32_t)c->cartridge_banks);
+    if (c->cartridge && c->cartridge_banks > 0) put(&s, c->cartridge, (size_t)c->cartridge_banks * 16384);
+    return s.h;
 }
 
 void cpc_state_free(CPCState *s) { free(s); }

@@ -1,5 +1,6 @@
 import Foundation
 import CPCCore
+import CPCHost
 import Darwin
 
 /// Owns the CPC core, its thread, ROM set-up and media.

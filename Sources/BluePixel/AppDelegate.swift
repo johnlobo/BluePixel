@@ -1,5 +1,6 @@
 import AppKit
 import CPCCore
+import CPCHost
 import UniformTypeIdentifiers
 
 @main

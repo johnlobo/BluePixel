@@ -1,0 +1,28 @@
+name: Headless H1/H2
+on:
+  push:
+    branches: [main, h1-headless, h2-core]
+  pull_request:
+    branches: [main, h1-headless, h2-core]
+jobs:
+  linux-x86_64-static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install static zlib
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
+      - name: Build static Linux executable
+        run: LDFLAGS=-static tools/build-headless.sh
+      - name: Check executable version
+        run: ./build/bluepixel-headless --version
+      - name: Prepare disposable ROMs for API smoke
+        run: |
+          python3 Tests/headless/make_test_roms.py "$RUNNER_TEMP/bluepixel-test-roms"
+          echo "BLUEPIXEL_ROM_DIR=$RUNNER_TEMP/bluepixel-test-roms" >> "$GITHUB_ENV"
+      - name: Run headless API smoke on Linux
+        run: LDFLAGS=-static python3 Tests/headless/test_api.py
+      - name: Verify static Linux executable
+        run: |
+          file build/bluepixel-headless
+          output="$(ldd build/bluepixel-headless 2>&1 || true)"
+          case "$output" in *"not a dynamic executable"*) ;; *) echo "$output"; exit 1 ;; esac

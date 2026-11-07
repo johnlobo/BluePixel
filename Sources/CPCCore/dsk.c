@@ -1,5 +1,4 @@
 #include "dsk.h"
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <zlib.h>
@@ -134,14 +133,6 @@ done:
     return disc;
 }
 
-CPCDisc *dsk_load_file(const char *path) {
-    FILE *f = fopen(path, "rb"); if (!f) return NULL;
-    fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
-    uint8_t *b = malloc(n); if (fread(b, 1, n, f) != (size_t)n) { fclose(f); free(b); return NULL; }
-    fclose(f);
-    CPCDisc *d = dsk_load(b, n, path); free(b); return d;
-}
-
 uint8_t *dsk_serialize(const CPCDisc *d, size_t *out_size) {
     size_t cap = 0x100 + (size_t)DSK_MAX_TRACKS * 2 * (0x100 + 32 * 0x2000);
     uint8_t *o = calloc(1, cap); size_t pos = 0x100;
@@ -175,14 +166,6 @@ uint8_t *dsk_serialize(const CPCDisc *d, size_t *out_size) {
     if (!ext) { o[0x32] = max_track & 255; o[0x33] = max_track >> 8; }
     *out_size = pos;
     return o;
-}
-
-bool dsk_save_file(CPCDisc *d, const char *path) {
-    size_t n; uint8_t *b = dsk_serialize(d, &n);
-    FILE *f = fopen(path, "wb"); if (!f) { free(b); return false; }
-    bool ok = fwrite(b, 1, n, f) == n; fclose(f); free(b);
-    if (ok) { d->dirty = false; if (path != d->path) strncpy(d->path, path, sizeof d->path - 1); }
-    return ok;
 }
 
 void dsk_format(CPCDisc *d, DskFormat f, int tracks, int sides) {

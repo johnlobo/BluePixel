@@ -298,7 +298,7 @@ void fdc_write_data(FDC *f, uint8_t v) {
     }
 }
 
-void fdc_tick(FDC *f, int us) {
+static void fdc_tick_one(FDC *f, int us) {
     f->rot_us = (f->rot_us + us) % REV_US;
     for (int i = 0; i < 4; i++) if (f->seeking[i]) {
         if ((f->seek_timer[i] -= us) <= 0) {
@@ -326,6 +326,22 @@ void fdc_tick(FDC *f, int us) {
         }
     } else if (f->state == S_WRITE && !f->rqm) {
         if ((f->timer -= us) <= 0) f->rqm = true;
+    }
+}
+
+/* Advance long idle spans without repeating the controller's four seek checks and state
+ * dispatch for every CPU T-state. Once a command or seek is active, keep the original
+ * one-microsecond transitions so crossings and newly-started timers remain byte-for-byte equal. */
+void fdc_tick(FDC *f, int us) {
+    if (!f || us <= 0) return;
+    for (int drive = 0; drive < 4; drive++) if (f->seeking[drive]) goto active;
+    if (f->state == S_IDLE) { f->rot_us = (f->rot_us + us) % REV_US; return; }
+active:
+    while (us-- > 0) {
+        bool seeking = false;
+        for (int drive = 0; drive < 4; drive++) seeking |= f->seeking[drive];
+        if (f->state == S_IDLE && !seeking) { f->rot_us = (f->rot_us + us + 1) % REV_US; return; }
+        fdc_tick_one(f, 1);
     }
 }
 

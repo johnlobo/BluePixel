@@ -35,9 +35,7 @@ typedef enum { DSK_FORMAT_DATA, DSK_FORMAT_SYSTEM, DSK_FORMAT_IBM } DskFormat;
 
 CPCDisc *dsk_new(void);
 CPCDisc *dsk_load(const uint8_t *data, size_t size, const char *path);
-CPCDisc *dsk_load_file(const char *path);
 uint8_t *dsk_serialize(const CPCDisc *d, size_t *out_size);
-bool dsk_save_file(CPCDisc *d, const char *path);
 void dsk_free(CPCDisc *d);
 CPCDisc *dsk_clone(const CPCDisc *d);        /* deep copy (sector data included) */
 void dsk_format(CPCDisc *d, DskFormat f, int tracks, int sides);

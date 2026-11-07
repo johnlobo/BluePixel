@@ -1,4 +1,11 @@
 .build/
+build/
+roms/
+**/roms/
+*.rom
+*.ROM
+*.cpr
+*.CPR
 *.app
 .DS_Store
 tests/z80/*.com
