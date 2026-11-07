@@ -4,6 +4,7 @@
 #include "snapshot.h"
 #include "tape.h"
 #include "cpc_keys.h"
+#include "debug.h"
 #include <emscripten.h>
 #include <stdlib.h>
 
@@ -97,8 +98,16 @@ EMSCRIPTEN_KEEPALIVE uint8_t *bp_save_snapshot(size_t *size) {
     return cpc_snapshot_save(machine, 3, 0, true, size);
 }
 
-EMSCRIPTEN_KEEPALIVE void bp_run_frame(void) { if (machine) cpc_run_frame(machine); }
-EMSCRIPTEN_KEEPALIVE void bp_reset(void) { if (machine) cpc_reset(machine, true); }
+EMSCRIPTEN_KEEPALIVE int bp_run_frame(void) {
+    if (!machine) return 0;
+    cpc_run_frame(machine);
+    return cpc_dbg_break(machine) ? 1 : 0;
+}
+EMSCRIPTEN_KEEPALIVE void bp_reset(void) {
+    if (!machine) return;
+    cpc_reset(machine, true);
+    if (machine->dbg) { machine->dbg->hit = false; machine->dbg->skip_once = true; machine->dbg->temp_bp = -1; }
+}
 EMSCRIPTEN_KEEPALIVE void bp_set_monitor(int monitor) {
     if (!machine || monitor < CPC_MONITOR_COLOUR || monitor > CPC_MONITOR_GREY) return;
     CPCConfig cfg = machine->cfg;
@@ -116,6 +125,66 @@ EMSCRIPTEN_KEEPALIVE const uint32_t *bp_frame(void) {
 
 EMSCRIPTEN_KEEPALIVE int bp_read_audio(float *out, int frames) {
     return machine ? cpc_audio_read(machine, out, frames) : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE void bp_debug_attach(void) { if (machine) dbg_attach(machine); }
+EMSCRIPTEN_KEEPALIVE int bp_debug_attached(void) { return machine && machine->dbg != NULL; }
+EMSCRIPTEN_KEEPALIVE void bp_debug_resume(void) {
+    if (!machine) return;
+    Debugger *d = dbg_attach(machine);
+    d->hit = false; d->skip_once = true; d->temp_bp = -1; d->step_out = false;
+}
+EMSCRIPTEN_KEEPALIVE void bp_debug_pause(void) {
+    if (!machine || !machine->dbg) return;
+    machine->dbg->temp_bp = -1; machine->dbg->step_out = false;
+}
+EMSCRIPTEN_KEEPALIVE void bp_debug_step_into(void) { if (machine) dbg_step_into(machine); }
+EMSCRIPTEN_KEEPALIVE unsigned int bp_debug_register(int id) {
+    if (!machine) return 0;
+    Z80 *z = &machine->z80;
+    switch (id) {
+        case 0: return z->af.w; case 1: return z->bc.w; case 2: return z->de.w; case 3: return z->hl.w;
+        case 4: return z->ix.w; case 5: return z->iy.w; case 6: return z->sp.w; case 7: return z->pc;
+        case 8: return z->im; case 9: return (z->iff1 ? 1 : 0) | (z->iff2 ? 2 : 0) | (z->halted ? 4 : 0);
+        case 10: return (unsigned int)machine->t_counter;
+        default: return 0;
+    }
+}
+EMSCRIPTEN_KEEPALIVE int bp_debug_disassemble(unsigned int addr, char *out, int size) {
+    if (!machine || !out || size <= 0) return 0;
+    DbgView view; dbg_view_current(machine, &view);
+    return dbg_disasm(machine, &view, (uint16_t)addr, out, (size_t)size);
+}
+EMSCRIPTEN_KEEPALIVE int bp_debug_instruction_length(unsigned int addr) {
+    char out[160];
+    return bp_debug_disassemble(addr, out, sizeof out);
+}
+EMSCRIPTEN_KEEPALIVE int bp_debug_toggle_code_bp(unsigned int addr) {
+    if (!machine) return 0;
+    dbg_toggle_code_bp(machine, (uint16_t)addr);
+    return 1;
+}
+EMSCRIPTEN_KEEPALIVE int bp_debug_has_code_bp(unsigned int addr) {
+    if (!machine || !machine->dbg) return 0;
+    for (int i = 0; i < DBG_MAX_BP; i++) {
+        DbgBreakpoint *bp = &machine->dbg->bp[i];
+        if (bp->used && bp->enabled && bp->type == BP_CODE && bp->start == (uint16_t)addr) return 1;
+    }
+    return 0;
+}
+EMSCRIPTEN_KEEPALIVE int bp_debug_breakpoint_count(void) {
+    if (!machine || !machine->dbg) return 0;
+    int count = 0;
+    for (int i = 0; i < DBG_MAX_BP; i++) if (machine->dbg->bp[i].used && machine->dbg->bp[i].type == BP_CODE) count++;
+    return count;
+}
+EMSCRIPTEN_KEEPALIVE int bp_debug_breakpoint_address(int ordinal) {
+    if (!machine || !machine->dbg || ordinal < 0) return -1;
+    for (int i = 0, n = 0; i < DBG_MAX_BP; i++) {
+        DbgBreakpoint *bp = &machine->dbg->bp[i];
+        if (bp->used && bp->type == BP_CODE && n++ == ordinal) return bp->start;
+    }
+    return -1;
 }
 
 EMSCRIPTEN_KEEPALIVE const char *bp_disc_name(int drive) {

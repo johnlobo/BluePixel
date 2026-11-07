@@ -2,6 +2,11 @@ import createBluePixelCore from "./bluepixel.js";
 
 const canvas = document.querySelector("#screen");
 const screenWrap = document.querySelector(".screen-wrap");
+const debuggerPanel = document.querySelector("#debugger");
+const debuggerStatus = document.querySelector("#debugger-status");
+const debuggerRegisters = document.querySelector("#debugger-registers");
+const debuggerDisassembly = document.querySelector("#debugger-disassembly");
+const debuggerBreakpoints = document.querySelector("#debugger-breakpoints");
 const touchControls = document.querySelector("#touch-controls");
 const ctx = canvas.getContext("2d", { alpha: false });
 const image = ctx.createImageData(canvas.width, canvas.height);
@@ -131,6 +136,14 @@ function menuGroups() {
             : "Connect a standard gamepad, then press a button to use it.";
         }),
       ]),
+    ] },
+    { label: "Debug", items: [
+      menuItem(debuggerPanel.hidden ? "Open Debugger…" : "Hide Debugger", toggleDebugger),
+      menuItem(running ? "Pause" : "Continue", () => runButton.click()),
+      menuItem("Step Into", () => {
+        if (debuggerPanel.hidden) toggleDebugger();
+        document.querySelector("#debugger-step").click();
+      }),
     ] },
     { label: "Help", items: [
       menuItem("Controls", () => { status.textContent = "Keyboard: arrows move, Ctrl/Alt fire. Gamepad: D-pad or left stick, A/B fire. Touch: use the on-screen joystick."; }),
@@ -427,6 +440,143 @@ document.querySelector("#tape").addEventListener("change", async event => {
   }
 });
 
+let debuggerMessage = "Debugger attached.";
+
+function debugHex(value, digits = 4) {
+  return `#${Number(value).toString(16).toUpperCase().padStart(digits, "0")}`;
+}
+
+function readDebugString(address, size = 160) {
+  const ptr = core._malloc(size);
+  if (!ptr) return "<disassembly unavailable>";
+  try {
+    core.HEAPU8.fill(0, ptr, ptr + size);
+    const length = core._bp_debug_disassemble(address, ptr, size);
+    if (!length) return "<invalid instruction>";
+    let end = ptr;
+    while (end < ptr + size && core.HEAPU8[end] !== 0) end++;
+    return new TextDecoder().decode(core.HEAPU8.subarray(ptr, end));
+  } finally {
+    core._free(ptr);
+  }
+}
+
+function toggleCodeBreakpoint(address) {
+  core._bp_debug_toggle_code_bp(address);
+  debuggerMessage = core._bp_debug_has_code_bp(address)
+    ? `Breakpoint added at ${debugHex(address)}.`
+    : `Breakpoint removed from ${debugHex(address)}.`;
+  refreshDebugger();
+}
+
+function refreshDebugger() {
+  if (debuggerPanel.hidden || !core) return;
+  const registerNames = ["AF", "BC", "DE", "HL", "IX", "IY", "SP", "PC"];
+  const values = registerNames.map((name, index) => [name, core._bp_debug_register(index)]);
+  values.push(["IM", core._bp_debug_register(8)], ["IFF", core._bp_debug_register(9)], ["T", core._bp_debug_register(10)]);
+  debuggerRegisters.replaceChildren(...values.map(([name, value]) => {
+    const cell = document.createElement("div");
+    cell.className = "debugger-register";
+    const label = document.createElement("span"); label.textContent = name;
+    const output = document.createElement("code"); output.textContent = debugHex(value, name === "T" ? 8 : name === "IM" || name === "IFF" ? 2 : 4);
+    cell.append(label, output);
+    return cell;
+  }));
+
+  const pc = core._bp_debug_register(7) & 0xFFFF;
+  document.querySelector("#debugger-disassembly-pc").textContent = `PC ${debugHex(pc)}`;
+  const rows = [];
+  let address = pc;
+  for (let i = 0; i < 16; i++) {
+    const instructionAddress = address;
+    const instruction = readDebugString(instructionAddress);
+    const length = core._bp_debug_instruction_length(instructionAddress);
+    const row = document.createElement("div");
+    row.className = `debugger-instruction${instructionAddress === pc ? " current" : ""}`;
+    const breakpoint = document.createElement("button");
+    breakpoint.type = "button";
+    breakpoint.className = "debugger-bp-toggle";
+    breakpoint.textContent = core._bp_debug_has_code_bp(instructionAddress) ? "●" : "○";
+    breakpoint.title = `${core._bp_debug_has_code_bp(instructionAddress) ? "Remove" : "Add"} breakpoint at ${debugHex(instructionAddress)}`;
+    breakpoint.setAttribute("aria-label", breakpoint.title);
+    breakpoint.addEventListener("click", () => toggleCodeBreakpoint(instructionAddress));
+    const line = document.createElement("code");
+    line.textContent = `${debugHex(instructionAddress)}  ${instruction}`;
+    row.append(breakpoint, line);
+    rows.push(row);
+    address = (address + Math.max(1, length)) & 0xFFFF;
+  }
+  debuggerDisassembly.replaceChildren(...rows);
+
+  const breakpointRows = [];
+  const count = core._bp_debug_breakpoint_count();
+  for (let i = 0; i < count; i++) {
+    const address = core._bp_debug_breakpoint_address(i);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = `Remove ${debugHex(address)}`;
+    button.addEventListener("click", () => toggleCodeBreakpoint(address));
+    breakpointRows.push(button);
+  }
+  debuggerBreakpoints.replaceChildren(...breakpointRows);
+  const mode = running ? "Running" : "Paused";
+  debuggerStatus.textContent = `${debuggerMessage} · ${mode} · PC ${debugHex(pc)}`;
+}
+
+function toggleDebugger() {
+  const opening = debuggerPanel.hidden;
+  debuggerPanel.hidden = !opening;
+  if (opening) {
+    core._bp_debug_attach();
+    debuggerMessage = "Debugger ready.";
+    refreshDebugger();
+    debuggerPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
+document.querySelector("#debugger-close").addEventListener("click", toggleDebugger);
+document.querySelector("#debugger-resume").addEventListener("click", () => {
+  core._bp_debug_resume();
+  running = true;
+  runButton.textContent = "Pause";
+  clearHintAfterFrame = true;
+  debuggerMessage = "Continuing execution.";
+  if (audioContext?.state === "suspended") audioContext.resume();
+  refreshDebugger();
+});
+document.querySelector("#debugger-pause").addEventListener("click", () => {
+  core._bp_debug_pause();
+  running = false;
+  runButton.textContent = "Resume";
+  debuggerMessage = "Execution paused.";
+  drawFrame();
+  refreshDebugger();
+});
+document.querySelector("#debugger-step").addEventListener("click", () => {
+  core._bp_debug_attach();
+  core._bp_debug_pause();
+  running = false;
+  runButton.textContent = "Resume";
+  core._bp_debug_step_into();
+  debuggerMessage = "Executed one instruction.";
+  drawFrame();
+  refreshDebugger();
+});
+document.querySelector("#debugger-breakpoint-form").addEventListener("submit", event => {
+  event.preventDefault();
+  const field = document.querySelector("#debugger-breakpoint-address");
+  const raw = field.value.trim().replace(/^(#|0x)/i, "");
+  if (!/^[\da-f]{1,4}$/i.test(raw)) {
+    debuggerMessage = "Enter a hexadecimal address from 0000 to FFFF.";
+    refreshDebugger();
+    return;
+  }
+  core._bp_debug_attach();
+  toggleCodeBreakpoint(Number.parseInt(raw, 16));
+  field.value = "";
+});
+setInterval(refreshDebugger, 250);
+
 function setTapePlaying(playing) {
   core._bp_tape_play(playing ? 1 : 0);
   status.textContent = playing ? "Tape playback enabled. Use RUN\"\" or LOAD\"\" on the CPC." : "Tape stopped.";
@@ -469,11 +619,15 @@ function setEmulationSpeed(speed) {
 }
 
 runButton.addEventListener("click", async () => {
+  if (running) core._bp_debug_pause();
+  else if (core._bp_debug_attached()) core._bp_debug_resume();
   running = !running;
+  debuggerMessage = running ? "Emulation running." : "Execution paused.";
   runButton.textContent = running ? "Pause" : "Resume";
   status.textContent = running ? "Running" : "Paused";
   if (running) clearHintAfterFrame = true;
   if (running && audioContext?.state === "suspended") await audioContext.resume();
+  refreshDebugger();
   canvas.focus();
 });
 
@@ -484,6 +638,8 @@ resetButton.addEventListener("click", () => {
   clearHintAfterFrame = true;
   runButton.textContent = "Pause";
   status.textContent = "Machine restarted.";
+  debuggerMessage = "Machine reset.";
+  refreshDebugger();
   canvas.focus();
 });
 
@@ -814,8 +970,17 @@ function animate(time) {
     frameDebt = Math.min(frameDebt + elapsed * emulationSpeed, 100);
     const frames = Math.min(Math.floor(frameDebt / 20), 5);
     for (let i = 0; i < frames; i++) {
-      core._bp_run_frame();
+      const stoppedByDebugger = core._bp_run_frame();
       frameDebt -= 20;
+      if (stoppedByDebugger) {
+        running = false;
+        runButton.textContent = "Resume";
+        core._bp_debug_pause();
+        debuggerMessage = `Breakpoint at ${debugHex(core._bp_debug_register(7))}.`;
+        status.textContent = debuggerMessage;
+        refreshDebugger();
+        break;
+      }
     }
     if (frames > 0) {
       drawFrame();
