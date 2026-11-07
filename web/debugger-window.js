@@ -5,6 +5,7 @@ const breakpoints = document.querySelector("#breakpoints");
 const pcLabel = document.querySelector("#pc");
 const memoryGrid = document.querySelector("#memory-grid");
 const memoryAddressField = document.querySelector("#memory-address");
+const stack = document.querySelector("#stack");
 let memoryRendered = false;
 
 function bridge() {
@@ -125,6 +126,17 @@ function render() {
     return cell;
   }));
 
+  const sp = Number(state.registers.SP) & 0xFFFF;
+  const stackBytes = api.readMemory(sp, 64);
+  stack.replaceChildren(...Array.from({ length: 32 }, (_, index) => {
+    const address = (sp + index * 2) & 0xFFFF;
+    const value = stackBytes[index * 2] | (stackBytes[index * 2 + 1] << 8);
+    const row = document.createElement("div"); row.className = `stack-row${index === 0 ? " stack-top" : ""}`;
+    const addr = document.createElement("code"); addr.textContent = hex(address);
+    const word = document.createElement("code"); word.textContent = hex(value);
+    row.append(addr, word); return row;
+  }));
+
   disassembly.replaceChildren(...state.instructions.map(instruction => {
     const row = document.createElement("div");
     row.className = `instruction${instruction.address === state.pc ? " current" : ""}`;
@@ -146,7 +158,44 @@ function render() {
 document.querySelector("#continue").addEventListener("click", () => bridge()?.resume());
 document.querySelector("#pause").addEventListener("click", () => bridge()?.pause());
 document.querySelector("#step").addEventListener("click", () => bridge()?.stepInto());
+document.querySelector("#step-out").addEventListener("click", () => bridge()?.stepOut());
 document.querySelector("#close-window").addEventListener("click", () => window.close());
+const symbolInput = document.querySelector("#symbol-file");
+document.querySelector("#load-symbols").addEventListener("click", () => symbolInput.click());
+document.querySelector("#clear-symbols").addEventListener("click", () => {
+  bridge()?.clearSymbols(); document.querySelector("#symbol-status").textContent = "Symbols cleared";
+});
+symbolInput.addEventListener("change", async () => {
+  const file = symbolInput.files?.[0]; if (!file) return;
+  const api = bridge(); if (!api) return;
+  api.clearSymbols();
+  let loaded = 0;
+  const parseValue = token => {
+    let value = token;
+    if (value.startsWith("%")) return /^[01]+$/.test(value.slice(1)) ? parseInt(value.slice(1), 2) : null;
+    if (/^[#&$]/.test(value)) return /^[\da-f]+$/i.test(value.slice(1)) ? parseInt(value.slice(1), 16) : null;
+    if (/^0x[\da-f]+$/i.test(value)) return parseInt(value.slice(2), 16);
+    if (/^[\da-f]+h$/i.test(value)) return parseInt(value.slice(0, -1), 16);
+    if (/^\d+$/.test(value)) return parseInt(value, 10);
+    return null;
+  };
+  for (const rawLine of (await file.text()).split(/\r?\n/)) {
+    const line = rawLine.trim(); if (!line || /^[;*]/.test(line)) continue;
+    const tokens = line.split(/[\s=]+/).filter(Boolean);
+    if (tokens.length < 2) continue;
+    let name = "", address = null;
+    if (/^DEF$/i.test(tokens[0]) && tokens.length >= 3) { name = tokens[1]; address = parseValue(tokens[2]); }
+    else if (/^al$/i.test(tokens[0]) && tokens.length >= 3) { name = tokens[2].replace(/^\./, ""); address = parseValue(tokens[1]); }
+    else if (/^[\da-f]{8}$/i.test(tokens[0])) { address = parseInt(tokens[0], 16); name = tokens[1]; }
+    else {
+      name = tokens[0].replace(/:$/, "");
+      for (const token of tokens.slice(1)) { if (/^equ$/i.test(token) || /^bytes$/i.test(token)) continue; address = parseValue(token); if (address !== null) break; }
+    }
+    if (name && address !== null && address >= 0 && address <= 0xFFFF && !/^(l__|s__|\.__\.)/.test(name) && api.setSymbol(name, address)) loaded++;
+  }
+  document.querySelector("#symbol-status").textContent = `${loaded} symbols loaded`;
+  symbolInput.value = ""; render();
+});
 document.querySelector("#breakpoint-form").addEventListener("submit", event => {
   event.preventDefault();
   const input = document.querySelector("#breakpoint-address");

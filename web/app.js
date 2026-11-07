@@ -540,6 +540,19 @@ window.bluePixelDebugger = {
     core._bp_debug_attach(); core._bp_debug_pause(); running = false; runButton.textContent = "Resume";
     core._bp_debug_step_into(); debuggerMessage = "Executed one instruction."; drawFrame();
   },
+  stepOut() {
+    core._bp_debug_attach(); core._bp_debug_step_out(); running = true; runButton.textContent = "Pause";
+    debuggerMessage = "Running until the current routine returns."; status.textContent = debuggerMessage;
+    if (audioContext?.state === "suspended") audioContext.resume();
+  },
+  setSymbol(name, address) {
+    const bytes = new TextEncoder().encode(`${name}\0`);
+    const ptr = core._malloc(bytes.byteLength);
+    if (!ptr) return false;
+    try { core.HEAPU8.set(bytes, ptr); core._bp_debug_symbol_set(ptr, Number(address) | 0); return true; }
+    finally { core._free(ptr); }
+  },
+  clearSymbols() { core._bp_debug_symbol_clear(); },
   toggleBreakpoint: toggleCodeBreakpoint,
   addBreakpoint(address) { if (!core._bp_debug_has_code_bp(address)) toggleCodeBreakpoint(address); },
   addMemoryBreakpoint(start, end, write) {
@@ -593,7 +606,7 @@ function openDebuggerWindow() {
     return true;
   }
   const url = new URL("./debugger.html", import.meta.url).href;
-  debuggerWindow = window.open(url, "BluePixelDebugger", "popup=yes,width=1080,height=780,resizable=yes,scrollbars=yes");
+  debuggerWindow = window.open(url, "BluePixelDebugger", "popup=yes,width=1080,height=760,resizable=yes,scrollbars=yes");
   if (!debuggerWindow) {
     status.textContent = "The browser blocked the debugger window. Allow pop-ups for BluePixel, then press F7 again.";
     return false;

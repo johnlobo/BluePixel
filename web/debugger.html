@@ -3,66 +3,74 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#071226">
   <title>BluePixel Debugger</title>
   <link rel="stylesheet" href="debugger-window.css">
 </head>
 <body>
   <main class="debugger-shell">
     <header>
-      <div><h1>BluePixel Debugger</h1><p id="debugger-status">Connecting to the emulator…</p></div>
-      <button id="close-window" type="button">Close Window</button>
+      <h1>BluePixel Debugger</h1>
+      <p id="debugger-status">Connecting to the emulator…</p>
+      <button id="close-window" type="button">Close</button>
     </header>
     <nav class="toolbar" aria-label="Execution controls">
-      <button id="continue" type="button">Continue</button>
-      <button id="pause" type="button">Pause</button>
+      <button id="continue" type="button">▶ Continue</button>
+      <button id="pause" type="button">Ⅱ Pause</button>
       <button id="step" type="button">Step Into</button>
+      <button id="step-out" type="button">Step Out</button>
+      <button id="load-symbols" type="button">Load Symbols…</button>
+      <button id="clear-symbols" type="button">Clear Symbols</button>
+      <input id="symbol-file" type="file" accept=".sym,.noi,.map,.txt" hidden>
+      <span id="symbol-status"></span>
     </nav>
     <div class="debugger-columns">
-      <section class="panel">
-        <h2>Z80 Registers</h2>
-        <div id="registers" class="registers"></div>
-        <form id="breakpoint-form">
-          <label for="breakpoint-address">Add code breakpoint</label>
-          <div class="form-row">
-            <input id="breakpoint-address" inputmode="text" maxlength="6" placeholder="e.g. C000 or #C000" autocomplete="off">
-            <button type="submit">Add</button>
-          </div>
-        </form>
-        <h2>Breakpoints</h2>
-        <div id="breakpoints" class="breakpoints"></div>
-        <form id="memory-breakpoint-form" class="memory-breakpoint-form">
-          <label>Add memory breakpoint</label>
-          <div class="form-row">
-            <input id="memory-bp-start" inputmode="text" maxlength="6" placeholder="Start" autocomplete="off">
-            <input id="memory-bp-end" inputmode="text" maxlength="6" placeholder="End" autocomplete="off">
-            <select id="memory-bp-access" aria-label="Memory access type">
-              <option value="read">Read</option>
-              <option value="write">Write</option>
-            </select>
-            <button type="submit">Add</button>
-          </div>
-        </form>
-        <p class="condition-help">Conditions support registers (A, BC, PC), hex values (#FF), comparisons (=, &lt;&gt;, &lt;, &gt;) and peek(address). Pass count 0 stops on every match.</p>
-      </section>
-      <section class="panel">
-        <h2>Disassembly <span id="pc"></span></h2>
-        <div id="disassembly" class="disassembly"></div>
-      </section>
+      <div class="left-column">
+        <section class="panel disassembly-panel">
+          <h2>Disassembly <span id="pc"></span></h2>
+          <div id="disassembly" class="disassembly"></div>
+        </section>
+        <section class="panel memory-panel">
+          <h2>Memory <span>current map</span></h2>
+          <form id="memory-form" class="memory-form">
+            <label for="memory-address">Address</label>
+            <input id="memory-address" inputmode="text" maxlength="6" value="0000" autocomplete="off">
+            <button type="submit">Go / Refresh</button>
+          </form>
+          <div class="memory-grid" id="memory-grid" aria-label="Memory bytes"></div>
+          <p class="memory-help">Edit a byte and press Enter to write.</p>
+        </section>
+      </div>
+      <aside class="right-column">
+        <section class="panel">
+          <h2>Z80 Registers</h2>
+          <div id="registers" class="registers"></div>
+          <h2 class="subheading">Stack <span>from SP</span></h2>
+          <div id="stack" class="stack"></div>
+        </section>
+        <section class="panel breakpoint-panel">
+          <h2>Breakpoints</h2>
+          <form id="breakpoint-form" class="compact-form">
+            <label for="breakpoint-address">Code address</label>
+            <div class="form-row">
+              <input id="breakpoint-address" maxlength="6" placeholder="e.g. C000" autocomplete="off">
+              <button type="submit">Add</button>
+            </div>
+          </form>
+          <div id="breakpoints" class="breakpoints"></div>
+          <form id="memory-breakpoint-form" class="compact-form memory-breakpoint-form">
+            <label>Add memory breakpoint</label>
+            <div class="form-row">
+              <input id="memory-bp-start" maxlength="6" placeholder="Start" autocomplete="off">
+              <input id="memory-bp-end" maxlength="6" placeholder="End" autocomplete="off">
+              <select id="memory-bp-access" aria-label="Memory access type"><option value="read">Read</option><option value="write">Write</option></select>
+              <button type="submit">Add</button>
+            </div>
+          </form>
+          <p class="condition-help">Conditions: registers, #hex, comparisons and peek(address). Pass count 0 stops every time.</p>
+        </section>
+      </aside>
     </div>
-    <section class="panel memory-panel">
-      <h2>Memory <span>current CPU memory map</span></h2>
-      <form id="memory-form" class="memory-form">
-        <label for="memory-address">Start address</label>
-        <div class="form-row">
-          <input id="memory-address" inputmode="text" maxlength="6" value="0000" autocomplete="off">
-          <button type="submit">Go / Refresh</button>
-        </div>
-      </form>
-      <div class="memory-grid" id="memory-grid" aria-label="Memory bytes"></div>
-      <p class="memory-help">Click a byte, enter two hexadecimal digits, then press Enter or leave the field to write it to the active memory map.</p>
-    </section>
-    <footer>Click the circle beside an instruction to toggle its code breakpoint.</footer>
+    <footer>Click ○ beside an instruction to toggle its breakpoint.</footer>
   </main>
   <script type="module" src="debugger-window.js"></script>
 </body>
