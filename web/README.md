@@ -1,8 +1,8 @@
 # BluePixel Web
 
-The browser build reuses the portable C emulator core through WebAssembly. It currently supports a CPC 6128, bundled OS/BASIC/AMSDOS ROMs, DSK images in drives A and B, CDT/TZX/VOC/WAV tape playback, SNA snapshot loading and saving, keyboard and gamepad input, audio, and downloading disk images from both drives.
+The browser build reuses the portable C emulator core through WebAssembly. It currently supports a CPC 6128, DSK images in drives A and B, CDT/TZX/VOC/WAV tape playback, SNA snapshot loading and saving, keyboard and gamepad input, audio, and downloading disk images from both drives. Firmware is not bundled; select OS and BASIC ROM files from the local machine before starting. AMSDOS is optional.
 
-The `web/roms/` folder contains the default CPC 6128 firmware and the alternatives offered in the in-screen menu. They load automatically; ROMs can be changed from the in-screen menu while the emulator is running.
+ROM and media bytes stay in the browser on the user's device. No ROM images are stored in this repository or sent to the web server.
 
 ## Ejecutar una copia local
 
@@ -24,7 +24,7 @@ tools/build-web.sh
 
 ## Controls
 
-- The CPC 6128 OS, BASIC and AMSDOS ROMs load from `web/roms/` on startup. Change each ROM from the in-screen menu at any time.
+- Select licensed OS and BASIC ROM images in the ROM section of the page; AMSDOS is optional. The browser starts the CPC after the required ROMs are loaded.
 - Insert a DSK image into Drive A or Drive B, or load/save the CPC state as an SNA snapshot from the in-screen File menu. Save disk images separately from each drive menu.
 - Load CDT/TZX, VOC or WAV cassette files from **File → Tape**. Play, stop, rewind or remove the tape there; type `RUN""` or `LOAD""` on the CPC to load a program.
 - Save a PNG of the CPC display with **File → Save Screenshot…**. Use **Settings → Machine → Full Screen** to enlarge the screen while preserving its 4:3 aspect ratio.
@@ -40,4 +40,4 @@ The web UI is intentionally separate from the macOS AppKit frontend. Session rec
 
 The repository includes a GitHub Pages workflow at `.github/workflows/deploy-pages.yml`. It deploys the precompiled contents of `web/` on every push to `main`; it can also be run manually from the Actions tab. Emscripten is not needed for deployment.
 
-GitHub Pages sites are publicly accessible, including sites built from private repositories when the account plan permits it. This site bundle includes `web/roms/`, so those ROM files will also be publicly downloadable after deployment.
+GitHub Pages serves the static files in `web/`. Firmware files are not part of that bundle; users load their own ROM images locally.

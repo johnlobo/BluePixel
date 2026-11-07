@@ -1,9 +1,9 @@
-name: Headless H1
+name: Headless H1/H2
 on:
   push:
-    branches: [main, h1-headless]
+    branches: [main, h1-headless, h2-core]
   pull_request:
-    branches: [main, h1-headless]
+    branches: [main, h1-headless, h2-core]
 jobs:
   linux-x86_64-static:
     runs-on: ubuntu-latest
