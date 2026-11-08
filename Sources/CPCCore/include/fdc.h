@@ -8,9 +8,9 @@ typedef struct CPC CPC;
 typedef struct FDC FDC;
 
 FDC *fdc_create(CPC *cpc);
-/* Machine-state snapshot of the controller (for savestates / replay). Pointers into discs are stored as indices. */
-uint8_t *fdc_state_save(const FDC *f, size_t *size);          /* malloc'd; caller frees */
-bool fdc_state_restore(FDC *f, const uint8_t *data, size_t size);
+/* Canonical state of the controller (savestates / replay / hash; see ser.h). Pointers into discs are stored as indices. */
+struct Ser;
+void fdc_state_visit(struct Ser *s, FDC *f);
 void fdc_destroy(FDC *f);
 void fdc_reset(FDC *f);
 uint8_t fdc_read_status(FDC *f);

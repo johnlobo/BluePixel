@@ -157,9 +157,20 @@ def cold_run(fixture_dir, image_path=None):
     return final_hash, total_frames, dict(client.method_time)
 
 
+# Reference state hash at the end of the acceptance script: FNV-1a 64 of the canonical state stream
+# (state format 1) plus disc CRCs and ROM bytes, so it holds only for the ROM set pinned in roms.json.
+# Format H1 (C struct image, retired) gave a8750fbe248c354e for the same run. Override with
+# BLUEPIXEL_EXPECT_HASH (empty string: do not check) when testing another fixture or ROM set.
+REFERENCE_HASH = "be44e742783fb94c"
+
+
 def main():
     fixture_dir = Path(os.environ.get("BLUEPIXEL_FIXTURE_DIR") or Path(__file__).resolve().parents[1] / "fixtures" / "nave")
     rom_dir = Path(os.environ["BLUEPIXEL_ROM_DIR"])
+    # Build first, like test_api.py, so the hash is never checked against a stale binary (CC/CFLAGS/LDFLAGS
+    # pass through). BLUEPIXEL_NO_BUILD=1 tests an existing binary as it is.
+    if os.environ.get("BLUEPIXEL_NO_BUILD") != "1":
+        subprocess.run([str(ROOT / "tools" / "build-headless.sh")], check=True, cwd=ROOT)
     require(BINARY.exists(), "build/bluepixel-headless is missing; run tools/build-headless.sh first")
     expected = {}
     for line in (fixture_dir / "SHA256SUMS").read_text().splitlines():
@@ -176,9 +187,11 @@ def main():
         second, frames2, times2 = cold_run(fixture_dir)
     elapsed = time.perf_counter() - start
     require(first == second, f"cold-start hash differs: {first} != {second}")
+    want = os.environ.get("BLUEPIXEL_EXPECT_HASH", REFERENCE_HASH)
+    require(not want or first == want, f"final state hash {first} != reference {want} (state format 1)")
     fps = (frames1 + frames2) / elapsed
     realtime = fps / 50.08
-    print(f"PASS nave: hash={first}, cold_hash_equal=yes, restore_replay=yes")
+    print(f"PASS nave: hash={first} (reference {'checked' if want else 'not checked'}), cold_hash_equal=yes, restore_replay=yes")
     print(f"frames={frames1 + frames2}, wall_s={elapsed:.3f}, virtual_fps={fps:.0f}, realtime={realtime:.1f}x")
     frame_calls = times1.get("run.frames", 0.0) + times2.get("run.frames", 0.0)
     other_calls = elapsed - frame_calls

@@ -9,10 +9,11 @@ typedef struct CPCTape CPCTape;
 CPCTape *tape_load(const uint8_t *data, size_t size, const char *name);   /* CDT/TZX/VOC/WAV/CSV */
 void tape_free(CPCTape *t);
 CPCTape *tape_clone(const CPCTape *t);       /* same media, playback at the start */
-/* Playback position snapshot (the loaded media is not part of it). */
-size_t tape_state_size(void);
-void tape_state_save(const CPCTape *t, void *out);
-bool tape_state_restore(CPCTape *t, const void *in);
+/* Canonical playback position state (see ser.h); the loaded media is not part of it.
+ * Returns false when restoring into a tape other than the one the state was taken with; t may be NULL
+ * when reading (the section is parsed and discarded). */
+struct Ser;
+bool tape_state_visit(struct Ser *s, CPCTape *t);
 void tape_set_motor(CPCTape *t, bool on);
 void tape_play(CPCTape *t, bool on);
 void tape_rewind(CPCTape *t);

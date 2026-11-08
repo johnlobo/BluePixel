@@ -49,7 +49,7 @@ bool cpc_snapshot_load(CPC *c, const uint8_t *d, size_t n) {
     z->sp.l = d[0x21]; z->sp.h = d[0x22]; z->pc = d[0x23] | (d[0x24] << 8); z->im = d[0x25];
     z->af2.l = d[0x26]; z->af2.h = d[0x27]; z->bc2.l = d[0x28]; z->bc2.h = d[0x29]; z->de2.l = d[0x2A]; z->de2.h = d[0x2B];
     z->hl2.l = d[0x2C]; z->hl2.h = d[0x2D]; z->halted = false; z->ei_delay = 0;
-    c->ga_pen = d[0x2E] & 0x1F;
+    c->ga_pen = (d[0x2E] & 0x10) ? 16 : (d[0x2E] & 0x0F);   /* as the gate array decodes it: 16 = border; never past ga_palette[16] */
     for (int i = 0; i < 17; i++) c->ga_palette[i] = d[0x2F + i] & 0x1F;
     c->ga_mode = d[0x40] & 3; c->lower_rom_en = !(d[0x40] & 4); c->upper_rom_en = !(d[0x40] & 8);
     c->ga_ram = d[0x41];

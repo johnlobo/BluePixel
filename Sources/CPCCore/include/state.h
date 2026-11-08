@@ -19,12 +19,14 @@ CPCState *cpc_state_save(CPC *c);                                       /* NULL 
 bool cpc_state_restore(CPC *c, const CPCState *s, unsigned *hazards);   /* false: unusable (different build/RAM size) */
 void cpc_state_free(CPCState *s);
 uint32_t cpc_crc32(const uint8_t *data, size_t size);                  /* for identifying media in recordings */
-uint64_t cpc_state_hash(CPC *c);                                        /* sync hash; also includes mounted disk contents and loaded ROM bytes */
+uint64_t cpc_state_hash(CPC *c);                                        /* FNV-1a 64 of the canonical stream, then mounted disc CRCs and loaded ROM bytes */
+uint8_t *cpc_state_canonical(CPC *c, size_t *size);                    /* uncompressed canonical stream (malloc'd); what the hash covers, minus media */
 uint64_t cpc_state_frames(const CPCState *s);                           /* c->frames when taken */
 uint64_t cpc_state_cycles(const CPCState *s);
 size_t cpc_state_size(const CPCState *s);                               /* bytes in memory (compressed) */
 
-/* Byte form for files: version- and build-specific (it embeds the CPC struct layout). */
+/* Byte form for files and handoff between instances: canonical, the same on every build and ABI
+ * (header + zlib-compressed canonical stream, see state.c). */
 const uint8_t *cpc_state_bytes(const CPCState *s, size_t *size);
 CPCState *cpc_state_from_bytes(const uint8_t *data, size_t size);       /* validates; copies */
 #endif

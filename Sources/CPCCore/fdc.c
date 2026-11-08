@@ -2,6 +2,7 @@
 #include "cpc.h"
 #include <stdlib.h>
 #include <string.h>
+#include "ser.h"
 
 #define REV_US 200000
 
@@ -283,7 +284,8 @@ void fdc_write_data(FDC *f, uint8_t v) {
                 if (i < t->nsectors) {
                     CPCSector *s = &t->sec[i];
                     s->c = f->fmt_ids[0]; s->h = f->fmt_ids[1]; s->r = f->fmt_ids[2]; s->n = f->fmt_ids[3];
-                    s->len = 128 << (s->n & 7); s->data = malloc(s->len); memset(s->data, f->fmt_filler, s->len);
+                    /* free first: a track restored mid-format from a savestate already has sector buffers */
+                    s->len = 128 << (s->n & 7); free(s->data); s->data = malloc(s->len); memset(s->data, f->fmt_filler, s->len);
                 }
                 f->rqm = false; f->timer = f->cpc->cfg.fast_disc ? 200 : 6000;
                 if (f->fmt_count >= f->fmt_sc) {
@@ -346,8 +348,8 @@ active:
 }
 
 /* ---------------- state snapshot ---------------- */
-/* Layout: FDC image (live pointers zeroed), then (unit, track index, sector index) for cur / curtrk,
- * (unit, track index) for fmt_track, then the sector buffer. Discs themselves are media, not state. */
+/* Discs themselves are media, not state. Pointers into them (cur, curtrk, fmt_track) are stored as
+ * (unit, track index, sector index); unit -1 means none. */
 typedef struct { int32_t unit, trk, sec; } FdcRef;
 
 static FdcRef ref_of(const FDC *f, const CPCTrack *t, const CPCSector *s) {
@@ -365,32 +367,78 @@ static CPCTrack *track_of(const FDC *f, FdcRef r) {
     if (r.unit < 0 || r.unit > 3 || !f->disc[r.unit] || r.trk < 0 || r.trk >= DSK_MAX_TRACKS * 2) return NULL;
     return &f->disc[r.unit]->trk[0][0] + r.trk;
 }
+static void ser_ref(Ser *s, FdcRef *r) { ser_i32(s, &r->unit); ser_i32(s, &r->trk); ser_i32(s, &r->sec); }
 
-uint8_t *fdc_state_save(const FDC *f, size_t *size) {
-    FDC img = *f;
-    img.cpc = NULL; memset(img.disc, 0, sizeof img.disc); img.buf = NULL; img.cur = NULL; img.curtrk = NULL; img.fmt_track = NULL;
-    FdcRef rc = ref_of(f, f->curtrk, f->cur), rf = ref_of(f, f->fmt_track, NULL);
-    size_t n = sizeof img + 2 * sizeof(FdcRef) + (f->buf ? f->buf_len : 0);
-    uint8_t *out = malloc(n), *p = out;
-    memcpy(p, &img, sizeof img); p += sizeof img;
-    memcpy(p, &rc, sizeof rc); p += sizeof rc; memcpy(p, &rf, sizeof rf); p += sizeof rf;
-    if (f->buf) memcpy(p, f->buf, f->buf_len);
-    *size = n; return out;
+/* What the controller code relies on: it indexes cmd/res/fmt_ids/buf by their positions and dereferences
+ * cur, curtrk, fmt_track and disc[unit] according to the state. A state that breaks any of these (it can come
+ * from an API client) is rejected, so restoring it cannot make a later byte transfer crash. */
+static bool fdc_consistent(const FDC *f, FdcRef rc, bool has_buf) {
+    if (f->state < S_IDLE || f->state > S_RESULT || f->unit < 0 || f->unit > 3 || f->head < 0 || f->head > 1) return false;
+    if (f->cmd_len < 0 || f->cmd_len > 9 || f->cmd_pos < 0 || f->cmd_pos > 9) return false;
+    if (f->res_len < 0 || f->res_len > 8 || f->res_pos < 0 || f->res_pos > 8) return false;
+    if (f->int_count < 0 || f->int_count > 4 || f->fmt_id_pos < 0 || f->fmt_id_pos > 3) return false;
+    /* fmt_count indexes fmt_track->sec[] (bounded above by nsectors, not below): a negative value would write
+     * into the neighbouring track inside the same CPCDisc, which no sanitizer sees. 1000 marks "all written". */
+    if ((f->fmt_count < 0 || f->fmt_count > 255) && f->fmt_count != 1000) return false;
+    /* Counters the tick adds to or subtracts from: the disc angle stays below one revolution, timers stay
+     * far from int overflow (real ones are at most a few revolutions; they go negative by one tick at most). */
+    if (f->rot_us < 0 || f->rot_us >= REV_US || f->timer < -10 * REV_US || f->timer > 10 * REV_US) return false;
+    for (int i = 0; i < 4; i++) if (f->seek_timer[i] < -10 * REV_US || f->seek_timer[i] > 10 * REV_US) return false;
+    if (f->state == S_CMD && f->cmd_pos >= f->cmd_len) return false;          /* the next byte goes to cmd[cmd_pos] */
+    if (f->state == S_RESULT && f->res_pos >= f->res_len) return false;
+    bool format = f->cmd[0] == (0x0D | 0x80);
+    bool sector = f->state == S_WAIT || f->state == S_READ || (f->state == S_WRITE && !format);
+    if (sector && (!f->cur || !f->curtrk || rc.unit != f->unit || !f->disc[f->unit])) return false;
+    if ((f->state == S_READ || (f->state == S_WRITE && !format)) && (!has_buf || f->buf_pos >= f->buf_len)) return false;
+    if (f->state == S_WRITE && format && (!f->fmt_track || !f->disc[f->unit])) return false;
+    return true;
 }
 
-bool fdc_state_restore(FDC *f, const uint8_t *data, size_t size) {
-    if (size < sizeof(FDC) + 2 * sizeof(FdcRef)) return false;
-    FDC img; memcpy(&img, data, sizeof img);
-    FdcRef rc, rf; memcpy(&rc, data + sizeof img, sizeof rc); memcpy(&rf, data + sizeof img + sizeof rc, sizeof rf);
-    const uint8_t *bufdata = data + sizeof img + 2 * sizeof(FdcRef);
-    if (img.buf_len < 0 || (size_t)img.buf_len > size - (sizeof img + 2 * sizeof(FdcRef))) { if (img.buf_len != 0) return false; }
-    CPC *cpc = f->cpc; CPCDisc *discs[4]; memcpy(discs, f->disc, sizeof discs);
-    free(f->buf);
-    *f = img;
-    f->cpc = cpc; memcpy(f->disc, discs, sizeof discs);
-    f->buf = NULL;
-    if (img.buf_len > 0 || size > sizeof img + 2 * sizeof(FdcRef)) { f->buf = calloc(1, img.buf_len ? img.buf_len : 1); memcpy(f->buf, bufdata, img.buf_len); }
-    f->curtrk = track_of(f, rc); f->cur = f->curtrk && rc.sec >= 0 && rc.sec < DSK_MAX_SECTORS ? &f->curtrk->sec[rc.sec] : NULL;
-    f->fmt_track = track_of(f, rf);
-    return true;
+static void fdc_fields(Ser *s, FDC *f) {
+    ser_int(s, &f->state);
+    ser_bytes(s, f->cmd, sizeof f->cmd); ser_int(s, &f->cmd_len); ser_int(s, &f->cmd_pos);
+    ser_bytes(s, f->res, sizeof f->res); ser_int(s, &f->res_len); ser_int(s, &f->res_pos);
+    ser_bytes(s, f->pcn, sizeof f->pcn);
+    ser_bytes(s, f->int_st0, sizeof f->int_st0); ser_bools(s, f->int_pending, 4); ser_ints(s, f->int_order, 4); ser_int(s, &f->int_count);
+    ser_ints(s, f->seek_timer, 4); ser_ints(s, f->seek_target, 4); ser_bools(s, f->seeking, 4);
+    ser_bool(s, &f->motor);
+    ser_int(s, &f->rot_us);
+    ser_int(s, &f->unit); ser_int(s, &f->head);
+    ser_int(s, &f->timer);
+    ser_bool(s, &f->rqm); ser_bool(s, &f->dio); ser_bool(s, &f->exec);
+    ser_int(s, &f->cur_r); ser_int(s, &f->eot); ser_int(s, &f->mt); ser_int(s, &f->sk); ser_int(s, &f->deleted_cmd);
+    ser_int(s, &f->phys_track); ser_int(s, &f->cmd_c); ser_int(s, &f->cmd_h); ser_int(s, &f->cmd_n);
+    ser_u8(s, &f->st0); ser_u8(s, &f->st1); ser_u8(s, &f->st2);
+    ser_int(s, &f->fmt_count); ser_int(s, &f->fmt_filler); ser_int(s, &f->fmt_gap); ser_int(s, &f->fmt_n); ser_int(s, &f->fmt_sc);
+    ser_bytes(s, f->fmt_ids, sizeof f->fmt_ids); ser_int(s, &f->fmt_id_pos);
+    ser_bool(s, &f->write_mode);
+    ser_ints(s, f->specify, 2);
+}
+
+void fdc_state_visit(Ser *s, FDC *f) {
+    ser_tag(s, "FDC0");
+    /* Reading (CHECK or READ) parses into a scratch copy so the invariants can be checked on the values the
+     * stream holds before anything is applied; READ commits the copy at the end. */
+    FDC tmp = *f; FDC *d = ser_reading(s) ? &tmp : f;
+    SerMode mode = s->mode;
+    if (ser_reading(s)) s->mode = SER_READ;                 /* the scratch copy may be written in CHECK too */
+    fdc_fields(s, d);
+    FdcRef rc = ref_of(f, f->curtrk, f->cur), rf = ref_of(f, f->fmt_track, NULL);
+    ser_ref(s, &rc); ser_ref(s, &rf);
+    s->mode = mode;
+    /* The sector buffer: present flag, length (the allocation is max(len, 1)), position, bytes. */
+    bool has = ser_flag(s, f->buf != NULL);
+    uint32_t n = ser_count(s, (uint32_t)f->buf_len, 1u << 20);
+    uint32_t pos = ser_count(s, (uint32_t)f->buf_pos, 1u << 20);
+    uint8_t *nb = NULL;
+    if (ser_storing(s) && has) { nb = calloc(1, n ? n : 1); if (!nb) { s->bad = true; return; } }
+    ser_bytes(s, ser_storing(s) ? nb : f->buf, has ? n : 0);
+    if (ser_reading(s) && !s->bad) {
+        d->buf_len = (int)n; d->buf_pos = (int)pos; d->buf = NULL;
+        d->curtrk = track_of(f, rc); d->cur = d->curtrk && rc.sec >= 0 && rc.sec < DSK_MAX_SECTORS ? &d->curtrk->sec[rc.sec] : NULL;
+        d->fmt_track = track_of(f, rf);
+        if (!fdc_consistent(d, rc, has)) s->bad = true;
+    }
+    if (ser_storing(s) && !s->bad) { free(f->buf); *f = tmp; f->buf = nb; }
+    else free(nb);
 }
