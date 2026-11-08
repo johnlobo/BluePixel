@@ -90,7 +90,7 @@ extension Emulator {
     func openRecording(url: URL) -> (rec: OpaquePointer?, error: String?) {
         guard let data = try? Data(contentsOf: url) else { return (nil, "The file cannot be read.") }
         let rec: OpaquePointer? = data.withUnsafeBytes { cpc_recording_deserialize($0.bindMemory(to: UInt8.self).baseAddress, data.count) }
-        guard let r = rec else { return (nil, "This is not a BluePixel session recording, or it was made by a different build of BluePixel.") }
+        guard let r = rec else { return (nil, "This is not a BluePixel session recording, or it uses an older format.") }
         return (r, nil)
     }
 

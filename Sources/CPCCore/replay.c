@@ -520,15 +520,16 @@ bool cpc_reverse_end(CPC *c, CPCReverseScan *s, bool keep, CPCReverseHit *hit) {
 /* ---------------- file format ---------------- */
 typedef struct { uint8_t *p; size_t n, cap; } Out;
 static void o_put(Out *o, const void *d, size_t n) { if (o->n + n > o->cap) { o->cap = (o->n + n) * 2; o->p = realloc(o->p, o->cap); } memcpy(o->p + o->n, d, n); o->n += n; }
-static void o_u32(Out *o, uint32_t v) { o_put(o, &v, 4); }
-static void o_u64(Out *o, uint64_t v) { o_put(o, &v, 8); }
+/* Integers are little endian whatever the host. With the canonical state inside, a recording loads in any build. */
+static void o_u32(Out *o, uint32_t v) { uint8_t b[4]; for (int i = 0; i < 4; i++) b[i] = (uint8_t)(v >> (8 * i)); o_put(o, b, 4); }
+static void o_u64(Out *o, uint64_t v) { uint8_t b[8]; for (int i = 0; i < 8; i++) b[i] = (uint8_t)(v >> (8 * i)); o_put(o, b, 8); }
 
 #define REC_MAGIC 0x52435043u        /* "CPCR" */
-#define REC_VERSION 3u
+#define REC_VERSION 4u               /* 4: canonical state, no build check (3 embedded sizeof(CPC)) */
 
 uint8_t *cpc_recording_serialize(const CPCRecording *r, size_t *size) {
     Out o = {0};
-    o_u32(&o, REC_MAGIC); o_u32(&o, REC_VERSION); o_u32(&o, (uint32_t)sizeof(CPC));
+    o_u32(&o, REC_MAGIC); o_u32(&o, REC_VERSION);
     o_u64(&o, r->start_frames); o_u64(&o, r->start_cycles); o_u64(&o, r->end_frames); o_u64(&o, r->end_cycles);
     uint32_t tl = (uint32_t)strlen(r->taint); o_u32(&o, tl); o_put(&o, r->taint, tl);
     uint32_t ml = r->meta ? (uint32_t)strlen(r->meta) : 0; o_u32(&o, ml); o_put(&o, r->meta, ml);
@@ -551,12 +552,12 @@ uint8_t *cpc_recording_serialize(const CPCRecording *r, size_t *size) {
 
 typedef struct { const uint8_t *p; size_t n, pos; bool bad; } In;
 static const uint8_t *i_take(In *i, size_t n) { if (i->bad || n > i->n - i->pos) { i->bad = true; return NULL; } const uint8_t *p = i->p + i->pos; i->pos += n; return p; }
-static uint32_t i_u32(In *i) { const uint8_t *p = i_take(i, 4); uint32_t v = 0; if (p) memcpy(&v, p, 4); return v; }
-static uint64_t i_u64(In *i) { const uint8_t *p = i_take(i, 8); uint64_t v = 0; if (p) memcpy(&v, p, 8); return v; }
+static uint32_t i_u32(In *i) { const uint8_t *p = i_take(i, 4); uint32_t v = 0; if (p) for (int k = 0; k < 4; k++) v |= (uint32_t)p[k] << (8 * k); return v; }
+static uint64_t i_u64(In *i) { const uint8_t *p = i_take(i, 8); uint64_t v = 0; if (p) for (int k = 0; k < 8; k++) v |= (uint64_t)p[k] << (8 * k); return v; }
 
 CPCRecording *cpc_recording_deserialize(const uint8_t *data, size_t size) {
     In in = {data, size, 0, false};
-    if (i_u32(&in) != REC_MAGIC || i_u32(&in) != REC_VERSION || i_u32(&in) != sizeof(CPC)) return NULL;
+    if (i_u32(&in) != REC_MAGIC || i_u32(&in) != REC_VERSION) return NULL;
     CPCRecording *r = calloc(1, sizeof *r);
     r->start_frames = i_u64(&in); r->start_cycles = i_u64(&in); r->end_frames = i_u64(&in); r->end_cycles = i_u64(&in);
     uint32_t tl = i_u32(&in); const uint8_t *tp = i_take(&in, tl);

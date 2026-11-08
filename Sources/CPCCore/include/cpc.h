@@ -102,7 +102,6 @@ struct CPC {
     uint8_t *rd_map[4], *wr_map[4];
     bool lower_rom_en, upper_rom_en;
     uint8_t upper_rom_sel, ram_config;
-    uint8_t dummy_rom[16384];
 
     CPCAsic asic;
     /* Gate array */
@@ -147,7 +146,6 @@ struct CPC {
 
     /* FDC + discs */
     FDC *fdc;
-    CPCDisc *disc[4];
     bool motor;
 
     /* tape */
@@ -167,6 +165,7 @@ struct CPC {
     struct CPCPlayer *player;
     void (*trace_io)(void *ctx, uint16_t port, uint8_t value, uint16_t pc); /* optional host instrumentation callback */
     void *trace_io_ctx;
+    struct CPCAutoType *autotype;   /* auto-type queue (autotype.c); its content is machine state, the pointer is not */
 };
 
 CPC *cpc_create(CPCModel model);
@@ -229,9 +228,10 @@ void asic_ga_palette(CPC *c, int pen, uint8_t hw);
 void asic_line(CPC *c);        /* once per scanline (hsync end) */
 
 void cpc_remove_cartridge(CPC *c);
-/* Auto-type queue snapshot (part of the machine state for savestates/replay). */
-uint8_t *cpc_autotype_state_save(CPC *c, size_t *size);
-bool cpc_autotype_state_restore(CPC *c, const uint8_t *data, size_t size);
+/* Auto-type queue: part of the canonical machine state (see ser.h). */
+struct Ser;
+void cpc_autotype_state_visit(struct Ser *s, CPC *c);
+void cpc_autotype_free(CPC *c);
 uint32_t cpc_pen_rgb(CPC *c, int pen);
 /* Debugger screen views (CPC_SCREEN_W x CPC_SCREEN_H):
  * raster: lines drawn so far this frame, the rest from the previous frame dimmed, beam marked;

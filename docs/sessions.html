@@ -138,7 +138,7 @@
 <ul>
   <li><strong>Escrituras en disco:</strong> si el juego guarda en el disco durante la grabación, la sesión lleva consigo las pistas originales y la reproducción (y cada salto) deja el disco como estaba en ese momento, así que puedes rebobinar a antes de guardar. Mientras reproduces, BluePixel <em>no escribe</em> en tu fichero <code>.dsk</code>; si tomas el control, el disco queda tal como esté en ese punto y se guardará como siempre.</li>
   <li><strong>Mismo disco:</strong> la sesión recuerda qué discos y ROMs usó. Si el disco insertado es el de la grabación (aunque se haya guardado después con los cambios del juego), se reconoce; si no, se avisa y la reproducción puede desviarse.</li>
-  <li><strong>Misma versión:</strong> una sesión solo sirve para la versión de BluePixel que la grabó. Si falla con «not a BluePixel session recording, or it was made by a different build», es por esto.</li>
+  <li><strong>Versión del formato:</strong> una sesión grabada con esta versión de BluePixel se abre en cualquier compilación (macOS, Linux, web) que use el mismo formato de sesión. Las sesiones grabadas antes del formato de estado canónico (noviembre de 2026) ya no se abren: falla con «not a BluePixel session recording, or it uses an older format».</li>
   <li>Pausar y usar el depurador mientras grabas está permitido siempre que no modifiques nada.</li>
 </ul>
 

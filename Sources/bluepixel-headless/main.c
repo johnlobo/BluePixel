@@ -11,7 +11,7 @@
 #include <mach-o/dyld.h>
 #endif
 
-#define BLUEPIXEL_VERSION "0.1.0-h1"
+#define BLUEPIXEL_VERSION "0.2.0"
 static bool executable_dir(char*out,size_t cap){char path[4096];
 #if defined(__APPLE__)
  uint32_t n=sizeof path;if(_NSGetExecutablePath(path,&n)!=0)return false;

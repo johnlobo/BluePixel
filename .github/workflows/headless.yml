@@ -9,8 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install static zlib
-        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
+      - name: Install static zlib and gdb (state coverage reads the debug info)
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev gdb
       - name: Build static Linux executable
         run: LDFLAGS=-static tools/build-headless.sh
       - name: Check executable version
@@ -21,6 +21,10 @@ jobs:
           echo "BLUEPIXEL_ROM_DIR=$RUNNER_TEMP/bluepixel-test-roms" >> "$GITHUB_ENV"
       - name: Run headless API smoke on Linux
         run: LDFLAGS=-static python3 Tests/headless/test_api.py
+      - name: Canonical state covers every field (debug-info probe, restore fuzz under ASan/UBSan)
+        run: python3 Tests/headless/check_state_coverage.py
+      - name: Canonical state is independent of struct layout (default vs packed build, handoff both ways)
+        run: python3 Tests/headless/test_state_abi.py
       - name: Verify static Linux executable
         run: |
           file build/bluepixel-headless

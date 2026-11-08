@@ -79,6 +79,7 @@ void cpc_destroy(CPC *c) {
     cpc_recording_free(c->recorder); cpc_recording_free(c->stopped_recording);
     free(c->rec_buf); tape_free(c->tape); free(c->ram); free(c->frame); free(c->frame_done); free(c->audio);
     fdc_destroy(c->fdc);
+    cpc_autotype_free(c);
     free(c);
 }
 

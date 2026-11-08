@@ -2,6 +2,7 @@
 #include "replay.h"
 #include <stdlib.h>
 #include <string.h>
+#include "ser.h"
 
 typedef struct { char ch; int key; bool shift; } CharMap;
 
@@ -31,13 +32,18 @@ int cpc_key_for_char(int ch, bool *shift) {
     return CPCK_NONE;
 }
 
-typedef struct { char *text; size_t pos; int phase; int hold; int key; bool shift; bool active; } AutoType;
+struct CPCAutoType { char *text; size_t pos; int phase; int hold; int key; bool shift; bool active; };
+typedef struct CPCAutoType AutoType;
+/* Owned by the machine (c->autotype), created on first use, freed by cpc_destroy. It used to live in a static
+ * table of 8 slots keyed by the CPC pointer: a ninth machine (the session indexer clones machines) shared slot 0
+ * with another, and a new machine allocated at a freed one's address inherited its queue. */
 static AutoType *at_of(CPC *c) {
-    /* the autotype state lives in a side table keyed by CPC pointer (single instance is typical) */
-    static AutoType states[8]; static CPC *owners[8];
-    for (int i = 0; i < 8; i++) if (owners[i] == c) return &states[i];
-    for (int i = 0; i < 8; i++) if (!owners[i]) { owners[i] = c; return &states[i]; }
-    return &states[0];
+    if (!c->autotype) { c->autotype = calloc(1, sizeof *c->autotype); if (!c->autotype) abort(); }
+    return c->autotype;
+}
+void cpc_autotype_free(CPC *c) {
+    if (!c->autotype) return;
+    free(c->autotype->text); free(c->autotype); c->autotype = NULL;
 }
 
 void cpc_autotype_raw(CPC *c, const char *text);
@@ -83,24 +89,18 @@ void cpc_autotype_tick(CPC *c) {
 }
 
 /* ---------------- state snapshot ---------------- */
-uint8_t *cpc_autotype_state_save(CPC *c, size_t *size) {
+void cpc_autotype_state_visit(Ser *s, CPC *c) {
     AutoType *a = at_of(c);
-    size_t tl = a->text ? strlen(a->text) + 1 : 0;
-    size_t n = 8 + 4 * 4 + 3 + tl; uint8_t *out = calloc(1, n), *p = out;
-    uint64_t pos = a->pos; memcpy(p, &pos, 8); p += 8;
-    int32_t v[4] = {a->phase, a->hold, a->key, (int32_t)tl}; memcpy(p, v, sizeof v); p += sizeof v;
-    *p++ = a->shift; *p++ = a->active; *p++ = a->text != NULL;
-    if (tl) memcpy(p, a->text, tl);
-    *size = n; return out;
-}
-bool cpc_autotype_state_restore(CPC *c, const uint8_t *d, size_t n) {
-    if (n < 8 + 16 + 3) return false;
-    AutoType *a = at_of(c);
-    uint64_t pos; int32_t v[4]; memcpy(&pos, d, 8); memcpy(v, d + 8, sizeof v);
-    const uint8_t *p = d + 8 + sizeof v;
-    if (v[3] < 0 || (size_t)v[3] > n - (8 + 16 + 3)) return false;
-    free(a->text); a->text = NULL;
-    if (p[2] && v[3] > 0) { a->text = malloc(v[3]); memcpy(a->text, p + 3, v[3]); a->text[v[3] - 1] = 0; }
-    a->pos = (size_t)pos; a->phase = v[0]; a->hold = v[1]; a->key = v[2]; a->shift = p[0]; a->active = p[1];
-    return true;
+    ser_tag(s, "TYP0");
+    bool has = ser_flag(s, a->text != NULL);
+    uint32_t tl = ser_count(s, a->text ? (uint32_t)strlen(a->text) : 0, 1u << 20);
+    char *nt = NULL;
+    if (ser_storing(s) && has) { nt = malloc(tl + 1); if (!nt) { s->bad = true; return; } nt[tl] = 0; }
+    ser_bytes(s, ser_storing(s) ? nt : a->text, has ? tl : 0);
+    uint64_t pos = ser_le(s, (uint64_t)a->pos, 8);
+    if (ser_reading(s) && pos > tl) s->bad = true;           /* pos indexes the text */
+    ser_int(s, &a->phase); ser_int(s, &a->hold); ser_int(s, &a->key); ser_bool(s, &a->shift); ser_bool(s, &a->active);
+    if (ser_storing(s) && !s->bad) {
+        free(a->text); a->text = nt; a->pos = (size_t)pos;
+    } else free(nt);
 }

@@ -1,6 +1,8 @@
 #include "tape.h"
 #include <stdlib.h>
 #include <string.h>
+#include "ser.h"
+#include <math.h>
 #include <stdio.h>
 
 #define TSTATE_US (1.0 / 3.5)      /* TZX/CDT timings are in 3.5 MHz T-states */
@@ -298,37 +300,52 @@ void tape_tick(CPCTape *t, int us) {
 }
 
 /* ---------------- state snapshot ---------------- */
-typedef struct {
-    int32_t cur, pidx, loop_start, loop_count, call_stack[16], call_sp;
-    double rem, pause_rem, elapsed_us, pos;
-    uint8_t level, playing, motor, ended, aud_level;
-    uint32_t size; int32_t nblocks;
-} TapeState;
+/* Playback position only; the tape itself is media. `size` and `nblocks` identify the tape the state was
+ * taken with. Returns false (READ mode) when the inserted tape is a different one; the stream still parses. */
+static bool finite_nonneg(double v) { return isfinite(v) && v >= 0; }
 
-size_t tape_state_size(void) { return sizeof(TapeState); }
-
-void tape_state_save(const CPCTape *t, void *out) {
-    TapeState s; memset(&s, 0, sizeof s);
-    s.cur = t->cur; s.pidx = t->pidx; s.loop_start = t->loop_start; s.loop_count = t->loop_count; s.call_sp = t->call_sp;
-    memcpy(s.call_stack, t->call_stack, sizeof s.call_stack);
-    s.rem = t->rem; s.pause_rem = t->pause_rem; s.elapsed_us = t->elapsed_us; s.pos = t->pos;
-    s.level = t->level; s.playing = t->playing; s.motor = t->motor; s.ended = t->ended; s.aud_level = t->aud_level;
-    s.size = (uint32_t)t->size; s.nblocks = t->nblocks;
-    memcpy(out, &s, sizeof s);
+/* What playback relies on: block indices (cur, loop_start, call stack) inside the tape, pidx inside the pulse
+ * list of the current block, finite non-negative times. A state that breaks one (it can come from an API
+ * client) is rejected. The pulse count of block `cur` is found on a clone, so checking changes nothing. */
+static bool tape_consistent(const CPCTape *t, const CPCTape *v) {
+    if (v->cur < 0 || v->cur > t->nblocks || v->loop_start < 0 || v->loop_start > t->nblocks) return false;
+    for (int i = 0; i < 16; i++) if (v->call_stack[i] < 0 || v->call_stack[i] > t->nblocks) return false;
+    if (!finite_nonneg(v->rem) || !finite_nonneg(v->pause_rem) || !finite_nonneg(v->elapsed_us) || !finite_nonneg(v->pos)) return false;
+    if (t->kind != KIND_TZX) return true;
+    CPCTape *c = tape_clone(t); if (!c) return false;
+    c->cur = v->cur; load_block(c);
+    bool ok = v->pidx >= 0 && v->pidx <= c->npulses;
+    tape_free(c);
+    return ok;
 }
 
-/* False when the inserted tape is not the one the state was taken with. */
-bool tape_state_restore(CPCTape *t, const void *in) {
-    TapeState s; memcpy(&s, in, sizeof s);
-    if (s.size != (uint32_t)t->size || s.nblocks != t->nblocks) return false;
-    t->cur = s.cur; t->loop_start = s.loop_start; t->loop_count = s.loop_count; t->call_sp = s.call_sp;
-    memcpy(t->call_stack, s.call_stack, sizeof s.call_stack);
-    t->elapsed_us = s.elapsed_us; t->pos = s.pos;
-    t->level = s.level; t->playing = s.playing; t->motor = s.motor; t->ended = s.ended; t->aud_level = s.aud_level;
-    if (t->kind == KIND_TZX) load_block(t);           /* pulses are derived from the current block */
-    t->pidx = s.pidx; t->rem = s.rem; t->pause_rem = s.pause_rem;
-    t->level = s.level; t->playing = s.playing; t->ended = s.ended;   /* load_block may have changed them */
-    return true;
+bool tape_state_visit(Ser *s, CPCTape *t) {
+    CPCTape none; memset(&none, 0, sizeof none);
+    bool real = t != NULL; if (!real) t = &none;          /* NULL: parse and discard (no tape inserted) */
+    ser_tag(s, "TAP0");
+    uint64_t size = ser_le(s, (uint64_t)t->size, 8);
+    int32_t nblocks = (int32_t)(uint32_t)ser_le(s, (uint32_t)t->nblocks, 4);
+    bool same = real && size == (uint64_t)t->size && nblocks == t->nblocks;
+    /* Reading parses into a scratch copy (also in CHECK mode), validated before READ applies it. */
+    CPCTape tmp = *t, *d = ser_reading(s) ? &tmp : t;
+    SerMode mode = s->mode;
+    if (ser_reading(s)) s->mode = SER_READ;
+    ser_int(s, &d->cur); ser_int(s, &d->pidx); ser_int(s, &d->loop_start); ser_int(s, &d->loop_count);
+    ser_ints(s, d->call_stack, 16); ser_int_in(s, &d->call_sp, 0, 16);
+    ser_f64(s, &d->rem); ser_f64(s, &d->pause_rem); ser_f64(s, &d->elapsed_us); ser_f64(s, &d->pos);
+    ser_bool(s, &d->level); ser_bool(s, &d->playing); ser_bool(s, &d->motor); ser_bool(s, &d->ended); ser_bool(s, &d->aud_level);
+    s->mode = mode;
+    /* A different tape's position is parsed and dropped (reported as a hazard), so it is not validated. */
+    if (ser_reading(s) && same && !s->bad && !tape_consistent(t, &tmp)) s->bad = true;
+    if (ser_storing(s) && same && !s->bad) {
+        t->cur = tmp.cur; t->loop_start = tmp.loop_start; t->loop_count = tmp.loop_count; t->call_sp = tmp.call_sp;
+        memcpy(t->call_stack, tmp.call_stack, sizeof t->call_stack);
+        t->elapsed_us = tmp.elapsed_us; t->pos = tmp.pos; t->motor = tmp.motor; t->aud_level = tmp.aud_level;
+        if (t->kind == KIND_TZX) load_block(t);           /* pulses are derived from the current block */
+        t->pidx = tmp.pidx; t->rem = tmp.rem; t->pause_rem = tmp.pause_rem;
+        t->level = tmp.level; t->playing = tmp.playing; t->ended = tmp.ended;   /* load_block may have changed them */
+    }
+    return same;
 }
 
 CPCTape *tape_clone(const CPCTape *t) { return t ? tape_load(t->data, t->size, t->name) : NULL; }

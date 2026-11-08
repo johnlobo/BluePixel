@@ -51,6 +51,10 @@ for t in dbgtest mftest amxtest; do .build/release/cpcrun $t $R; done
 `statetest` (save/restore at 9 points incl. mid-frame, 200 frames each) and `rectest` (record boop with every event
 type, replay in another machine, 80 random seeks, injected input must be detected, edit cuts the recording) are the
 exactness tests for the savestate/replay work: run them after touching anything in `CPCCore` that holds state.
+They load ROMs by WinAPE file names (`OS6128.ROM`, `BASIC1-1.ROM`, `AMSDOS.ROM`); with a `roms.json` folder (lower-case
+names) link them under those names first, or they print `missing ...` and run without firmware. Also run
+`python3 Tests/headless/check_state_coverage.py` (every field reaches the canonical state, restore fuzz under ASan;
+needs gdb) and `python3 Tests/headless/test_state_abi.py` (same bytes from a normal and a `-fpack-struct` build).
 
 Other `cpcrun` commands: `boot` (renders a frame to BMP; options `--disc --type --wait --space --return --frames
 --wav --out`; env `VIEW=raster|vram`, `MIDFRAME=<cycles>`, `DUMP=1`, `IOLOG=1 IOFROM=<frame>`), `dis`, `inttest`,
@@ -99,11 +103,18 @@ controls blank (tab strips, segmented controls); use `screencapture` when the re
 - **macOS keys:** F-keys need fn unless the system setting is changed; Ctrl+F8 is taken by the system, so scanline
   stepping is ⌥F8. Pause (F7) and Step Into share F7 by design: F7 pauses when running and steps when paused.
 - **Savestates are exact, SNA restores are not** (1-2 µs phase and RAM differences): replay needs `state.c`. The
-  state is the whole `CPC` struct image plus RAM, both frame buffers, FDC (pointers stored as indices), tape
-  position, auto-type, Multiface RAM; media and presentation settings are not in it. Fields that are not machine
-  state are listed once in `LIVE_FIELDS` in `state.c` (zeroed on save, kept on restore) — **a new pointer or host
-  setting in `struct CPC` must be added there**, or the state hash and restores break. Padding bytes are part of the
-  hash; `rectest` step 0 checks two independent machines hash equal.
+  state is a canonical stream (format 1, `ser.h`): one visit function per part (`visit_*` in `state.c`,
+  `fdc_state_visit`, `tape_state_visit`, `cpc_autotype_state_visit`) serializes each field little endian, and the
+  same function writes, hashes, validates and restores. Equal machines give equal bytes on every build/ABI; state
+  files and `.cpcrec` recordings load in any build. **A new field in `struct CPC`, `struct FDC` or `struct CPCTape`
+  must be added to its visit function, or to `NOT_STATE` (with the reason) in `Tests/headless/check_state_coverage.py`**,
+  which reads the layout from the debug info and fails on any unlisted byte that does not reach the stream. Values
+  that decide the shape of the stream (lengths, counts, presence) go through `ser_count`/`ser_flag`, because CHECK
+  mode never writes fields; indices the core uses into arrays go through `ser_int_in`/`ser_u8_in`, relations
+  between fields are checked on a scratch copy (`fdc_consistent`, `tape_consistent`): states come from API
+  clients, and `check_state_coverage.py` restores hostile values and drives the machine under ASan/UBSan.
+  `ser_int` rejects |v| > 2^24 and floats must be finite. The auto-type queue is `CPC.autotype` (freed by `cpc_destroy`). `state.hash` = FNV-1a 64 of the stream + disc CRCs + ROM bytes; nave reference `be44e742783fb94c`
+  (H1 struct-image format gave `a8750fbe248c354e`).
 - **Disc writes in sessions:** the first FDC write to a track keeps a copy (`CPCDisc.orig`, `dsk_touch`); a state embeds
   the tracks that have one (geometry too), restoring puts tracks back from `orig` if the state lacks them. Recording
   start clears `orig`; stop/taint stores the originals as pre-images in the file; `cpc_player_begin` applies them first
@@ -114,8 +125,8 @@ controls blank (tab strips, segmented controls); use `screencapture` when the re
   on entry to `cpc_run_frame`, because the debugger slices execution. Keyframes/hashes are taken in
   `replay_frame_done` (instruction boundary after the flyback), never inside `advance()`. Seeking detaches the
   debugger. Anything that changes the machine otherwise (media, settings, register/memory edits) must call
-  `noteUnreproducible` / `cpc_record_taint`, which ends the recording there. Recording files embed
-  `sizeof(CPC)`: they only load with the build that wrote them.
+  `noteUnreproducible` / `cpc_record_taint`, which ends the recording there. Recording files (version 4) are
+  little endian and hold a canonical state, so any build loads them; versions 1-3 are rejected.
 - **Transport bar design:** forward play/pause use the normal emulation thread. Reverse play never runs the machine
   backwards: `cpc_player_capture` re-simulates one 50-frame interval from its keyframe and the pictures are shown
   in reverse; stopping reverse does an exact seek. A clone of the machine (`cpc_clone_machine`, discs deep-copied)
