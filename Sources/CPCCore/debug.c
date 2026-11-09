@@ -93,7 +93,10 @@ bool dbg_set_condition(CPC *c, int i, const char *cond, int pass) {
 }
 
 /* ---------------- Expression evaluator ---------------- */
-typedef struct { CPC *c; Debugger *d; const char *s; char *err; size_t errsize; bool failed; } P;
+/* Parentheses, function arguments and chained unary operators recurse: an expression typed or sent by a client must not be able
+ * to exhaust the stack (a WASM build has a small one), so nesting is capped. */
+#define DBG_EVAL_MAX_DEPTH 64
+typedef struct { CPC *c; Debugger *d; const char *s; char *err; size_t errsize; bool failed; int depth; } P;
 
 static void fail(P *p, const char *msg) { if (!p->failed) { p->failed = true; snprintf(p->err, p->errsize, "%s", msg); } }
 static void skipws(P *p) { while (*p->s == ' ' || *p->s == '\t') p->s++; }
@@ -163,7 +166,7 @@ static int32_t call_function(P *p, const char *name, int32_t *a, int n) {
     #undef IS
 }
 
-static int32_t parse_primary(P *p) {
+static int32_t parse_primary_impl(P *p) {
     skipws(p);
     const char *s = p->s;
     if (*s == '(') { p->s++; int32_t v = parse_or(p); skipws(p); if (*p->s != ')') fail(p, "missing ')'"); else p->s++; return v; }
@@ -194,12 +197,28 @@ static int32_t parse_primary(P *p) {
     fail(p, "unexpected character"); return 0;
 }
 
-static int32_t parse_unary(P *p) {
+static int32_t parse_primary(P *p) {
+    if (p->depth >= DBG_EVAL_MAX_DEPTH) { fail(p, "expression nested too deeply"); return 0; }
+    p->depth++;
+    int32_t v = parse_primary_impl(p);
+    p->depth--;
+    return v;
+}
+
+static int32_t parse_unary(P *p);
+static int32_t parse_unary_impl(P *p) {
     skipws(p);
     if (*p->s == '-') { p->s++; return -parse_unary(p); }
     if (*p->s == '+') { p->s++; return parse_unary(p); }
     if (!strncasecmp(p->s, "not", 3) && !is_id(p->s[3])) { p->s += 3; return ~parse_unary(p); }
     return parse_primary(p);
+}
+static int32_t parse_unary(P *p) {
+    if (p->depth >= DBG_EVAL_MAX_DEPTH) { fail(p, "expression nested too deeply"); return 0; }
+    p->depth++;
+    int32_t v = parse_unary_impl(p);
+    p->depth--;
+    return v;
 }
 static int32_t parse_mul(P *p) {
     int32_t v = parse_unary(p);
@@ -244,7 +263,7 @@ static int32_t parse_or(P *p) {
 
 bool dbg_eval(CPC *c, const char *expr, int32_t *out, char *err, size_t errsize) {
     Debugger *d = dbg_attach(c);
-    P p = {c, d, expr, err, errsize, false};
+    P p = {c, d, expr, err, errsize, false, 0};
     if (err && errsize) err[0] = 0;
     int32_t v = parse_or(&p);
     skipws(&p);

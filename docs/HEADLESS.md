@@ -118,7 +118,59 @@ The H2 median is about 9.8% higher in this emulated environment, but still far b
 
 ### 3. Web sobre CPCApi
 
-**NO HECHO.** `web/app.js` still calls `web/bridge.c` exports directly. I did not claim native/WASM conformance: zero of the 10 requested 100-frame hash checkpoints were compared, and normal browser behavior was not re-verified in H2. The remaining work is to expose the same dispatcher to WASM, route the UI through it, remove the old bridge, and run the requested Node conformance sequence.
+**PARCIAL.** Hecho y medido en Linux (API 1.2): todo lo que `web/bridge.c` hace ya se puede pedir a CPCApi (entrada, monitor, render, audio, cinta, discos, ROMs, depurador completo), con tests nativos en `Tests/headless/test_api_ext.py` (también bajo ASan/UBSan con `BLUEPIXEL_SANITIZE=1`). **No hecho:** compilar a WASM, migrar la UI, borrar `web/bridge.c` y correr la conformidad nativo contra WASM. Requieren Emscripten y un navegador, que la VPS no tiene. Cero de los 10 puntos de hash nativo/WASM se han comparado.
+
+Lo que queda, en orden (en un equipo con Emscripten):
+
+1. `tools/build-wasm-capi.sh` compila el núcleo + CPCApi + `web/capi_exports.c` a `web/bluepixel-capi.js/.wasm`. Escrito y revisado, **sin ejecutar** (no hay `emcc` aquí). Es posible que pida ajustes de flags.
+2. `node Tests/wasm/conformance.mjs --wasm web/bluepixel-capi.js` (con `BLUEPIXEL_ROM_DIR`): misma secuencia de peticiones al binario nativo y al WASM, compara `run.frames`, `state.hash` y `cpu.registers` cada 100 fotogramas durante 1000 y los bytes de `state.save` al final. Verificado aquí solo con `--self-test` (nativo contra un segundo proceso nativo: 35/35 iguales) y con un control negativo (una máscara de tecla distinta: 14/35 iguales, salida 1). El lado WASM del harness no se ha ejecutado.
+3. Migrar `web/app.js` y `web/debugger-window.js` de `core._bp_*` a peticiones JSON-RPC (tabla abajo). Los binarios (ROM, DSK, SNA, cinta) viajan en `data_base64`.
+4. Borrar `web/bridge.c`, regenerar y decidir si `bluepixel.js/.wasm` se siguen versionando, y probar el navegador a mano (arranque, disco, cinta, audio, depurador).
+5. Cambiar el job de CI para que construya con emsdk y corra el paso 2.
+
+Equivalencias `bridge.c` a CPCApi:
+
+| `web/bridge.c` | CPCApi |
+|---|---|
+| `bp_init`, `bp_destroy` | `bpapi_create`, `bpapi_destroy` (`web/capi_exports.c`) |
+| `bp_load_rom(slot, ...)` | `rom.load` (`role`: `os`=-1, `basic`=0, `amsdos`=7); `rom.unload` quita la ROM. Otros slots no tienen método |
+| `bp_load_disc`, `bp_disc_name`, `bp_export_disc` | `disc.load` (`name` opcional), `disc.info`, `disc.export` |
+| `bp_load_tape`, `bp_tape_play`, `bp_tape_rewind`, `bp_tape_remove`, `bp_tape_loaded/playing/name` | `tape.load`, `tape.play`, `tape.rewind`, `tape.remove`, `tape.status` |
+| `bp_load_snapshot`, `bp_save_snapshot` | `snapshot.load`, `snapshot.save` |
+| `bp_run_frame` (devuelve si el depurador paró) | `run.frames {count:1}`; el campo `break` es ese valor |
+| `bp_reset` | `machine.reset` (también limpia una parada del depurador) |
+| `bp_set_monitor` | `display.set_monitor` |
+| `bp_type`, `bp_key`, `bp_joystick` | `input.text`, `input.key`, `input.joystick` |
+| `bp_frame` (768x540, PAL + scanlines) | `screen.render` (por defecto lo mismo; `half_size` da 384x270) |
+| `bp_read_audio` | `audio.read` (float32 little-endian intercalado L/R en base64; hasta 8192 fotogramas por llamada) |
+| `bp_debug_attach`, `bp_debug_attached` | `debug.attach`, `debug.status` |
+| `bp_debug_resume`, `_pause`, `_step_into`, `_step_out` | `debug.resume`, `debug.pause`, `debug.step_into`, `debug.step_out` (y `debug.run_to`) |
+| `bp_debug_symbol_set/clear/count/value/name` | `debug.symbols.set`, `.clear`, `.list` |
+| `bp_debug_mark_data`, `_clear_data` | `debug.data.mark`, `debug.data.clear` |
+| `bp_debug_disassemble`, `_instruction_length` | `debug.disassemble` (`length` en cada instrucción) |
+| `bp_debug_read_memory`, `_write_memory` | `debug.mem.read`, `debug.mem.write` |
+| `bp_debug_register(id)`, `_tstates`, `_reset_tstates` | `cpu.registers` (incluye `im`, `iff1`, `iff2`, `halted`, `nops`), `run.reset_tstates` |
+| `bp_debug_toggle_code_bp`, `_has_code_bp` | `debug.breakpoints.toggle_code` (devuelve `set`), `debug.breakpoints.list` |
+| `bp_debug_breakpoint_count/_count_all/_address/_id/_type/_start/_end/_pass_count/_condition` | `debug.breakpoints.list` (`type` llega como texto: `code`, `mem_read`, `mem_write`, `io`, `change`, no como el número del enum) |
+| `bp_debug_add_memory_bp(start, end, write)` | `debug.breakpoints.add_memory` (`access`: `read`, `write`, `readwrite`) |
+| `bp_debug_set_condition`, `_last_error` | `debug.breakpoints.set_condition` (el motivo del rechazo viene en `error`) |
+| `bp_debug_remove_breakpoint` | `debug.breakpoints.remove` |
+| `bp_free`, `bp_release_disc_export` | no hacen falta (las respuestas son JSON) |
+
+Diferencias con `bridge.c` a tener en cuenta al migrar (no hay test de paridad contra `bridge.c`; esta lista sale de leer ambos):
+
+- `rom.load` exige exactamente 16384 bytes y solo conoce tres roles (os, basic, amsdos). `bp_load_rom` acepta cualquier tamaño y los slots -1 a 31.
+- `tape.play` y `tape.rewind` devuelven error sin cinta; en `bridge.c` no hacían nada.
+- El nombre por defecto de un disco es `<api>`, no `browser-a.dsk`/`browser-b.dsk`: pasa `name` en `disc.load` si la UI lo muestra.
+- Una petición no puede pasar de 1 MiB por stdio (un DSK de más de unos 780 KB no cabe en base64 por ese transporte). En WASM no hay ese límite.
+- `display.set_monitor` solo recolorea máquinas Plus (el 6128 ignora el monitor, igual que hoy con `bp_set_monitor`).
+- `debug.step_into` y `debug.step_out` arman el depurador y la máquina solo avanza con `run.*`, como en `bridge.c`.
+- `debug.attach` activa los breakpoints (`symbols.load` los deja desactivados). Resolver una dirección simbólica (`mem.read` con un nombre) también adjunta el depurador, así que `debug.status.attached` puede pasar a `true` sin llamar a `debug.attach`. El historial de ejecución, que la API no expone, queda apagado al terminar cada llamada.
+- Los tipos de breakpoint llegan como texto, no como el número del enum.
+- La API valida más que `bridge.c`: `set_condition` rechaza `pass_count` mayor que 1000000 y condiciones de más de 159 bytes (el depurador las truncaba en silencio), `debug.mem.read` rechaza longitudes de más de 4096 y direcciones que pasan de 0xFFFF (`bp_debug_read_memory` no tenía tope y daba la vuelta con `& 0xFFFF`), `input.key` rechaza filas mayores que 9 (antes se ignoraban) y los parámetros enteros que cambian estado (valor de un símbolo, ids) deben ser enteros.
+- Las expresiones del depurador (`address: "(1+2)*3"`, condiciones) anidan como máximo 64 niveles; antes una petición con 20000 paréntesis mataba el proceso por desbordamiento de pila. Es un arreglo del núcleo (`dbg_eval`), no solo de la API.
+- **`web/bridge.c` ya no compila contra el núcleo actual:** `cc -fsyntax-only` falla en `bridge.c:43` y `:67` (`CPC` no tiene miembro `disc`). El `web/bluepixel.wasm` versionado no se puede regenerar desde el código actual. Es anterior a este trabajo, y es otra razón para hacer la migración en lugar de parchear el bridge.
+- `tools/build-wasm-capi.sh` fija `-sSTACK_SIZE=1048576`. Los 130 KB de tokens del parser y los 190 KB de `jsmn` viven en el heap, no en la pila, porque la pila por defecto de Emscripten es pequeña (dato recordado, no comprobado aquí).
 
 ### 4. Pendientes H1
 

@@ -80,6 +80,7 @@ void cpc_destroy(CPC *c) {
     free(c->rec_buf); tape_free(c->tape); free(c->ram); free(c->frame); free(c->frame_done); free(c->audio);
     fdc_destroy(c->fdc);
     cpc_autotype_free(c);
+    dbg_detach(c);              /* the debugger (and its symbols) belongs to the machine: attaching one must not leak it */
     free(c);
 }
 
