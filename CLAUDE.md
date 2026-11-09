@@ -192,7 +192,7 @@ controls blank (tab strips, segmented controls); use `screencapture` when the re
 ## Not done yet
 
 Headless (status table in `docs/HEADLESS.md`): the 50x realtime target is not met (about 12x on the 4 vCPU VPS; `perf` is blocked
-in the container, use callgrind); CPCApi 1.2 covers the capabilities of `web/bridge.c` (differences listed in `docs/HEADLESS.md`), but it is not compiled to WASM yet (`tools/build-wasm-capi.sh` is written and untested, no Emscripten on the VPS) and the web app still uses `bridge.c` (mapping table in `docs/HEADLESS.md`); no Unix socket or WebSocket
+in the container, use callgrind); CPCApi 1.2 covers the capabilities of `web/bridge.c` (differences listed in `docs/HEADLESS.md`), but it is not compiled to WASM yet (`tools/build-wasm-capi.sh` is written and untested, no Emscripten on the VPS) and the web app still uses `bridge.c` (mapping table in `docs/HEADLESS.md`, step-by-step handoff in `docs/HANDOFF-15b.md`); no Unix socket or WebSocket
 transport; `boot_ready` needs an explicit entry address (no AMSDOS autodetect); no Linux/macOS/WASM hash comparison.
 
 Session record/playback is complete: core, File menu, transport bar (`Transport.swift`), reverse debugging (`ReverseDebug.swift`: Step Back
