@@ -120,7 +120,7 @@ The H2 median is about 9.8% higher in this emulated environment, but still far b
 
 **PARCIAL.** Hecho y medido en Linux (API 1.2): todo lo que `web/bridge.c` hace ya se puede pedir a CPCApi (entrada, monitor, render, audio, cinta, discos, ROMs, depurador completo), con tests nativos en `Tests/headless/test_api_ext.py` (también bajo ASan/UBSan con `BLUEPIXEL_SANITIZE=1`). **No hecho:** compilar a WASM, migrar la UI, borrar `web/bridge.c` y correr la conformidad nativo contra WASM. Requieren Emscripten y un navegador, que la VPS no tiene. Cero de los 10 puntos de hash nativo/WASM se han comparado.
 
-Lo que queda, en orden (en un equipo con Emscripten):
+Lo que queda, en orden (en un equipo con Emscripten; guía completa con criterios y trampas en [HANDOFF-15b.md](HANDOFF-15b.md)):
 
 1. `tools/build-wasm-capi.sh` compila el núcleo + CPCApi + `web/capi_exports.c` a `web/bluepixel-capi.js/.wasm`. Escrito y revisado, **sin ejecutar** (no hay `emcc` aquí). Es posible que pida ajustes de flags.
 2. `node Tests/wasm/conformance.mjs --wasm web/bluepixel-capi.js` (con `BLUEPIXEL_ROM_DIR`): misma secuencia de peticiones al binario nativo y al WASM, compara `run.frames`, `state.hash` y `cpu.registers` cada 100 fotogramas durante 1000 y los bytes de `state.save` al final. Verificado aquí solo con `--self-test` (nativo contra un segundo proceso nativo: 35/35 iguales) y con un control negativo (una máscara de tecla distinta: 14/35 iguales, salida 1). El lado WASM del harness no se ha ejecutado.
