@@ -22,7 +22,7 @@ jobs:
       - name: Run headless API smoke on Linux
         run: LDFLAGS=-static python3 Tests/headless/test_api.py
       - name: Headless API 1.2 (input, display, audio, tape, discs, debugger, schema contract)
-        run: python3 Tests/headless/test_api_ext.py
+        run: LDFLAGS=-static python3 Tests/headless/test_api_ext.py   # rebuilds build/bluepixel-headless: keep it static for the last step
       - name: Headless API 1.2 under ASan/UBSan (memory errors and leaks)
         run: BLUEPIXEL_SANITIZE=1 python3 Tests/headless/test_api_ext.py
       - name: Native vs native conformance harness self-test
