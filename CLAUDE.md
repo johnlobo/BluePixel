@@ -17,10 +17,19 @@ User manual (Spanish, HTML, start at [docs/index.html](docs/index.html)): living
   builds the menus; `Debug*.swift`, `DebuggerController.swift`, `SymbolsWindow.swift`, `HistoryWindow.swift`,
   `WatchLogWindows.swift` are the debugger UI; `SettingsController.swift`, `Pokes.swift`, `Help.swift`,
   `LaunchOptions.swift` (command line), `Session.swift` (record/replay menu actions) are the rest.
-- `Sources/cpcrun/` — headless test runner and diagnostics for the core (no UI).
-- `web/` — browser frontend and C/WebAssembly bridge. Build with `tools/build-web.sh`; see `web/README.md`.
+- `Sources/CPCApi/` — JSON-RPC 2.0 dispatcher in C (vendored `jsmn.h`); schema in `api/schema.json`.
+  `Sources/CPCServer/` — transports over it (stdio only; Unix socket, WebSocket and token/Origin checks are not built).
+  `Sources/CPCHost/` — file, ROM-manifest (`roms.json`) and SHA-256 helpers, so `CPCCore` and `CPCApi` do no file I/O.
+- `Sources/bluepixel-headless/` — Linux/macOS executable: one JSON-RPC request per line on stdin, one response per line on
+  stdout. Guide, protocol and H2 status: [docs/HEADLESS.md](docs/HEADLESS.md).
+- `Sources/cpcrun/` — test runner and diagnostics for the core (no UI).
+- `web/` — browser frontend and C/WebAssembly bridge. Build with `tools/build-web.sh`; see `web/README.md`. It still calls
+  `web/bridge.c` directly, not `CPCApi`.
 - `tools/` — `bundle.sh` (builds `build/BluePixel.app` with icon), `bluepixel` (runs the bundle from a terminal),
-  `fetch_z80_tests.sh`, `extract_z80_timing.py`. `Resources/` holds the app icon.
+  `build-headless.sh` (plain `cc` build of the headless executable, no Swift), `fetch_z80_tests.sh`,
+  `extract_z80_timing.py`. `Resources/` holds the app icon.
+- `Tests/headless/` — Python and C tests that run on Linux; `Tests/fixtures/nave/` is the GlasnostFWK acceptance fixture
+  (DSK, symbols, `roms.json`, reference hash in `acceptance.json`).
 
 ## Build and run
 
@@ -34,6 +43,13 @@ tools/bluepixel game.dsk /A /SYM obj/game.noi
 `build/BluePixel.app/Contents/MacOS/BluePixel`.
 
 The browser build needs Emscripten and a local HTTP server; see [web/README.md](web/README.md).
+
+Only `CPCCore`, `CPCApi`, `CPCServer`, `CPCHost` and `bluepixel-headless` build on Linux (the VPS has no Swift or AppKit):
+
+```bash
+LDFLAGS="-static" tools/build-headless.sh     # -> build/bluepixel-headless; CC, CFLAGS, LDFLAGS overridable
+./build/bluepixel-headless --version
+```
 
 ## Tests
 
@@ -55,6 +71,25 @@ They load ROMs by WinAPE file names (`OS6128.ROM`, `BASIC1-1.ROM`, `AMSDOS.ROM`)
 names) link them under those names first, or they print `missing ...` and run without firmware. Also run
 `python3 Tests/headless/check_state_coverage.py` (every field reaches the canonical state, restore fuzz under ASan;
 needs gdb) and `python3 Tests/headless/test_state_abi.py` (same bytes from a normal and a `-fpack-struct` build).
+
+### Headless tests (Linux or macOS)
+
+ROMs are never committed. `BLUEPIXEL_ROM_DIR` must point at a directory with a valid `roms.json` (`roms.example.json`,
+`api/roms.schema.json`); the loader rejects missing or hash-mismatched ROMs. Lookup order: `--rom-dir`, `BLUEPIXEL_ROM_DIR`,
+`roms/` beside the executable, `~/.config/bluepixel/roms`. Each test is a standalone script, so a single test is just that script:
+
+```bash
+export BLUEPIXEL_ROM_DIR=/path/to/roms
+python3 Tests/headless/test_api.py              # API smoke
+python3 Tests/headless/test_acceptance_nave.py  # rebuilds first (BLUEPIXEL_NO_BUILD=1 skips); checks the fixture's reference hash
+python3 Tests/headless/bench_nave.py            # speed; never quote a number you did not measure
+SANITIZE=0 python3 Tests/headless/check_state_coverage.py   # SANITIZE=0 when libasan is missing
+```
+
+`BLUEPIXEL_EXPECT_HASH` overrides the acceptance reference hash (empty disables the check); the hash only holds for the ROMs pinned
+in the fixture's `roms.json`. CI (`.github/workflows/headless.yml`, on PRs and pushes to `main`, `h1-headless`, `h2-core`) builds the
+static Linux binary with disposable ROMs from `Tests/headless/make_test_roms.py <dir>` and runs `test_api.py`, `check_state_coverage.py`
+and `test_state_abi.py`; it does not run the nave acceptance. `deploy-pages.yml` publishes `web/` to GitHub Pages.
 
 Other `cpcrun` commands: `boot` (renders a frame to BMP; options `--disc --type --wait --space --return --frames
 --wav --out`; env `VIEW=raster|vram`, `MIDFRAME=<cycles>`, `DUMP=1`, `IOLOG=1 IOFROM=<frame>`), `dis`, `inttest`,
@@ -151,6 +186,10 @@ controls blank (tab strips, segmented controls); use `screencapture` when the re
 - `.dsk` files and WinAPE's own files (`WinApe.exe`, `CPC_Symbols.ttf`, the CHM) are not in the repo. CPC ROMs for the browser build are in `web/roms/`.
 
 ## Not done yet
+
+Headless (status table in `docs/HEADLESS.md`): the 50x realtime target is not met (about 12x on the 4 vCPU VPS; `perf` is blocked
+in the container, use callgrind); CPCApi is not compiled to WASM yet and the web app does not use it; no Unix socket or WebSocket
+transport; `boot_ready` needs an explicit entry address (no AMSDOS autodetect); no Linux/macOS/WASM hash comparison.
 
 Session record/playback is complete: core, File menu, transport bar (`Transport.swift`), reverse debugging (`ReverseDebug.swift`: Step Back
 ⌥F7, Step Back Over ⌥⌘F8, Reverse Continue ⌥F9, Run Back to Cursor ⌥F4, "Who Wrote/Read This?"), disc writes and markers (`CPC_MARK_TEXT`,
