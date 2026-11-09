@@ -17,7 +17,9 @@ User manual (Spanish, HTML, start at [docs/index.html](docs/index.html)): living
   builds the menus; `Debug*.swift`, `DebuggerController.swift`, `SymbolsWindow.swift`, `HistoryWindow.swift`,
   `WatchLogWindows.swift` are the debugger UI; `SettingsController.swift`, `Pokes.swift`, `Help.swift`,
   `LaunchOptions.swift` (command line), `Session.swift` (record/replay menu actions) are the rest.
-- `Sources/CPCApi/` — JSON-RPC 2.0 dispatcher in C (vendored `jsmn.h`); schema in `api/schema.json`.
+- `Sources/CPCApi/` — JSON-RPC 2.0 dispatcher in C (vendored `jsmn.h`); schema in `api/schema.json` (API 1.2, the contract: a test fails if the schema and
+  the code list different methods). `api.c` core/state/run methods, `api_media.c` input/display/audio/tape/disc/ROM unload, `api_debug.c` `debug.*`,
+  `api_util.c` + `api_internal.h` parsing and JSON helpers. A new method goes in the matching module, the schema and `Tests/headless/test_api_ext.py`.
   `Sources/CPCServer/` — transports over it (stdio only; Unix socket, WebSocket and token/Origin checks are not built).
   `Sources/CPCHost/` — file, ROM-manifest (`roms.json`) and SHA-256 helpers, so `CPCCore` and `CPCApi` do no file I/O.
 - `Sources/bluepixel-headless/` — Linux/macOS executable: one JSON-RPC request per line on stdin, one response per line on
@@ -28,7 +30,7 @@ User manual (Spanish, HTML, start at [docs/index.html](docs/index.html)): living
 - `tools/` — `bundle.sh` (builds `build/BluePixel.app` with icon), `bluepixel` (runs the bundle from a terminal),
   `build-headless.sh` (plain `cc` build of the headless executable, no Swift), `fetch_z80_tests.sh`,
   `extract_z80_timing.py`. `Resources/` holds the app icon.
-- `Tests/headless/` — Python and C tests that run on Linux; `Tests/fixtures/nave/` is the GlasnostFWK acceptance fixture
+- `Tests/headless/` — Python and C tests that run on Linux (`Tests/wasm/conformance.mjs` is the native-vs-WASM Node harness); `Tests/fixtures/nave/` is the GlasnostFWK acceptance fixture
   (DSK, symbols, `roms.json`, reference hash in `acceptance.json`).
 
 ## Build and run
@@ -81,6 +83,8 @@ ROMs are never committed. `BLUEPIXEL_ROM_DIR` must point at a directory with a v
 ```bash
 export BLUEPIXEL_ROM_DIR=/path/to/roms
 python3 Tests/headless/test_api.py              # API smoke
+python3 Tests/headless/test_api_ext.py          # API 1.2: input, display, audio, tape, discs, debugger, schema contract (BLUEPIXEL_SANITIZE=1: ASan/UBSan build)
+node Tests/wasm/conformance.mjs --self-test     # conformance harness, native vs a second native process; --wasm <js> for the real comparison
 python3 Tests/headless/test_acceptance_nave.py  # rebuilds first (BLUEPIXEL_NO_BUILD=1 skips); checks the fixture's reference hash
 python3 Tests/headless/bench_nave.py            # speed; never quote a number you did not measure
 SANITIZE=0 python3 Tests/headless/check_state_coverage.py   # SANITIZE=0 when libasan is missing
@@ -88,8 +92,8 @@ SANITIZE=0 python3 Tests/headless/check_state_coverage.py   # SANITIZE=0 when li
 
 `BLUEPIXEL_EXPECT_HASH` overrides the acceptance reference hash (empty disables the check); the hash only holds for the ROMs pinned
 in the fixture's `roms.json`. CI (`.github/workflows/headless.yml`, on PRs and pushes to `main`, `h1-headless`, `h2-core`) builds the
-static Linux binary with disposable ROMs from `Tests/headless/make_test_roms.py <dir>` and runs `test_api.py`, `check_state_coverage.py`
-and `test_state_abi.py`; it does not run the nave acceptance. `deploy-pages.yml` publishes `web/` to GitHub Pages.
+static Linux binary with disposable ROMs from `Tests/headless/make_test_roms.py <dir>` and runs `test_api.py`, `test_api_ext.py` (plain and sanitized),
+`check_state_coverage.py`, `test_state_abi.py` and the conformance harness self-test; it does not run the nave acceptance. `deploy-pages.yml` publishes `web/` to GitHub Pages.
 
 Other `cpcrun` commands: `boot` (renders a frame to BMP; options `--disc --type --wait --space --return --frames
 --wav --out`; env `VIEW=raster|vram`, `MIDFRAME=<cycles>`, `DUMP=1`, `IOLOG=1 IOFROM=<frame>`), `dis`, `inttest`,
@@ -188,7 +192,7 @@ controls blank (tab strips, segmented controls); use `screencapture` when the re
 ## Not done yet
 
 Headless (status table in `docs/HEADLESS.md`): the 50x realtime target is not met (about 12x on the 4 vCPU VPS; `perf` is blocked
-in the container, use callgrind); CPCApi is not compiled to WASM yet and the web app does not use it; no Unix socket or WebSocket
+in the container, use callgrind); CPCApi 1.2 covers the capabilities of `web/bridge.c` (differences listed in `docs/HEADLESS.md`), but it is not compiled to WASM yet (`tools/build-wasm-capi.sh` is written and untested, no Emscripten on the VPS) and the web app still uses `bridge.c` (mapping table in `docs/HEADLESS.md`); no Unix socket or WebSocket
 transport; `boot_ready` needs an explicit entry address (no AMSDOS autodetect); no Linux/macOS/WASM hash comparison.
 
 Session record/playback is complete: core, File menu, transport bar (`Transport.swift`), reverse debugging (`ReverseDebug.swift`: Step Back
