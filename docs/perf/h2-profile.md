@@ -97,6 +97,13 @@ las filas no son comparables una a una (`cpc_video_tick` está ahora dentro de `
   al ejecutable anterior (incluidos 2 fallos de `rectest` que ya existían: esperan otro juego).
 - `check_state_coverage.py` (campos nuevos clasificados como derivados) y `test_state_abi.py`.
 
+### Decisión (2026-11-10)
+
+El propietario decide **dejar la velocidad en ~21x** y no perseguir los 50x ahora. Se revisará solo si las pruebas de GlasnostFWK
+resultan demasiado lentas en la práctica (hace falta un dato real: minutos virtuales de prueba por ejecución de CI). Si se reabre,
+las opciones y su coste están en la sección siguiente; ninguna se ha empezado. Estimación sin medir: la opción (a) llevaría a unos
+28 a 30x, y llegar a 50x exigiría además un bucle por eventos (CRTC y PSG por lotes).
+
 ### Qué impide llegar a 50x y por qué no se ha hecho
 
 Con las optimizaciones exactas quedan unas 253 instrucciones por microsegundo emulado (6.944 M / 27,4 M); 50x pide unas 110.

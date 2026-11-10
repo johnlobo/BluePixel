@@ -54,7 +54,7 @@ H2 results and the Linux profiling method are recorded below; the canonical stat
 
 **Actualización 2026-11-10, VPS física (Linux x86-64, 4 vCPU Haswell):** mediana **20,99x** (19,17x a 22,37x) con `-O2` por defecto, frente a
 11,53x antes de optimizar; 6.944 millones de instrucciones frente a 13.399 millones, mismo hash `be44e742783fb94c` en todas las muestras.
-Objetivo 50x **no alcanzado.** Todas las optimizaciones son exactas y están verificadas contra el ejecutable anterior
+Objetivo 50x **no alcanzado, y el propietario decidió dejarlo así (2026-11-10)**; se reabrirá si GlasnostFWK lo necesita. Todas las optimizaciones son exactas y están verificadas contra el ejecutable anterior
 (`Tests/headless/test_render_golden.py`, `Tests/headless/fuzz_equivalence.py`, `cpcrun`). Tablas, perfil y el motivo por el que ir más
 allá exige decidir sobre los buffers de fotograma del estado canónico: [perf/h2-profile.md](perf/h2-profile.md), sección "VPS real".
 Lo que sigue es el texto original de H2 (mediciones en QEMU), conservado como historial.
