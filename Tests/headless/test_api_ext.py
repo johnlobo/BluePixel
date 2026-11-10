@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""API 1.2 methods: input, display, audio, tape, disc media and the debugger (debug.*).
+"""API 1.3 methods: input, display, audio, tape, disc media and the debugger (debug.*).
 
 Needs BLUEPIXEL_ROM_DIR (real or disposable ROMs: nothing here depends on what the firmware does, only on
 properties that hold for any ROM). BLUEPIXEL_NO_BUILD=1 tests the existing binary as it is; BLUEPIXEL_SANITIZE=1
@@ -53,7 +53,7 @@ def b64(data):
 
 # ---- capabilities ----
 caps = call("session.capabilities")
-assert caps["api_version"] == "1.2", caps
+assert caps["api_version"] == "1.3", caps
 for name in ("input", "audio", "tape", "disc", "display", "debugger"):
     assert name in caps["capabilities"], (name, caps)
 
@@ -290,7 +290,7 @@ big = '{"jsonrpc":"2.0","id":1,"method":"session.capabilities","params":[' + ","
 proc.stdin.write(big)
 proc.stdin.flush()
 reply = json.loads(proc.stdout.readline())
-assert reply.get("result", {}).get("api_version") == "1.2", str(reply)[:200]
+assert reply.get("result", {}).get("api_version") == "1.3", str(reply)[:200]
 
 # ---- machine code in RAM, built into a v1 snapshot: exact control over what executes ----
 # 4000 CALL 4010 / 4003 LD A,(8000) / 4006 LD (C000),A / 4009 JR $ ;  4010 NOP / 4011 NOP / 4012 RET
@@ -483,7 +483,7 @@ assert call("mem.read", {"address": "(" * 10 + "1" + ")" * 10})["address"] == 1
 for depth in (200, 20000):
     fails("mem.read", {"address": "(" * depth + "1" + ")" * depth}, "invalid memory range")
 fails("mem.read", {"address": "-" * 20000 + "1"}, "invalid memory range")
-assert call("session.capabilities")["api_version"] == "1.2", "the process survived the deep expressions"
+assert call("session.capabilities")["api_version"] == "1.3", "the process survived the deep expressions"
 
 # \u0000 would end a C string early: refused everywhere instead of silently truncating
 fails("debug.symbols.set", {"name": "ab\u0000cd", "value": 1}, "name")
@@ -752,4 +752,4 @@ fails("tape.nope", {}, "method not found")
 
 proc.stdin.close()
 assert proc.wait(timeout=10) == 0
-print("headless API 1.2: PASS (input, display, audio, tape, disc media, debugger)")
+print("headless API 1.3: PASS (input, display, audio, tape, disc media, debugger)")

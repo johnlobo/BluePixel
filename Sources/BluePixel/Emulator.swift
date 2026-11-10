@@ -13,6 +13,9 @@ final class Emulator {
     private(set) var running = false
     var paused = false { didSet { if !paused { resume.signal() } } }
     private let resume = DispatchSemaphore(value: 0)
+    private let threadFinished = DispatchSemaphore(value: 0)
+    private let controlQueueLock = NSLock()
+    private var controlJobs: [() -> Void] = []
     var speed: Double = 1.0
     var frameSkip = 0
     var onFrame: (() -> Void)?
@@ -173,15 +176,42 @@ final class Emulator {
         thread = t; t.start()
     }
 
-    func stop() { running = false; paused = false; audio?.stop(); commitAllDiscs() }
+    func stop() {
+        guard running else { return }
+        running = false; paused = false; audio?.stop()
+        threadFinished.wait()
+        commitAllDiscs()
+    }
+
+    /// The transport worker never touches CPC. Its synchronous requests are executed by loop(), also while paused.
+    func onEmulationThread<T>(_ action: @escaping () -> T) -> T {
+        precondition(running)
+        let done = DispatchSemaphore(value: 0)
+        var result: T?
+        controlQueueLock.lock()
+        controlJobs.append { result = action(); done.signal() }
+        controlQueueLock.unlock()
+        resume.signal()
+        done.wait()
+        return result!
+    }
+
+    private func drainControlJobs() {
+        controlQueueLock.lock()
+        let jobs = controlJobs; controlJobs.removeAll()
+        controlQueueLock.unlock()
+        for job in jobs { job() }
+    }
 
     private func nowUS() -> UInt64 { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) / 1000 }
 
     private func loop() {
+        defer { threadFinished.signal() }
         let framePeriod = 19968.0
         var next = Double(nowUS())
         var shown = 0
         while running {
+            drainControlJobs()
             if paused { resume.wait(); next = Double(nowUS()); continue }
             lock.lock()
             // Re-check under the lock: a pause/step requested after the check above must not let a whole

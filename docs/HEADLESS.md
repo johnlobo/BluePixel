@@ -1,6 +1,6 @@
 # BluePixel headless
 
-Build on the current host with `tools/build-headless.sh`. The executable reads one JSON-RPC 2.0 request per line from stdin and writes one response per line to stdout through the `CPCServer` stdio transport. It has no network socket in H1. Use `--version` to print its version.
+Build on the current host with `tools/build-headless.sh`. The executable reads one JSON-RPC 2.0 request per line from stdin and writes one response per line to stdout through the `CPCServer` stdio transport. Network listeners are opt-in: see [CONTROL-SERVER.md](CONTROL-SERVER.md) for Unix sockets, loopback WebSocket and the desktop server. Use `--version` to print its version.
 
 Input lines are limited to 1 MiB. Oversized lines receive a JSON-RPC invalid-request error and are drained before the next request.
 
@@ -49,6 +49,13 @@ The web frontend now uses the same `CPCApi` dispatcher as headless; the old dire
 H2 results and the Linux profiling method are recorded below; the canonical state format has its own section.
 
 ## H2
+
+### Pasos 16 y 17: control local
+
+**Implementados (API 1.3).** La app macOS ofrece un servidor apagado por defecto, activable desde Settings → Control Server o `--control-server`. Comparte la máquina visible mediante una sesión prestada; el worker de transporte encola los RPC al hilo de emulación. Unix y WebSocket comparten CPCApi también en headless. WebSocket solo escucha en `127.0.0.1`; ambos transportes requieren token, Unix usa permisos `0600` y los Origins de navegador deben estar autorizados de forma exacta.
+
+Las pruebas con clientes reales cubren headless y desktop, incluidos permisos, tokens inválidos, Origins/Host, UTF-8, fragmentación, ping/pong, límites, carga de medios, clientes concurrentes y cierre/reinicio durante ejecuciones largas. El servidor cede el lock entre frames/lotes y cancela los `run.*` pendientes al cerrar. El camino stdio y la web se mantienen. Documentación y comandos: [CONTROL-SERVER.md](CONTROL-SERVER.md).
+
 
 ### 1. Velocidad
 

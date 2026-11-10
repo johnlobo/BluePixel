@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdatomic.h>
 
 /* Token slots are 1-based (slot 0 means "absent"), so n tokens need n + 1 slots. */
 #define API_MAX_TOKENS 8192
@@ -24,7 +25,7 @@ long api_address_value(Parser *p, CPC *c, int i);        /* number or debugger e
 unsigned char *api_unb64(const char *s, size_t *out);    /* NULL when malformed */
 char *api_b64(const unsigned char *b, size_t n);
 
-struct CPCApiSession { CPC *c; int boot_target; int boot_configured; bool rom_os, rom_basic, rom_amsdos; };
+struct CPCApiSession { CPC *c; int boot_target; int boot_configured; bool rom_os, rom_basic, rom_amsdos, borrowed; unsigned transports; atomic_bool cancelled; void (*host_yield)(void *); void *yield_context; };
 
 /* Growable string for building JSON results. After an allocation failure every call is a no-op and sb.err is set. */
 typedef struct { char *buf; size_t len, cap; bool err; } ApiBuf;

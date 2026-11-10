@@ -29,6 +29,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     var symbolsURL: URL?            // last symbols file (from /SYM or Load Symbols), reloaded by ⌘R
     var autoRunRequest: String?     // /A value from the command line ("" = pick from the catalogue)
     var settingsWindow: SettingsController!
+    var controlServer: DesktopControlServer?
+    private var controlSignals: [DispatchSourceSignal] = []
     func ensureDebugger() -> DebuggerController { if debugger == nil { debugger = DebuggerController(emulator: emu) }; return debugger! }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -87,6 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
         if let t = opt.typed { typing += t.replacingOccurrences(of: "~", with: "\n") }
         if !typing.isEmpty { DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.emu.type(typing) } }
+        if opt.controlServer && opt.errors.isEmpty { startControlServer(opt, showInfo: false) }
         let panel = opt.panel, shot = opt.shot, shotWin = opt.shotWin, after = opt.after, panelAt = opt.panelAt
         if let pn = panel { DispatchQueue.main.asyncAfter(deadline: .now() + panelAt) { _ = self.perform(Selector(pn), with: nil) } }
         if let path = shot {
@@ -102,13 +105,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
     }
 
-    func applicationWillTerminate(_ notification: Notification) { emu.stop(); settings["BluePixel", "Profile"] = currentProfile; emu.saveSettings() }
+    func applicationWillTerminate(_ notification: Notification) { controlServer?.stop(); controlServer = nil; emu.stop(); settings["BluePixel", "Profile"] = currentProfile; emu.saveSettings() }
     func application(_ sender: NSApplication, openFile filename: String) -> Bool { if emu != nil { openFile(URL(fileURLWithPath: filename)); return true }; return false }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
     // MARK: Helpers
     func alert(_ title: String, _ info: String = "") {
         let a = NSAlert(); a.messageText = title; a.informativeText = info; a.runModal()
+    }
+
+    private func startControlServer(_ options: LaunchOptions, showInfo: Bool) {
+        do {
+            let server = try DesktopControlServer(emulator: emu, options: options)
+            controlServer = server
+            for source in controlSignals { source.cancel() }
+            controlSignals.removeAll()
+            for number in [SIGINT, SIGTERM] {
+                signal(number, SIG_IGN)
+                let source = DispatchSource.makeSignalSource(signal: number, queue: .global(qos: .userInitiated))
+                source.setEventHandler { [weak server] in
+                    server?.cancelExecution()
+                    DispatchQueue.main.async { NSApp.terminate(nil) }
+                }
+                source.resume(); controlSignals.append(source)
+            }
+            let status: [String: Any] = ["server_ready": true, "websocket_port": server.port,
+                                          "unix_path": server.socketPath, "token_file": server.tokenPath]
+            if let data = try? JSONSerialization.data(withJSONObject: status, options: [.sortedKeys]) {
+                FileHandle.standardOutput.write(data); FileHandle.standardOutput.write(Data([10]))
+            }
+            if showInfo { showControlServerInfo(nil) }
+        } catch { alert("Control server could not start", error.localizedDescription) }
+    }
+
+    @objc func toggleControlServer(_ sender: Any?) {
+        if let server = controlServer { server.stop(); controlServer = nil }
+        else { startControlServer(LaunchOptions([]), showInfo: true) }
+    }
+
+    @objc func showControlServerInfo(_ sender: Any?) {
+        guard let server = controlServer else { return }
+        alert("Local Control Server", "The machine is paused; run.* advances virtual time.\n\nUnix socket: \(server.socketPath)\nWebSocket: ws://127.0.0.1:\(server.port)/rpc\nToken file: \(server.tokenPath)\n\nUse --control-origin to allow an exact browser Origin. Disable the server from Settings → Control Server when finished.")
     }
 
     func chooseFile(title: String, types: [String], save: Bool = false, name: String = "") -> URL? {
@@ -309,6 +346,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     @objc func showHelp(_ s: Any?) { if help == nil { help = HelpController.make(winapeFolder: emu.romFolder.deletingLastPathComponent()) }; help?.show() }
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(toggleControlServer(_:)) { item.state = controlServer == nil ? .off : .on; return !emu.isRecording && !emu.isReplaying && !emu.isSearching }
+        if item.action == #selector(showControlServerInfo(_:)) { return controlServer != nil }
+        if controlServer != nil && (item.action == #selector(recordSession(_:)) || item.action == #selector(playSession(_:))) { return false }
         if item.action == #selector(amxMouse(_:)) { item.state = emu.amxEnabled ? .on : .off }
         if item.action == #selector(recordSession(_:)) { item.title = emu.isRecording ? "Stop Recording…" : "Record Session"; return !emu.isReplaying }
         if item.action == #selector(playSession(_:)) { return !emu.isRecording }
@@ -403,6 +443,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             item("General…", #selector(showGeneral(_:)), fkey(12)), item("Display…", #selector(showDisplay(_:))), item("Sound…", #selector(showSound(_:))),
             item("Memory…", #selector(showMemory(_:))), item("Input…", #selector(showInput(_:))), item("Other…", #selector(showOther(_:))),
             profiles,
+            submenu("Control Server", [item("Enable Local Control", #selector(toggleControlServer(_:))), item("Connection Info…", #selector(showControlServerInfo(_:)))]),
             .separator(),
             item("Normal Speed (100%)", #selector(normalSpeed(_:)), fkey(3), shift), item("High Speed (1000%)", #selector(highSpeed(_:)), fkey(4), shift),
             .separator(),

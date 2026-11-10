@@ -5,6 +5,15 @@ on:
   pull_request:
     branches: [main, h1-headless, h2-core]
 jobs:
+  macos-desktop-control:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build macOS desktop control server
+        run: swift build -c release --product BluePixel
+      - name: Control the displayed machine through Unix and WebSocket
+        run: BLUEPIXEL_DESKTOP_BINARY="$PWD/.build/release/BluePixel" python3 Tests/headless/test_server.py
+
   wasm-conformance:
     runs-on: ubuntu-latest
     steps:
@@ -12,6 +21,8 @@ jobs:
       - uses: mymindstorm/setup-emsdk@v14
       - name: Build native CPCApi host
         run: tools/build-headless.sh
+      - name: Browser-compatible WebSocket client
+        run: node Tests/wasm/test_control_websocket.mjs
       - name: Prepare disposable ROMs
         run: python3 Tests/headless/make_test_roms.py "$RUNNER_TEMP/bluepixel-test-roms"
       - name: Build CPCApi WebAssembly
@@ -45,10 +56,16 @@ jobs:
           echo "BLUEPIXEL_ROM_DIR=$RUNNER_TEMP/bluepixel-test-roms" >> "$GITHUB_ENV"
       - name: Run headless API smoke on Linux
         run: LDFLAGS=-static python3 Tests/headless/test_api.py
-      - name: Headless API 1.2 (input, display, audio, tape, discs, debugger, schema contract)
+      - name: Headless API 1.3 (input, display, audio, tape, discs, debugger, schema contract)
         run: LDFLAGS=-static python3 Tests/headless/test_api_ext.py   # rebuilds build/bluepixel-headless: keep it static for the last step
-      - name: Headless API 1.2 under ASan/UBSan (memory errors and leaks)
+      - name: Headless API 1.3 under ASan/UBSan (memory errors and leaks)
         run: BLUEPIXEL_SANITIZE=1 python3 Tests/headless/test_api_ext.py
+      - name: Authenticated Unix and WebSocket control transports
+        run: BLUEPIXEL_NO_BUILD=1 python3 Tests/headless/test_server.py
+      - name: Control transports under ASan/UBSan
+        run: |
+          CFLAGS="-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer" LDFLAGS="" tools/build-headless.sh build/bluepixel-server-asan
+          BLUEPIXEL_NO_BUILD=1 BLUEPIXEL_HEADLESS_BINARY="$PWD/build/bluepixel-server-asan" python3 Tests/headless/test_server.py
       - name: Native vs native conformance harness self-test
         run: node Tests/wasm/conformance.mjs --self-test
       - name: Canonical state covers every field (debug-info probe, restore fuzz under ASan/UBSan)
