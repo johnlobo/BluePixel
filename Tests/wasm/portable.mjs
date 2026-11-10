@@ -45,6 +45,10 @@ async function call(method, params = {}) {
   assert(!reply.error, `${method}: ${JSON.stringify(reply.error)}`);
   return reply.result;
 }
+async function restore(state) {
+  assert.deepEqual(await call("state.restore", { data_base64: state.toString("base64") }),
+    { restored: true, hazards: 0 }, "state restore reported incompatible media/configuration");
+}
 async function setup() {
   for (const role of Object.keys(roms)) await call("rom.load", { role, data_base64: roms[role].toString("base64") });
   await call("disc.load", { drive: 0, name: "nave.dsk", data_base64: readFileSync(path.join(fixture, "nave.dsk")).toString("base64") });
@@ -100,7 +104,7 @@ try {
     }
     assert.equal((await call("mem.read", { address: "game_status", length: 1 })).hex.toLowerCase(), "5a", "nave never booted");
     for (const checkpoint of checkpoints) {
-      await call("state.restore", { data_base64: readFileSync(path.join(output, checkpoint.file)).toString("base64") });
+      await restore(readFileSync(path.join(output, checkpoint.file)));
       assert.deepEqual(await observe(), checkpoint.at, "local state restore changed the machine");
       await call("run.frames", { count: 100 });
       checkpoint.after100 = await observe();
@@ -123,7 +127,7 @@ try {
       for (const checkpoint of report.checkpoints) {
         const state = readFileSync(path.join(dir, checkpoint.file));
         assert.equal(canonical(state), checkpoint.canonical);
-        await call("state.restore", { data_base64: state.toString("base64") });
+        await restore(state);
         assert.deepEqual(await observe(), checkpoint.at, `restore differs: ${report.producer}/${checkpoint.file}`);
         await call("run.frames", { count: 100 });
         assert.deepEqual(await observe(), checkpoint.after100, `continuation differs: ${report.producer}/${checkpoint.file}`);
