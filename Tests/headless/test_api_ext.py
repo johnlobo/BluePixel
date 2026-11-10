@@ -366,6 +366,16 @@ call("machine.reset")
 assert call("debug.status")["break"] is False, "machine.reset must clear the debugger stop"
 clear_breakpoints()
 
+# a read breakpoint also fires when the CPU fetches an instruction from that address (the instruction stream counts as reads)
+load_program()
+clear_breakpoints()
+assert call("debug.attach")["enabled"] is True
+call("debug.breakpoints.add_memory", {"start": 0x4011, "end": 0x4011, "access": "read"})
+fetched = call("run.frames", {"count": 3})
+assert fetched["break"], "a read breakpoint on code must fire when the code is executed"
+call("debug.resume")
+clear_breakpoints()
+
 # memory breakpoint access modes: the program reads 8000 and writes C000
 def runs_into(access, address):
     load_program()

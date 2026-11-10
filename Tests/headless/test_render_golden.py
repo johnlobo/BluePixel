@@ -126,6 +126,13 @@ AUDIO_SCENARIOS = [
         (psg_regs(tone=(0x05, 0, 0x100), vol=(15, 0, 15), mixer=0x3A, noise=3), 9000),
     ]},
     {"name": "silence", "steps": [(psg_regs(), 60000)]},
+    {"name": "frames-tones-noise", "frames": 5, "steps": [(psg_regs(tone=(0x2A, 0x51, 0x90), vol=(12, 9, 15), mixer=0x30, noise=9), 0)]},
+    {"name": "frames-envelope", "frames": 5, "steps": [(psg_regs(tone=(0x14, 0, 0), vol=(16, 0, 0), mixer=0x3E, env_period=33, env_shape=0x0A), 0)]},
+    # the CPU polls the PPI port B tape-input bit while a pilot tone plays and stores what it reads: reading a port must see
+    # the tape exactly where it is at that microsecond
+    {"name": "tape-port-poll", "tape": b"ZXTape!\x1a\x01\x14" + bytes([0x12]) + (700).to_bytes(2, "little") + (3000).to_bytes(2, "little"),
+     "code": bytes.fromhex("01" "00f5" "21" "0080" "ed78" "77" "2c" "18fa"),
+     "frames": 4, "steps": [(psg_regs(), 0)]},
     # tape sound: motor on, a pilot tone playing (pure tone block 0x12: 2168 T-states per pulse, 3000 pulses)
     {"name": "tape-pilot", "tape": b"ZXTape!\x1a\x01\x14" + bytes([0x12]) + (2168).to_bytes(2, "little") + (3000).to_bytes(2, "little"),
      "steps": [(psg_regs(tone=(0x30, 0, 0), vol=(9, 0, 0), mixer=0x3E), 80000)]},
@@ -149,18 +156,23 @@ def run_audio(scn):
     digest = hashlib.sha256()
     for regs, nops in scn["steps"]:
         image = bytearray(base64.b64decode(call("snapshot.save", {"version": 1})["data_base64"]))
-        image[0x100 + 0x4000:0x100 + 0x4002] = bytes([0x18, 0xFE])
+        code = scn.get("code", bytes([0x18, 0xFE]))
+        image[0x100 + 0x4000:0x100 + 0x4000 + len(code)] = code
         image[0x1B] = image[0x1C] = 0
         image[0x21:0x23] = (0xBFF0).to_bytes(2, "little")
         image[0x23:0x25] = (0x4000).to_bytes(2, "little")
         image[0x5B:0x5B + 16] = regs
+        image[0x43:0x43 + 18] = bytes(STD_CRTC)               # a fresh machine has no CRTC setup: frames would last a few instructions
         if scn.get("tape"):
             image[0x58] |= 0x10                                # PPI port C bit 4: the tape motor
         call("snapshot.load", {"data_base64": base64.b64encode(bytes(image)).decode()})
         if scn.get("tape"):
             call("tape.load", {"data_base64": base64.b64encode(scn["tape"]).decode(), "name": "pilot.tzx"})
             call("tape.play", {"play": True})
-        call("run.nops", {"count": nops})
+        if scn.get("frames"):
+            call("run.frames", {"count": scn["frames"]})     # run.frames accumulates sound/tape/FDC time as debt; run.nops settles every step
+        else:
+            call("run.nops", {"count": nops})
         while True:                                    # every queued sample goes into the digest
             chunk = call("audio.read")
             if not chunk["frames"]:
@@ -173,16 +185,19 @@ def run_audio(scn):
 
 
 GOLDEN_AUDIO = {
-    "tone-a": "4a232ca2ae60fde9/140f8d1b9f1d1a0b",
-    "three-tones": "8a2a7504b060c85f/9f6c97d39bc5695e",
-    "noise": "5f173464433edded/52aedf3184d9c209",
-    "noise-and-tone": "ab9395b530685563/64464dd9a25c5833",
-    "envelope-saw": "7aa62db4c06357d8/357e5db11b26c8a4",
-    "envelope-triangle": "18d64322f58b0c96/d055bcc998609502",
-    "envelope-decay-hold": "2ad7b1dedf9e1de1/515c97320d87e172",
-    "registers-change": "5adfffc87161ee6c/0188b784bd435c56",
-    "silence": "4928db4a829acf71/a82fa4fe46e66715",
-    "tape-pilot": "b9243dcb39484224/cdd4c9cce7dada54",
+    "tone-a": "6074a4a221495a42/140f8d1b9f1d1a0b",
+    "three-tones": "64e326291d495e77/9f6c97d39bc5695e",
+    "noise": "8f7f402e711b3752/52aedf3184d9c209",
+    "noise-and-tone": "73943fe91a1e9320/64464dd9a25c5833",
+    "envelope-saw": "ffa45d22a9feacc0/357e5db11b26c8a4",
+    "envelope-triangle": "724a7c596dd4ab1e/d055bcc998609502",
+    "envelope-decay-hold": "59877f32974b7039/515c97320d87e172",
+    "registers-change": "bfb3f30a3edf4b27/0188b784bd435c56",
+    "silence": "7c266403d59a55da/a82fa4fe46e66715",
+    "frames-tones-noise": "d5c64c13f34b0c6a/5dc738f4a0299939",
+    "frames-envelope": "c51c0a93313ffd68/42a8d46d15e908d3",
+    "tape-port-poll": "0b8f26a5480e822d/b55a236d2ab4e2dc",
+    "tape-pilot": "b7caa0f5faa5b291/cdd4c9cce7dada54",
 }
 
 if __name__ == "__main__":
