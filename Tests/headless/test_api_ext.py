@@ -686,6 +686,53 @@ assert default == call("screen.render", {"pal": True, "scanlines": True})["data_
 assert default != call("screen.render", {"pal": False, "scanlines": True})["data_base64"], "pal changes the picture"
 assert default != call("screen.render", {"pal": True, "scanlines": False})["data_base64"], "scanlines changes the picture"
 
+# a restored state may carry a gate-array mode beyond 3 (the canonical restore does not bound it): it is drawn as mode 2, the
+# way the generic renderer always did, by every drawing path
+import struct as _struct
+import zlib as _zlib
+
+
+def machine_in_mode(mode):
+    load_program()
+    image = bytearray(base64.b64decode(call("snapshot.save", {"version": 1})["data_base64"]))
+    image[0x100 + 0x4000:0x100 + 0x4002] = bytes([0x18, 0xFE])
+    image[0x40] = (image[0x40] & ~3) | mode | 0x0C
+    image[0x43:0x43 + 18] = bytes([63, 40, 46, 0x8E, 38, 0, 25, 30, 0, 7, 0, 0, 0x30, 0, 0, 0, 0, 0])
+    image[0x100:0x100 + 0x4000] = bytes(range(256)) * 64
+    image[0x100 + 0xC000:0x100 + 0x10000] = bytes((i * 7 + 3) & 255 for i in range(0x4000))
+    for i in range(17):
+        image[0x2F + i] = (i * 5 + 1) & 31
+    call("snapshot.load", {"data_base64": b64(bytes(image))})
+    call("run.frames", {"count": 2})
+
+
+def canonical(blob):
+    raw = base64.b64decode(blob)
+    return raw, bytearray(_zlib.decompress(raw[32:]))
+
+
+streams = []
+for mode in range(4):
+    machine_in_mode(mode)
+    streams.append(canonical(call("state.save")["data_base64"])[1])
+offset = [i for i in range(min(map(len, streams))) if [s[i] for s in streams] == [0, 1, 2, 3]]
+assert len(offset) == 1, offset
+machine_in_mode(2)
+header, stream = canonical(call("state.save")["data_base64"])
+call("run.frames", {"count": 2})
+want = call("screen.capture")["data_base64"]
+for bad in (4, 7, 255):
+    patched = bytearray(stream)
+    patched[offset[0]] = bad
+    packed = _zlib.compress(bytes(patched))
+    head = bytearray(header[:32])
+    head[24:28] = _struct.pack("<I", len(patched))
+    head[28:32] = _struct.pack("<I", len(packed))
+    machine_in_mode(2)
+    assert call("state.restore", {"data_base64": b64(bytes(head) + packed)})["restored"] is True, bad
+    call("run.frames", {"count": 2})
+    assert call("screen.capture")["data_base64"] == want, f"gate array mode {bad} must draw like mode 2"
+
 # ---- contract: api/schema.json and the code list exactly the same methods ----
 import re
 schema = json.loads((root / "api" / "schema.json").read_text())

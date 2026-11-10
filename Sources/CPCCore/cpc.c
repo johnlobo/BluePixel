@@ -480,12 +480,7 @@ static inline void emit_char_fast(CPC *c, bool de, uint16_t ma, uint16_t ra) {
         for (int p = 0; p < 4; p++) { uint32_t rgb = hw[gp[p1[p]] & 31]; dst[8 + 2 * p] = rgb; dst[8 + 2 * p + 1] = rgb; }
         break;
     }
-    case 2: {
-        const uint32_t c0 = hw[gp[0] & 31], c1 = hw[gp[1] & 31];
-        for (int p = 0; p < 8; p++) { dst[p] = (b0 >> (7 - p)) & 1 ? c1 : c0; dst[8 + p] = (b1 >> (7 - p)) & 1 ? c1 : c0; }
-        break;
-    }
-    default: {    /* modes 0 and 3 */
+    case 0: case 3: {
         const uint8_t *p0 = pen_m0[b0], *p1 = pen_m0[b1];
         for (int p = 0; p < 2; p++) {
             uint32_t rgb = hw[gp[p0[p]] & 31];
@@ -495,6 +490,11 @@ static inline void emit_char_fast(CPC *c, bool de, uint16_t ma, uint16_t ra) {
             uint32_t rgb = hw[gp[p1[p]] & 31];
             for (int i = 0; i < 4; i++) dst[8 + 4 * p + i] = rgb;
         }
+        break;
+    }
+    default: {    /* mode 2, and any value a restored state may carry beyond 3: the generic path draws those as mode 2 too */
+        const uint32_t c0 = hw[gp[0] & 31], c1 = hw[gp[1] & 31];
+        for (int p = 0; p < 8; p++) { dst[p] = (b0 >> (7 - p)) & 1 ? c1 : c0; dst[8 + p] = (b1 >> (7 - p)) & 1 ? c1 : c0; }
     }
     }
     c->beam_x += 16;
