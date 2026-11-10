@@ -219,7 +219,14 @@ void cpc_mem_write(void *ctx, uint16_t addr, uint8_t v);
 /* PSG */
 void psg_reset(CPCPsg *p);
 void psg_write_reg(CPCPsg *p, uint8_t reg, uint8_t v);
-bool psg_tick(CPCPsg *p);   /* true when the channel levels were recomputed (they may have changed) */
+bool psg_tick_slow(CPCPsg *p);   /* the full step; `sub` has already been advanced by the caller */
+/* One PSG clock. True when the channel levels were recomputed (they may have changed). Most ticks change nothing: no tone,
+ * noise or envelope is due and the levels are current, so they cost a counter increment and two tests. */
+static inline bool psg_tick(CPCPsg *p) {
+    uint8_t s = ++p->sub;
+    if ((s & 7) && p->lvl_clean) return false;
+    return psg_tick_slow(p);
+}
 void psg_mix(const CPCPsg *p, float *l, float *r, bool stereo);
 
 /* ASIC (Amstrad Plus) */

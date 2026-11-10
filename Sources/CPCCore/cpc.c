@@ -645,14 +645,16 @@ void cpc_video_tick(CPC *c) {
 }
 
 /* ---------------- Audio ---------------- */
-static void audio_tick(CPC *c) {
+/* `mix_fx` (AmDrum/Digiblaster on) and `tape_snd` (tape sound with the motor running) cannot change inside one instruction,
+ * so advance() works them out once and passes them in. */
+static inline void audio_tick(CPC *c, bool mix_fx, bool tape_snd) {
     if (psg_tick(&c->psg) || !c->psg.mix_valid) {      /* the mix only moves when a level does */
         psg_mix(&c->psg, &c->psg.mix[0], &c->psg.mix[1], c->cfg.stereo);
         c->psg.mix_valid = true;
     }
     float l = c->psg.mix[0], r = c->psg.mix[1];
-    if (c->cfg.amdrum || c->cfg.digiblaster) { float d = (c->amdrum / 255.0f) * 0.5f; l = r = (l + r) * 0.5f + d; }
-    if (c->cfg.tape_sound && c->tape_motor && tape_read_level(c->tape)) { l += 0.02f; r += 0.02f; }
+    if (mix_fx) { float d = (c->amdrum / 255.0f) * 0.5f; l = r = (l + r) * 0.5f + d; }
+    if (tape_snd && tape_read_level(c->tape)) { l += 0.02f; r += 0.02f; }
     c->audio_acc[0] += l; c->audio_acc[1] += r; c->audio_acc_n++;
     c->audio_phase += c->cfg.sample_rate;
     if (c->audio_phase >= 1000000) {
@@ -714,11 +716,15 @@ uint8_t *cpc_tape_record_stop(CPC *c, size_t *size) {
 
 /* ---------------- Main loop ---------------- */
 static void advance(CPC *c, int nops) {
+    const bool mix_fx = c->cfg.amdrum || c->cfg.digiblaster;
+    const bool tape_snd = c->cfg.tape_sound && c->tape_motor;
+    const bool tape_on = c->tape != NULL;
+    const bool recording = c->rec_active && c->tape_motor;       /* rec_tick returns at once otherwise */
     for (int i = 0; i < nops; i++) {
         cpc_video_tick(c);
-        audio_tick(c);
-        if (c->tape) tape_tick(c->tape, 1);
-        rec_tick(c);
+        audio_tick(c, mix_fx, tape_snd);
+        if (tape_on) tape_tick(c->tape, 1);
+        if (recording) rec_tick(c);
         c->cycles++;
     }
     fdc_tick(c->fdc, nops);

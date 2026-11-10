@@ -126,6 +126,9 @@ AUDIO_SCENARIOS = [
         (psg_regs(tone=(0x05, 0, 0x100), vol=(15, 0, 15), mixer=0x3A, noise=3), 9000),
     ]},
     {"name": "silence", "steps": [(psg_regs(), 60000)]},
+    # tape sound: motor on, a pilot tone playing (pure tone block 0x12: 2168 T-states per pulse, 3000 pulses)
+    {"name": "tape-pilot", "tape": b"ZXTape!\x1a\x01\x14" + bytes([0x12]) + (2168).to_bytes(2, "little") + (3000).to_bytes(2, "little"),
+     "steps": [(psg_regs(tone=(0x30, 0, 0), vol=(9, 0, 0), mixer=0x3E), 80000)]},
 ]
 
 
@@ -151,7 +154,12 @@ def run_audio(scn):
         image[0x21:0x23] = (0xBFF0).to_bytes(2, "little")
         image[0x23:0x25] = (0x4000).to_bytes(2, "little")
         image[0x5B:0x5B + 16] = regs
+        if scn.get("tape"):
+            image[0x58] |= 0x10                                # PPI port C bit 4: the tape motor
         call("snapshot.load", {"data_base64": base64.b64encode(bytes(image)).decode()})
+        if scn.get("tape"):
+            call("tape.load", {"data_base64": base64.b64encode(scn["tape"]).decode(), "name": "pilot.tzx"})
+            call("tape.play", {"play": True})
         call("run.nops", {"count": nops})
         while True:                                    # every queued sample goes into the digest
             chunk = call("audio.read")
@@ -174,6 +182,7 @@ GOLDEN_AUDIO = {
     "envelope-decay-hold": "2ad7b1dedf9e1de1/515c97320d87e172",
     "registers-change": "5adfffc87161ee6c/0188b784bd435c56",
     "silence": "4928db4a829acf71/a82fa4fe46e66715",
+    "tape-pilot": "b9243dcb39484224/cdd4c9cce7dada54",
 }
 
 if __name__ == "__main__":

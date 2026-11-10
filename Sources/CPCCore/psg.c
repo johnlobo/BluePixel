@@ -42,9 +42,8 @@ static void env_step(CPCPsg *p) {
     }
 }
 
-bool psg_tick(CPCPsg *p) {
+bool psg_tick_slow(CPCPsg *p) {
     bool changed = !p->lvl_clean;
-    p->sub++;
     if ((p->sub & 7) == 0) {
         for (int i = 0; i < 3; i++) {
             if (++p->tone_cnt[i] >= (p->tone_per[i] ? p->tone_per[i] : 1)) { p->tone_cnt[i] = 0; p->tone_out[i] ^= 1; changed = true; }
