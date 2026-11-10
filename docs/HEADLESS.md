@@ -118,15 +118,15 @@ The H2 median is about 9.8% higher in this emulated environment, but still far b
 
 ### 3. Web sobre CPCApi
 
-**PARCIAL.** Hecho y medido en Linux (API 1.2): todo lo que `web/bridge.c` hace ya se puede pedir a CPCApi (entrada, monitor, render, audio, cinta, discos, ROMs, depurador completo), con tests nativos en `Tests/headless/test_api_ext.py` (también bajo ASan/UBSan con `BLUEPIXEL_SANITIZE=1`). **No hecho:** compilar a WASM, migrar la UI, borrar `web/bridge.c` y correr la conformidad nativo contra WASM. Requieren Emscripten y un navegador, que la VPS no tiene. Cero de los 10 puntos de hash nativo/WASM se han comparado.
+**PARCIAL.** CPCApi 1.2 cubre entrada, monitor, render, audio, cinta, discos, ROMs y depurador completo. La UI llama a la API JSON-RPC desde `web/capi-rpc-client.js`; `web/bridge.c` y sus binarios antiguos se eliminaron. La build WASM y la comparación nativo/WASM pasan en el desktop: 35/35 comparaciones iguales en 1000 fotogramas. `screen.render` (768×540 RGBA8) y `audio.read` también se comprobaron directamente. **Pendiente:** prueba manual completa con ROMs/media y el depurador, y ejecutar el nuevo job de CI en Actions.
 
 Lo que queda, en orden (en un equipo con Emscripten; guía completa con criterios y trampas en [HANDOFF-15b.md](HANDOFF-15b.md)):
 
-1. `tools/build-wasm-capi.sh` compila el núcleo + CPCApi + `web/capi_exports.c` a `web/bluepixel-capi.js/.wasm`. Escrito y revisado, **sin ejecutar** (no hay `emcc` aquí). Es posible que pida ajustes de flags.
-2. `node Tests/wasm/conformance.mjs --wasm web/bluepixel-capi.js` (con `BLUEPIXEL_ROM_DIR`): misma secuencia de peticiones al binario nativo y al WASM, compara `run.frames`, `state.hash` y `cpu.registers` cada 100 fotogramas durante 1000 y los bytes de `state.save` al final. Verificado aquí solo con `--self-test` (nativo contra un segundo proceso nativo: 35/35 iguales) y con un control negativo (una máscara de tecla distinta: 14/35 iguales, salida 1). El lado WASM del harness no se ha ejecutado.
-3. Migrar `web/app.js` y `web/debugger-window.js` de `core._bp_*` a peticiones JSON-RPC (tabla abajo). Los binarios (ROM, DSK, SNA, cinta) viajan en `data_base64`.
-4. Borrar `web/bridge.c`, regenerar y decidir si `bluepixel.js/.wasm` se siguen versionando, y probar el navegador a mano (arranque, disco, cinta, audio, depurador).
-5. Cambiar el job de CI para que construya con emsdk y corra el paso 2.
+1. `tools/build-wasm-capi.sh` builds `web/bluepixel-capi.js/.wasm` with Emscripten; verified locally with emcc 6.0.13.
+2. `Tests/wasm/conformance.mjs --wasm` passes 35/35 comparisons over 1000 frames using the pinned CPC 6128 ROMs.
+3. `web/app.js` now uses `web/capi-rpc-client.js`; ROM, DSK, SNA and tape payloads travel as base64 in JSON-RPC. The debugger window continues to call the parent window's interface, which routes to CPCApi.
+4. `web/bridge.c` and stale `bluepixel.js/.wasm` have been removed. The regenerated `bluepixel-capi.js/.wasm` are versioned for Pages and local use. Chrome loaded the local page; full ROM/media/debugger interaction remains to be verified.
+5. `.github/workflows/headless.yml` now has an emsdk build and conformance job; it has not yet run in hosted Actions.
 
 Equivalencias `bridge.c` a CPCApi:
 

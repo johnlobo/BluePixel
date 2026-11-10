@@ -4,7 +4,7 @@ Emulador de Amstrad CPC 6128 para macOS y navegador.
 
 ## Usar la versión web
 
-No hace falta instalar nada. Abre [BluePixel Web](https://johnlobo.github.io/BluePixel/) en un navegador moderno con WebAssembly y JavaScript activados. La web solicita los ficheros ROM necesarios y empieza a emular cuando están listos.
+No hace falta instalar nada. Abre [BluePixel Web](https://johnlobo.github.io/BluePixel/) en un navegador moderno con WebAssembly y JavaScript activados. La web incluye las ROMs y arranca automáticamente el CPC 6128.
 
 - Haz clic en la pantalla para ver los atajos **F10** (menú) y **F7** (depurador). Usa las flechas y **Enter** para navegar por el menú; **F10** o **Escape** lo cierran.
 - En **File → Drive A:** o **Drive B:** carga una imagen `.dsk` en cada unidad. Desde el mismo menú puedes descargar la copia modificada de cada disco.
@@ -42,7 +42,7 @@ No necesitas Emscripten para usarla: el JavaScript y el WebAssembly compilados e
 
 BluePixel Web es una aplicación estática: no necesita Node.js, PHP, un proceso de emulación en el servidor ni Emscripten. Basta con copiar los archivos precompilados de `web/` a cualquier carpeta servida por tu web, por ejemplo `public_html/bluepixel/` o `/var/www/html/bluepixel/`.
 
-Copia el **contenido** de `web/` conservando la estructura y los nombres, incluidos `index.html`, `app.js`, `style.css`, `icon.png`, `bluepixel.js` y `bluepixel.wasm`. Puedes subirlos desde el panel de tu hosting/FTP o, si tienes SSH y `rsync`, desde la raíz del repositorio:
+Copia el **contenido** de `web/` conservando la estructura y los nombres, incluidos `index.html`, `app.js`, `style.css`, `icon.png`, `bluepixel-capi.js` y `bluepixel-capi.wasm`. Puedes subirlos desde el panel de tu hosting/FTP o, si tienes SSH y `rsync`, desde la raíz del repositorio:
 
 ```sh
 rsync -av web/ usuario@servidor:/ruta/de/tu/sitio/bluepixel/

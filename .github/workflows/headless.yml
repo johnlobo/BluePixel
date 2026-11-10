@@ -5,6 +5,22 @@ on:
   pull_request:
     branches: [main, h1-headless, h2-core]
 jobs:
+  wasm-conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mymindstorm/setup-emsdk@v14
+      - name: Build native CPCApi host
+        run: tools/build-headless.sh
+      - name: Prepare disposable ROMs
+        run: python3 Tests/headless/make_test_roms.py "$RUNNER_TEMP/bluepixel-test-roms"
+      - name: Build CPCApi WebAssembly
+        run: tools/build-wasm-capi.sh
+      - name: Compare native and WebAssembly machines
+        env:
+          BLUEPIXEL_ROM_DIR: ${{ runner.temp }}/bluepixel-test-roms
+        run: node Tests/wasm/conformance.mjs --wasm web/bluepixel-capi.js
+
   linux-x86_64-static:
     runs-on: ubuntu-latest
     steps:

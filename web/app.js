@@ -1,4 +1,5 @@
-import createBluePixelCore from "./bluepixel.js";
+import createBluePixelCore from "./bluepixel-capi.js";
+import { createBluePixelApi } from "./capi-rpc-client.js";
 
 const canvas = document.querySelector("#screen");
 const screenWrap = document.querySelector(".screen-wrap");
@@ -89,7 +90,7 @@ function menuGroups() {
       ])),
       menuBranch("Tape", [
         menuItem("Insert Tape…", () => tapeInput.click()),
-        menuItem(core?._bp_tape_playing() ? "Stop Tape" : "Play Tape", () => setTapePlaying(!core._bp_tape_playing()), { disabled: !loadedTapeName }),
+        menuItem(core?.tapePlaying() ? "Stop Tape" : "Play Tape", () => setTapePlaying(!core.tapePlaying()), { disabled: !loadedTapeName }),
         menuItem("Rewind Tape", rewindTape, { disabled: !loadedTapeName }),
         menuItem("Remove Tape", removeTape, { disabled: !loadedTapeName }),
         menuItem(loadedTapeName ? `Loaded: ${loadedTapeName}` : "No tape loaded", () => {}, { disabled: true }),
@@ -185,7 +186,7 @@ function handleMenuKey(event) {
     else if (event.code === "Enter") {
       if (typeBuffer) {
         const bytes = new TextEncoder().encode(typeBuffer + "\0");
-        transfer(bytes, ptr => core._bp_type(ptr));
+        transfer(bytes, ptr => core.typeText(ptr));
       }
       typeEntry = false;
       typeBuffer = "";
@@ -280,13 +281,13 @@ let pressed = new Map();
 let audioConnected = false;
 
 try {
-  core = await createBluePixelCore({ locateFile: file => new URL(file, import.meta.url).href });
-  if (!core._bp_init()) throw new Error("Could not allocate the CPC machine.");
-  core._bp_set_monitor(displayMonitor);
+  core = await createBluePixelApi(createBluePixelCore);
+  if (!core.initialize()) throw new Error("Could not allocate the CPC machine.");
+  core.setMonitor(displayMonitor);
   screenWrap.style.maxWidth = `${displayWidth}px`;
   try { initializeAudioGraph(); }
   catch (error) { soundEnabled = false; soundButton.textContent = "Sound Off"; console.warn(error.message); }
-  status.textContent = "Select the CPC 6128 OS and BASIC ROM files to start.";
+  status.textContent = "Loading the CPC 6128 ROM set…";
 } catch (error) {
   status.textContent = `Could not start WebAssembly: ${error.message}`;
   throw error;
@@ -319,37 +320,59 @@ function updateReady(message) {
 }
 
 async function installROM(input, slot, key, bytes, name) {
-  const ok = transfer(bytes, (ptr, size) => core._bp_load_rom(slot, ptr, size));
+  const ok = bytes ? transfer(bytes, (ptr, size) => core.loadRom(slot, ptr, size)) : core.loadRom(slot, 0, 0);
   if (!ok) throw new Error("The ROM could not be loaded.");
-  if (key === "os") hasOS = true;
-  if (key === "basic") hasBasic = true;
+  if (key === "os") hasOS = Boolean(bytes);
+  if (key === "basic") hasBasic = Boolean(bytes);
   loadedROMs[key] = name;
-  if ((key === "os" || key === "basic") && hasOS && hasBasic) core._bp_reset();
+  if ((key === "os" || key === "basic") && hasOS && hasBasic) core.reset();
   status.textContent = bytes ? `${name} loaded.` : "Disk ROM removed.";
   updateReady();
 }
 
-async function loadROMFile(input, slot, key) {
-  const file = input.files?.[0];
-  if (!file) return;
+async function loadROMFromFolder(input, slot, key) {
+  const name = input.value;
   try {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    if (bytes.byteLength !== 16384) throw new Error("A CPC ROM must contain exactly 16 KiB.");
-    await installROM(input, slot, key, bytes, file.name);
+    if (!name && key === "amsdos") {
+      await installROM(input, slot, key, null, "");
+      return true;
+    }
+    const response = await fetch(new URL(`./roms/${encodeURIComponent(name)}`, import.meta.url));
+    if (!response.ok) throw new Error(`${name} was not found in the bundled ROM folder.`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    await installROM(input, slot, key, bytes, name);
+    return true;
   } catch (error) {
     status.textContent = `ROM error: ${error.message}`;
-    input.value = "";
+    if (loadedROMs[key] !== null) input.value = loadedROMs[key];
+    return false;
   }
 }
 
 const osROM = document.querySelector("#os-rom");
 const basicROM = document.querySelector("#basic-rom");
 const amsdosROM = document.querySelector("#amsdos-rom");
-osROM.addEventListener("change", () => loadROMFile(osROM, -1, "os"));
-basicROM.addEventListener("change", () => loadROMFile(basicROM, 0, "basic"));
-amsdosROM.addEventListener("change", () => loadROMFile(amsdosROM, 7, "amsdos"));
+osROM.addEventListener("change", () => loadROMFromFolder(osROM, -1, "os"));
+basicROM.addEventListener("change", () => loadROMFromFolder(basicROM, 0, "basic"));
+amsdosROM.addEventListener("change", () => loadROMFromFolder(amsdosROM, 7, "amsdos"));
 
-updateReady("Choose an OS and BASIC ROM to start the CPC.");
+async function loadDefaultROMs() {
+  const results = await Promise.all([
+    loadROMFromFolder(osROM, -1, "os"),
+    loadROMFromFolder(basicROM, 0, "basic"),
+    loadROMFromFolder(amsdosROM, 7, "amsdos"),
+  ]);
+  if (!hasOS || !hasBasic) {
+    hint.textContent = "Could not load the CPC 6128 ROMs. Open Settings → Memory to choose a ROM.";
+    updateReady("Required CPC 6128 ROMs could not be loaded.");
+    return;
+  }
+  running = true;
+  runButton.textContent = "Pause";
+  clearHintAfterFrame = true;
+  status.textContent = results[2] ? "CPC 6128 ROM set loaded. Running." : "CPC 6128 is running without the optional disk ROM.";
+}
+loadDefaultROMs();
 
 [0, 1].forEach(drive => {
   const input = document.querySelector(drive === 0 ? "#disk-a" : "#disk-b");
@@ -358,7 +381,7 @@ updateReady("Choose an OS and BASIC ROM to start the CPC.");
     if (!file) return;
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      if (!transfer(bytes, (ptr, size) => core._bp_load_disc(drive, ptr, size))) {
+      if (!transfer(bytes, (ptr, size) => core.loadDisc(drive, ptr, size))) {
         throw new Error("This is not a supported DSK image.");
       }
       currentDiskNames[drive] = file.name;
@@ -375,7 +398,7 @@ document.querySelector("#snapshot").addEventListener("change", async event => {
   if (!file) return;
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    if (!transfer(bytes, (ptr, size) => core._bp_load_snapshot(ptr, size))) {
+    if (!transfer(bytes, (ptr, size) => core.loadSnapshot(ptr, size))) {
       throw new Error("This is not a supported SNA snapshot.");
     }
     hasSnapshot = true;
@@ -401,7 +424,7 @@ document.querySelector("#tape").addEventListener("change", async event => {
     if (!dataPtr || !namePtr) throw new Error("Not enough memory to load this tape.");
     core.HEAPU8.set(bytes, dataPtr);
     core.HEAPU8.set(name, namePtr);
-    if (!core._bp_load_tape(dataPtr, bytes.byteLength, namePtr)) {
+    if (!core.loadTape(dataPtr, bytes.byteLength, namePtr)) {
       throw new Error("This tape format is not supported or the file is damaged.");
     }
     loadedTapeName = file.name;
@@ -426,7 +449,7 @@ function readDebugString(address, size = 160) {
   if (!ptr) return "<disassembly unavailable>";
   try {
     core.HEAPU8.fill(0, ptr, ptr + size);
-    const length = core._bp_debug_disassemble(address, ptr, size);
+    const length = core.debugDisassemble(address, ptr, size);
     if (!length) return "<invalid instruction>";
     let end = ptr;
     while (end < ptr + size && core.HEAPU8[end] !== 0) end++;
@@ -441,7 +464,7 @@ function readDebugBytes(address, count) {
   const ptr = core._malloc(size);
   if (!ptr) return [];
   try {
-    core._bp_debug_read_memory(address & 0xFFFF, ptr, size);
+    core.debugReadMemory(address & 0xFFFF, ptr, size);
     return Array.from(core.HEAPU8.subarray(ptr, ptr + size));
   } finally { core._free(ptr); }
 }
@@ -454,67 +477,67 @@ function readDebugCString(ptr, maxSize = 256) {
 }
 
 function toggleCodeBreakpoint(address) {
-  core._bp_debug_toggle_code_bp(address);
-  debuggerMessage = core._bp_debug_has_code_bp(address)
+  core.debugToggleCodeBreakpoint(address);
+  debuggerMessage = core.debugHasCodeBreakpoint(address)
     ? `Breakpoint added at ${debugHex(address)}.`
     : `Breakpoint removed from ${debugHex(address)}.`;
 }
 
 function getDebuggerState() {
-  core._bp_debug_attach();
+  core.debugAttach();
   const registerNames = ["AF", "BC", "DE", "HL", "IX", "IY", "SP", "PC"];
-  const registers = Object.fromEntries(registerNames.map((name, index) => [name, core._bp_debug_register(index)]));
-  registers.IM = core._bp_debug_register(8);
-  registers.IFF = core._bp_debug_register(9);
-  registers.T = core._bp_debug_register(10);
-  const pc = core._bp_debug_register(7) & 0xFFFF;
+  const registers = Object.fromEntries(registerNames.map((name, index) => [name, core.debugRegister(index)]));
+  registers.IM = core.debugRegister(8);
+  registers.IFF = core.debugRegister(9);
+  registers.T = core.debugRegister(10);
+  const pc = core.debugRegister(7) & 0xFFFF;
   const instructions = [];
   let address = pc;
   for (let i = 0; i < 16; i++) {
     const text = readDebugString(address);
-    instructions.push({ address, text, length: core._bp_debug_instruction_length(address), breakpoint: Boolean(core._bp_debug_has_code_bp(address)) });
+    instructions.push({ address, text, length: core.debugInstructionLength(address), breakpoint: Boolean(core.debugHasCodeBreakpoint(address)) });
     address = (address + Math.max(1, instructions.at(-1).length)) & 0xFFFF;
   }
   const breakpointTypes = ["Code", "Read", "Write", "I/O", "Change"];
-  const count = core._bp_debug_breakpoint_count_all();
+  const count = core.debugBreakpointCount();
   const breakpoints = Array.from({ length: count }, (_, ordinal) => {
-    const id = core._bp_debug_breakpoint_id(ordinal);
+    const id = core.debugBreakpointId(ordinal);
     const conditionPtr = core._malloc(160);
     let condition = "";
     if (conditionPtr) {
       core.HEAPU8.fill(0, conditionPtr, conditionPtr + 160);
-      core._bp_debug_breakpoint_condition(id, conditionPtr, 160);
+      core.debugBreakpointCondition(id, conditionPtr, 160);
       condition = readDebugCString(conditionPtr, 160);
       core._free(conditionPtr);
     }
     return {
       id,
-      type: breakpointTypes[core._bp_debug_breakpoint_type(id)] || "Breakpoint",
-      start: core._bp_debug_breakpoint_start(id),
-      end: core._bp_debug_breakpoint_end(id),
+      type: breakpointTypes[core.debugBreakpointType(id)] || "Breakpoint",
+      start: core.debugBreakpointStart(id),
+      end: core.debugBreakpointEnd(id),
       condition,
-      passCount: core._bp_debug_breakpoint_pass_count(id),
+      passCount: core.debugBreakpointPassCount(id),
     };
   });
   return { registers, pc, instructions, breakpoints, running, message: debuggerMessage };
 }
 
 function getDebuggerInstructions(start, count = 64, byByte = false) {
-  core._bp_debug_attach();
+  core.debugAttach();
   const instructions = [];
   let address = Number(start) & 0xFFFF;
   for (let i = 0; i < Math.max(1, Math.min(Number(count) || 64, 256)); i++) {
     const text = readDebugString(address);
-    const length = Math.max(1, core._bp_debug_instruction_length(address));
-    instructions.push({ address, text, length, bytes: readDebugBytes(address, length), breakpoint: Boolean(core._bp_debug_has_code_bp(address)) });
+    const length = Math.max(1, core.debugInstructionLength(address));
+    instructions.push({ address, text, length, bytes: readDebugBytes(address, length), breakpoint: Boolean(core.debugHasCodeBreakpoint(address)) });
     address = (address + (byByte ? 1 : length)) & 0xFFFF;
   }
   return instructions;
 }
 
 function pauseForDebugger() {
-  core._bp_debug_attach();
-  core._bp_debug_pause();
+  core.debugAttach();
+  core.debugPause();
   running = false;
   runButton.textContent = "Resume";
   debuggerMessage = "Paused for debugger.";
@@ -526,20 +549,20 @@ window.bluePixelDebugger = {
   getState: getDebuggerState,
   getInstructions: getDebuggerInstructions,
   pause() {
-    core._bp_debug_pause(); running = false; runButton.textContent = "Resume";
+    core.debugPause(); running = false; runButton.textContent = "Resume";
     debuggerMessage = "Execution paused."; status.textContent = debuggerMessage; drawFrame();
   },
   resume() {
-    core._bp_debug_resume(); running = true; runButton.textContent = "Pause"; clearHintAfterFrame = true;
+    core.debugResume(); running = true; runButton.textContent = "Pause"; clearHintAfterFrame = true;
     debuggerMessage = "Continuing execution."; status.textContent = debuggerMessage;
     if (audioContext?.state === "suspended") audioContext.resume();
   },
   stepInto() {
-    core._bp_debug_attach(); core._bp_debug_pause(); running = false; runButton.textContent = "Resume";
-    core._bp_debug_step_into(); debuggerMessage = "Executed one instruction."; drawFrame();
+    core.debugAttach(); core.debugPause(); running = false; runButton.textContent = "Resume";
+    core.debugStepInto(); debuggerMessage = "Executed one instruction."; drawFrame();
   },
   stepOut() {
-    core._bp_debug_attach(); core._bp_debug_step_out(); running = true; runButton.textContent = "Pause";
+    core.debugAttach(); core.debugStepOut(); running = true; runButton.textContent = "Pause";
     debuggerMessage = "Running until the current routine returns."; status.textContent = debuggerMessage;
     if (audioContext?.state === "suspended") audioContext.resume();
   },
@@ -547,47 +570,47 @@ window.bluePixelDebugger = {
     const bytes = new TextEncoder().encode(`${name}\0`);
     const ptr = core._malloc(bytes.byteLength);
     if (!ptr) return false;
-    try { core.HEAPU8.set(bytes, ptr); core._bp_debug_symbol_set(ptr, Number(address) | 0); return true; }
+    try { core.HEAPU8.set(bytes, ptr); core.debugSymbolSet(ptr, Number(address) | 0); return true; }
     finally { core._free(ptr); }
   },
-  clearSymbols() { core._bp_debug_symbol_clear(); },
+  clearSymbols() { core.debugSymbolClear(); },
   getSymbols() {
-    const count = core._bp_debug_symbol_count();
+    const count = core.debugSymbolCount();
     const ptr = core._malloc(48);
     if (!ptr) return [];
     try {
       return Array.from({ length: count }, (_, index) => {
         core.HEAPU8.fill(0, ptr, ptr + 48);
-        core._bp_debug_symbol_name(index, ptr, 48);
-        return { name: readDebugCString(ptr, 48), address: core._bp_debug_symbol_value(index) };
+        core.debugSymbolName(index, ptr, 48);
+        return { name: readDebugCString(ptr, 48), address: core.debugSymbolValue(index) };
       }).filter(symbol => symbol.address >= 0 && symbol.address <= 0xFFFF);
     } finally { core._free(ptr); }
   },
   getTstates() {
     const ptr = core._malloc(32);
     if (!ptr) return "0";
-    try { core._bp_debug_tstates(ptr, 32); return readDebugCString(ptr, 32); }
+    try { core.debugTstates(ptr, 32); return readDebugCString(ptr, 32); }
     finally { core._free(ptr); }
   },
   resetTstates() {
-    core._bp_debug_reset_tstates();
+    core.debugResetTstates();
     debuggerMessage = "T-state counter reset.";
     status.textContent = debuggerMessage;
   },
-  markData(start, end) { core._bp_debug_mark_data(Number(start) & 0xFFFF, Number(end) & 0xFFFF); },
-  clearData(address) { core._bp_debug_clear_data(Number(address) & 0xFFFF); },
+  markData(start, end) { core.debugMarkData(Number(start) & 0xFFFF, Number(end) & 0xFFFF); },
+  clearData(address) { core.debugClearData(Number(address) & 0xFFFF); },
   toggleBreakpoint: toggleCodeBreakpoint,
-  addBreakpoint(address) { if (!core._bp_debug_has_code_bp(address)) toggleCodeBreakpoint(address); },
+  addBreakpoint(address) { if (!core.debugHasCodeBreakpoint(address)) toggleCodeBreakpoint(address); },
   addMemoryBreakpoint(start, end, write) {
-    const id = core._bp_debug_add_memory_bp(start, end, write ? 1 : 0);
+    const id = core.debugAddMemoryBreakpoint(start, end, write ? 1 : 0);
     debuggerMessage = id < 0 ? "Could not add memory breakpoint: check the address range." : `${write ? "Write" : "Read"} breakpoint added for ${debugHex(start)}–${debugHex(end)}.`;
     status.textContent = debuggerMessage;
     return id;
   },
   removeBreakpoint(id) {
-    const type = ["code", "read", "write", "I/O", "change"][core._bp_debug_breakpoint_type(id)] || "breakpoint";
-    const address = core._bp_debug_breakpoint_start(id);
-    core._bp_debug_remove_breakpoint(id);
+    const type = ["code", "read", "write", "I/O", "change"][core.debugBreakpointType(id)] || "breakpoint";
+    const address = core.debugBreakpointStart(id);
+    core.debugRemoveBreakpoint(id);
     debuggerMessage = `Removed ${type} breakpoint at ${debugHex(address)}.`;
     status.textContent = debuggerMessage;
   },
@@ -597,8 +620,8 @@ window.bluePixelDebugger = {
     if (!ptr) return { ok: false, error: "Not enough memory to apply the condition." };
     try {
       core.HEAPU8.set(bytes, ptr);
-      const ok = Boolean(core._bp_debug_set_condition(id, ptr, passCount));
-      const error = ok ? "" : readDebugCString(core._bp_debug_last_error());
+      const ok = Boolean(core.debugSetBreakpointCondition(id, ptr, passCount));
+      const error = ok ? "" : readDebugCString(core.debugLastError());
       debuggerMessage = ok ? "Breakpoint condition applied." : `Condition error: ${error}`;
       status.textContent = debuggerMessage;
       return { ok, error };
@@ -609,13 +632,13 @@ window.bluePixelDebugger = {
     const ptr = core._malloc(size);
     if (!ptr) throw new Error("Not enough memory to read this range.");
     try {
-      core._bp_debug_read_memory(Number(start) & 0xFFFF, ptr, size);
+      core.debugReadMemory(Number(start) & 0xFFFF, ptr, size);
       return Array.from(core.HEAPU8.subarray(ptr, ptr + size));
     } finally { core._free(ptr); }
   },
   writeMemory(address, value) {
     if (running) this.pause();
-    core._bp_debug_write_memory(Number(address) & 0xFFFF, Number(value) & 0xFF);
+    core.debugWriteMemory(Number(address) & 0xFFFF, Number(value) & 0xFF);
     debuggerMessage = `Wrote ${debugHex(value, 2)} at ${debugHex(address)}.`;
     status.textContent = debuggerMessage;
   },
@@ -639,19 +662,19 @@ function openDebuggerWindow() {
 }
 
 function setTapePlaying(playing) {
-  core._bp_tape_play(playing ? 1 : 0);
+  core.tapePlay(playing ? 1 : 0);
   status.textContent = playing ? "Tape playback enabled. Use RUN\"\" or LOAD\"\" on the CPC." : "Tape stopped.";
   if (menuOpen) drawFrame();
 }
 
 function rewindTape() {
-  core._bp_tape_rewind();
+  core.tapeRewind();
   status.textContent = "Tape rewound.";
   if (menuOpen) drawFrame();
 }
 
 function removeTape() {
-  core._bp_tape_remove();
+  core.tapeRemove();
   loadedTapeName = "";
   status.textContent = "Tape removed.";
   if (menuOpen) drawFrame();
@@ -659,7 +682,7 @@ function removeTape() {
 
 function setMonitorMode(mode) {
   displayMonitor = mode;
-  core._bp_set_monitor(mode);
+  core.setMonitor(mode);
   writePreference("monitor", mode);
   status.textContent = `Monitor set to ${["colour", "green", "greyscale"][mode]}.`;
   drawFrame();
@@ -680,8 +703,8 @@ function setEmulationSpeed(speed) {
 }
 
 runButton.addEventListener("click", async () => {
-  if (running) core._bp_debug_pause();
-  else if (core._bp_debug_attached()) core._bp_debug_resume();
+  if (running) core.debugPause();
+  else if (core.debugAttached()) core.debugResume();
   running = !running;
   debuggerMessage = running ? "Emulation running." : "Execution paused.";
   runButton.textContent = running ? "Pause" : "Resume";
@@ -692,7 +715,7 @@ runButton.addEventListener("click", async () => {
 });
 
 resetButton.addEventListener("click", () => {
-  core._bp_reset();
+  core.reset();
   frameDebt = 0;
   running = true;
   clearHintAfterFrame = true;
@@ -706,7 +729,7 @@ typeButton.addEventListener("click", () => {
   const input = document.querySelector("#type-text");
   if (!input.value) return;
   const text = new TextEncoder().encode(input.value + "\0");
-  transfer(text, ptr => core._bp_type(ptr));
+  transfer(text, ptr => core.typeText(ptr));
   input.value = "";
   canvas.focus();
 });
@@ -716,7 +739,7 @@ function downloadDisc(drive) {
   let dataPtr = 0;
   try {
     core.HEAPU32[sizePtr >> 2] = 0;
-    dataPtr = core._bp_export_disc(drive, sizePtr);
+    dataPtr = core.exportDisc(drive, sizePtr);
     const size = core.HEAPU32[sizePtr >> 2];
     if (!dataPtr || !size) throw new Error("No disk is inserted.");
     const bytes = core.HEAPU8.slice(dataPtr, dataPtr + size);
@@ -730,7 +753,7 @@ function downloadDisc(drive) {
   } catch (error) {
     status.textContent = `Could not save disk: ${error.message}`;
   } finally {
-    core._bp_release_disc_export();
+    core.releaseDiscExport();
     core._free(sizePtr);
   }
 }
@@ -778,7 +801,7 @@ saveSnapshotButton.addEventListener("click", () => {
   let dataPtr = 0;
   try {
     core.HEAPU32[sizePtr >> 2] = 0;
-    dataPtr = core._bp_save_snapshot(sizePtr);
+    dataPtr = core.saveSnapshot(sizePtr);
     const size = core.HEAPU32[sizePtr >> 2];
     if (!dataPtr || !size) throw new Error("Could not create the snapshot.");
     const bytes = core.HEAPU8.slice(dataPtr, dataPtr + size);
@@ -793,7 +816,7 @@ saveSnapshotButton.addEventListener("click", () => {
   } catch (error) {
     status.textContent = `Could not save snapshot: ${error.message}`;
   } finally {
-    if (dataPtr) core._bp_free(dataPtr);
+    if (dataPtr) core.freeBuffer(dataPtr);
     core._free(sizePtr);
   }
 });
@@ -829,12 +852,12 @@ function setJoystickSource(source, bit, down) {
   if (previous !== undefined) {
     const stillHeld = [...joystickSources.entries()].some(([otherSource, otherBit]) => otherSource !== source && otherBit === previous);
     joystickSources.delete(source);
-    if (!stillHeld) core._bp_joystick(previous, 0);
+    if (!stillHeld) core.joystick(previous, 0);
   }
   if (!down) return;
   const alreadyHeld = [...joystickSources.values()].includes(bit);
   joystickSources.set(source, bit);
-  if (!alreadyHeld) core._bp_joystick(bit, 1);
+  if (!alreadyHeld) core.joystick(bit, 1);
 }
 
 touchControls.querySelectorAll("[data-joy]").forEach(button => {
@@ -884,7 +907,7 @@ function setKey(event, down) {
   if (key === undefined && joy === undefined) return;
   event.preventDefault();
   if (down && event.repeat) return;
-  if (key !== undefined) core._bp_key(key, down ? 1 : 0);
+  if (key !== undefined) core.key(key, down ? 1 : 0);
   if (joy !== undefined) setJoystickSource(`keyboard:${event.code}`, joy, down);
   if (down) pressed.set(event.code, { key, joy });
   else pressed.delete(event.code);
@@ -894,7 +917,7 @@ window.addEventListener("keydown", event => setKey(event, true));
 window.addEventListener("keyup", event => setKey(event, false));
 window.addEventListener("blur", () => {
   for (const [code, item] of pressed) {
-    if (item.key !== undefined) core._bp_key(item.key, 0);
+    if (item.key !== undefined) core.key(item.key, 0);
     if (item.joy !== undefined) setJoystickSource(`keyboard:${code}`, item.joy, false);
     pressed.delete(code);
   }
@@ -910,7 +933,7 @@ function initializeAudioGraph() {
     const frames = event.outputBuffer.length;
     const offset = audioPtr >> 2;
     core.HEAPF32.fill(0, offset, offset + frames * 2);
-    core._bp_read_audio(audioPtr, frames);
+    core.readAudio(audioPtr, frames);
     const interleaved = core.HEAPF32.subarray(offset, offset + frames * 2);
     const left = event.outputBuffer.getChannelData(0);
     const right = event.outputBuffer.getChannelData(1);
@@ -950,7 +973,7 @@ window.addEventListener("pointerdown", () => resumeAudio(), { capture: true });
 
 function drawFrame() {
   if (!core) return;
-  const ptr = core._bp_frame();
+  const ptr = core.renderFrame();
   if (!ptr) return;
   const pixels = core.HEAPU32.subarray(ptr >> 2, (ptr >> 2) + canvas.width * canvas.height);
   for (let i = 0; i < pixels.length; i++) {
@@ -1029,13 +1052,13 @@ function animate(time) {
     frameDebt = Math.min(frameDebt + elapsed * emulationSpeed, 100);
     const frames = Math.min(Math.floor(frameDebt / 20), 5);
     for (let i = 0; i < frames; i++) {
-      const stoppedByDebugger = core._bp_run_frame();
+      const stoppedByDebugger = core.runFrame();
       frameDebt -= 20;
       if (stoppedByDebugger) {
         running = false;
         runButton.textContent = "Resume";
-        core._bp_debug_pause();
-        debuggerMessage = `Breakpoint at ${debugHex(core._bp_debug_register(7))}.`;
+        core.debugPause();
+        debuggerMessage = `Breakpoint at ${debugHex(core.debugRegister(7))}.`;
         status.textContent = debuggerMessage;
         break;
       }

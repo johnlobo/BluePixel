@@ -1,6 +1,6 @@
 # Traspaso: paso 15b (WASM sobre CPCApi y migración de la UI web)
 
-Estado a 2026-11-10, `main` en `8247654` (PR #5). Este documento es autosuficiente: léelo entero antes de tocar nada.
+Estado de origen a 2026-11-10, `main` en `8247654` (PR #5). El paso 15b se retomó después en `h2-core`; resultados actuales en [HEADLESS.md, sección 3](HEADLESS.md#3-web-sobre-cpcapi). Este documento conserva el traspaso original y sus criterios.
 Lo escribió una sesión de Claude en la VPS de Linux, donde no hay Emscripten, Swift ni navegador. Todo lo que aquí
 se marca **sin verificar** nunca se ha ejecutado.
 
