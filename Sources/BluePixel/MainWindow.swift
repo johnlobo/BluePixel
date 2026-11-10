@@ -59,7 +59,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let right: [(String, String, String, Selector)] = [
             ("setup", "gearshape", "Settings (F12)", #selector(AppDelegate.showGeneral(_:))),
             ("pokes", "wand.and.stars", "Pokes (CTRL+F8)", #selector(AppDelegate.showPokes(_:))),
-            ("full", "arrow.up.left.and.arrow.down.right", "Toggle Full Screen (F10)", #selector(AppDelegate.toggleFullScreenAction(_:))),
+            ("full", "arrow.up.left.and.arrow.down.right", "Toggle Full Screen (⌃⌘F)", #selector(AppDelegate.toggleFullScreenAction(_:))),
             ("help", "questionmark.circle", "Help (F1)", #selector(AppDelegate.showHelp(_:))),
         ]
         for (id, sym, tip, sel) in right { buttons[id] = makeButton(sym, tip, sel) }

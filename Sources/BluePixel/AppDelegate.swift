@@ -272,6 +272,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     }
     @objc func normalSpeed(_ s: Any?) { emu.speed = 1.0 }
     @objc func highSpeed(_ s: Any?) { emu.speed = 10.0 }
+    /// F10, like the web build: the whole menu as a popup over the emulator window.
+    @objc func popUpMenu(_ s: Any?) {
+        guard let bar = NSApp.mainMenu, let view = main.window?.contentView else { return }
+        let m = NSMenu()
+        for it in bar.items where it.submenu != nil && it.title != "Window" { m.addItem(it.copy() as! NSMenuItem) }
+        m.popUp(positioning: nil, at: NSPoint(x: 8, y: view.bounds.height - 8), in: view)
+    }
     @objc func toggleFullScreenAction(_ s: Any?) { main.window?.toggleFullScreen(nil); DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.applyDisplayOptions() } }
     @objc func resetEmu(_ s: Any?) { emu.reset(cold: false) }
     @objc func coldReset(_ s: Any?) { emu.reset(cold: true) }
@@ -384,8 +391,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         return i
     }
 
-    private func submenu(_ title: String, _ items: [NSMenuItem]) -> NSMenuItem {
-        let m = NSMenu(title: title); items.forEach { m.addItem($0) }
+    private func submenu(_ title: String, _ items: [NSMenuItem?]) -> NSMenuItem {
+        let m = NSMenu(title: title); items.compactMap { $0 }.forEach { m.addItem($0) }
         let i = NSMenuItem(title: title, action: nil, keyEquivalent: ""); i.submenu = m; return i
     }
 
@@ -401,7 +408,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         ])
         func drive(_ n: String, _ f: Int, ins: Selector, new: Selector, rm: Selector) -> NSMenuItem {
             submenu("Drive \(n):", [
-                item("Insert Disc Image…", ins, fkey(f), ctrl),
+                // Drive A: plain F1 like the web build; Ctrl+F1 stays as a hidden alternate.
+                item("Insert Disc Image…", ins, fkey(f), n == "A" ? [] : ctrl),
+                n == "A" ? { let a = item("Insert Disc Image…", ins, fkey(f), ctrl); a.isAlternate = true; return a }() : nil,
                 item("New Blank Disc…", new),
                 item("Format Disc Image…", #selector(todo(_:))),
                 item("Edit Disc…", #selector(todo(_:)), fkey(f), [ctrl, shift]),
@@ -447,7 +456,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             .separator(),
             item("Normal Speed (100%)", #selector(normalSpeed(_:)), fkey(3), shift), item("High Speed (1000%)", #selector(highSpeed(_:)), fkey(4), shift),
             .separator(),
-            item("Full Screen", #selector(toggleFullScreenAction(_:)), fkey(10)),
+            item("Full Screen", #selector(toggleFullScreenAction(_:)), "f", [.control, .command]),
             item("Window Size 1×", #selector(scale1x(_:)), "1", .command), item("Window Size 1.5×", #selector(scale15x(_:)), "2", .command), item("Window Size 2×", #selector(scale2x(_:)), "3", .command),
             .separator(),
             item("Reset", #selector(resetEmu(_:)), fkey(9), ctrl), item("Cold Reset", #selector(coldReset(_:)), fkey(9), [ctrl, shift]),
@@ -473,8 +482,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             item("Symbols…", #selector(debugShowSymbols(_:))), item("Load Symbols…", #selector(debugLoadSymbols(_:))), item("Clear Symbols", #selector(debugClearSymbols(_:))),
         ])
         let asm = submenu("Assembler", [item("Show Assembler", #selector(showAssembler(_:)), fkey(3))])
-        let window = submenu("Window", [item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m", .command)])
-        let help = submenu("Help", [item("Contents", #selector(showHelp(_:)), fkey(1))])
+        let window = submenu("Window", [item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m", .command), item("Show Menu", #selector(popUpMenu(_:)), fkey(10))])
+        let help = submenu("Help", [item("Contents", #selector(showHelp(_:)), "?", .command)])
         [appMenu, file, settingsMenu, debug, asm, window, help].forEach { bar.addItem($0) }
         NSApp.mainMenu = bar
         NSApp.windowsMenu = window.submenu
