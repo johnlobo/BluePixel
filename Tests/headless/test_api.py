@@ -21,7 +21,7 @@ def call(i, method, params=None):
     return result["result"]
 
 caps = call(1, "session.capabilities")
-assert caps["api_version"] == "1.3" and caps["state_format"] == 1 and "headless" in caps["capabilities"]
+assert caps["api_version"] == "1.4" and caps["state_format"] == 1 and "headless" in caps["capabilities"]
 call(13, "machine.reset")
 call(27, "boot_ready.configure", {"address": 0})
 assert call(28, "boot_ready.status")["ready"]

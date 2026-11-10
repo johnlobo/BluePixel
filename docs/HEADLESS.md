@@ -36,7 +36,7 @@ The firmware is bundled in `web/roms/` with a manifest, and is loaded automatica
 
 The clock is virtual. Only `run.*` advances emulation. One NOP is four Z80 T-states; `run.nops` advances by whole instructions, so it can exceed the requested NOP count. `t_states_aligned` reports NOP-aligned counts. `run.frames` advances to successive CRTC flybacks.
 
-`boot_ready.configure` currently requires an explicit entry address. It reports ready when the PC reaches that address and the core's text auto-type queue is drained. Automatic extraction of the AMSDOS program entry point from an inserted disk is not implemented in H1.
+`boot_ready.configure` takes either an explicit entry `address` or a `file` (NAME or NAME.EXT, optional `drive`) whose entry address is read from its AMSDOS header on the mounted disc (API 1.4). It reports ready when the PC reaches that address and the core's text auto-type queue is drained.
 
 Run the H1 API smoke test with `python3 Tests/headless/test_api.py`. The Linux static build is intended to use a Linux x86_64 toolchain with static zlib; the build script accepts `CC` and `LDFLAGS` overrides. A successful macOS build does not establish Linux static compatibility.
 
@@ -44,7 +44,7 @@ On the available macOS arm64 host, after a 300-frame warm-up, a 1,000-frame BASI
 
 The supplied `nave` fixture hashes matched `SHA256SUMS`. The full acceptance script loads the DSK and symbols, resets the CPC6128, waits for configured entry `0x0B72`, runs `RUN"NAVE"`, checks the game status and movement limits, captures the display, and compares cold-start and restored-state replays. On the available macOS arm64 host it passed with hash `a8750fbe248c354e` (H1 state format; the canonical format gives `be44e742783fb94c`, see below), equal cold-start hashes, and equal restore replay. It ran 2,740 virtual frames in 4.687 seconds (11.7x real time); `run.frames` accounted for 4.628 seconds, while input, memory, hash, state, capture and transport took 0.060 seconds. This is below the 50x Linux VPS target and is not a Linux measurement.
 
-The web frontend now uses the same `CPCApi` dispatcher as headless; the old direct bridge has been removed. `boot_ready` currently requires a configured address; AMSDOS header auto-detection is pending. `screen.capture` returns the last completed frame in RGBA8 order. Passing `{"metadata":true}` additionally returns the screen mode, CRTC type and registers, hardware palette indices, and current ARGB palette.
+The web frontend now uses the same `CPCApi` dispatcher as headless; the old direct bridge has been removed. `boot_ready.configure` can read the entry address from the AMSDOS header of a file on the mounted disc (`file`, API 1.4); an explicit `address` still works. `screen.capture` returns the last completed frame in RGBA8 order. Passing `{"metadata":true}` additionally returns the screen mode, CRTC type and registers, hardware palette indices, and current ARGB palette.
 
 H2 results and the Linux profiling method are recorded below; the canonical state format has its own section.
 
@@ -193,7 +193,7 @@ Diferencias con `bridge.c` a tener en cuenta al migrar (no hay test de paridad c
 
 - **Matriz de teclado: HECHO en H1; confirmado.** `test_acceptance_nave.py` drives `input.matrix` with active-low row/column masks, and the actual game reaches all four movement limits.
 - **Metadata de captura: HECHO.** `screen.capture` remains unchanged by default. With `metadata: true`, its response also includes `screen_mode`, `crtc_type`, 18 CRTC registers, 17 hardware palette indices and 17 current ARGB colours. The API smoke checks these fields.
-- **Autodetección `boot_ready`: NO HECHO.** It still requires an explicit address; extracting the AMSDOS execution address from a file on a mounted DSK remains pending.
+- **Autodetección `boot_ready`: HECHO (API 1.4).** `boot_ready.configure {"file":"NAVE.BIN"}` lee la dirección de ejecución de la cabecera AMSDOS del fichero en el disco montado (unidad 0 por defecto, `drive` para la 1). Layout de la cabecera, medido en `NAVE.BIN`: `0x12` tipo (2 = binario), `0x15` carga, `0x18` longitud, `0x1A` entrada, `0x40` longitud real (24 bits), `0x43` suma de control de los bytes `0x00..0x42`. Da error, sin tocar la configuración anterior, si no hay disco, el fichero no existe (usuario 0), el nombre sin extensión es ambiguo, la cabecera no existe (suma de control), el fichero no es un binario (tipo AMSDOS 2, o 3 si está protegido) o su entrada es 0, o no se puede leer; en esos casos se pasa `address`. Si se dan `file` y `address` deben coincidir. `Tests/headless/test_api_ext.py` cubre los tres formatos de directorio (datos, sistema e IBM con 8 sectores por pista), usuarios y extensiones, atributos, binarios protegidos (tipo 3), ficheros sin extensión, sectores cortos, cada error y que el estado no cambia tras un error, con discos sintéticos, y comprueba que la dirección leída de `NAVE.BIN` es `0x0B72`, la que `fixture.json` fija a mano; `test_acceptance_nave.py` ya la usa.
 
 The Linux commands run in the QEMU x86_64 guest were:
 
@@ -266,6 +266,5 @@ time and end-to-end speed at 50 Hz. GlasnostFWK CI builds a pinned BluePixel com
 and uploads this report after building the framework. Its emulator pin can be
 advanced independently of this conformance harness.
 
-AMSDOS entry autodetection remains unimplemented. The adapter's boot wait polls
-the game's explicit ready symbol under a virtual-frame limit; it does not depend
-on `boot_ready` autodetection. Existing AmSpiriT smoke tests remain available.
+AMSDOS entry autodetection is available since API 1.4 (`boot_ready.configure {"file": ...}`). The adapter's boot wait polls
+the game's explicit ready symbol under a virtual-frame limit and does not depend on it. Existing AmSpiriT smoke tests remain available.

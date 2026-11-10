@@ -191,6 +191,47 @@ static const CPCSector *find_sector(const CPCDisc *d, int track, int id) {
     return NULL;
 }
 
+/* Where the directory starts: data (C1, track 0), system (41, track 2) or IBM (01, track 1) format. */
+static int directory_layout(const CPCDisc *d, int *first_id, int *dir_track) {
+    static const int ids[3] = {0xC1, 0x41, 0x01}, tracks[3] = {0, 2, 1};
+    for (int f = 0; f < 3; f++) if (find_sector(d, tracks[f], ids[f])) { *first_id = ids[f]; *dir_track = tracks[f]; return 1; }
+    return 0;
+}
+
+static bool entry_name_is(const uint8_t *en, const char *name, const char *ext) {
+    char got[12] = {0};
+    int k = 0;
+    for (int i = 1; i <= 8; i++) { char ch = en[i] & 0x7F; if (ch != ' ') got[k++] = ch; }
+    if (strcmp(got, name)) return false;
+    k = 0; memset(got, 0, sizeof got);
+    for (int i = 9; i <= 11; i++) { char ch = en[i] & 0x7F; if (ch != ' ') got[k++] = ch; }
+    return !strcmp(got, ext);
+}
+
+int dsk_file_head(const CPCDisc *d, const char *name, const char *ext, int user, uint8_t *out, int n) {
+    int first_id, dir_track;
+    if (!directory_layout(d, &first_id, &dir_track)) return DSK_FILE_NO_DIRECTORY;
+    int per_track = d->trk[dir_track][0].nsectors;                  /* 9 for the data and system formats, 8 for IBM */
+    if (per_track < 1) return DSK_FILE_UNREADABLE;
+    for (int s = 0; s < 4; s++) {
+        const CPCSector *sec = find_sector(d, dir_track, first_id + s);
+        if (!sec || sec->len < 512) break;
+        for (int e = 0; e < 16; e++) {
+            const uint8_t *en = sec->data + e * 32;
+            if (en[0] != user || en[12] != 0 || !entry_name_is(en, name, ext)) continue;
+            int block = en[16];
+            if (block < 2) return DSK_FILE_UNREADABLE;                 /* 0 and 1 hold the directory itself */
+            int logical = block * 2;                                      /* a block is two 512-byte sectors */
+            const CPCSector *data = find_sector(d, dir_track + logical / per_track, first_id + logical % per_track);
+            if (!data || data->len < 512) return DSK_FILE_UNREADABLE;
+            if (n > 512) n = 512;
+            memcpy(out, data->data, (size_t)n);
+            return n;
+        }
+    }
+    return DSK_FILE_NOT_FOUND;
+}
+
 int dsk_catalogue(const CPCDisc *d, DskFile *out, int max) {
     /* Directory: first four 512-byte sectors of the data (C1, track 0), system (41, track 2) or IBM (01, track 1) format. */
     static const int first_id[3] = {0xC1, 0x41, 0x01}, dir_track[3] = {0, 2, 1};

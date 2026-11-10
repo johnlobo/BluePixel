@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""API 1.3 methods: input, display, audio, tape, disc media and the debugger (debug.*).
+"""API 1.4 methods: input, display, audio, tape, disc media and the debugger (debug.*).
 
 Needs BLUEPIXEL_ROM_DIR (real or disposable ROMs: nothing here depends on what the firmware does, only on
 properties that hold for any ROM). BLUEPIXEL_NO_BUILD=1 tests the existing binary as it is; BLUEPIXEL_SANITIZE=1
@@ -53,7 +53,7 @@ def b64(data):
 
 # ---- capabilities ----
 caps = call("session.capabilities")
-assert caps["api_version"] == "1.3", caps
+assert caps["api_version"] == "1.4", caps
 for name in ("input", "audio", "tape", "disc", "display", "debugger"):
     assert name in caps["capabilities"], (name, caps)
 
@@ -290,7 +290,7 @@ big = '{"jsonrpc":"2.0","id":1,"method":"session.capabilities","params":[' + ","
 proc.stdin.write(big)
 proc.stdin.flush()
 reply = json.loads(proc.stdout.readline())
-assert reply.get("result", {}).get("api_version") == "1.3", str(reply)[:200]
+assert reply.get("result", {}).get("api_version") == "1.4", str(reply)[:200]
 
 # ---- machine code in RAM, built into a v1 snapshot: exact control over what executes ----
 # 4000 CALL 4010 / 4003 LD A,(8000) / 4006 LD (C000),A / 4009 JR $ ;  4010 NOP / 4011 NOP / 4012 RET
@@ -483,7 +483,7 @@ assert call("mem.read", {"address": "(" * 10 + "1" + ")" * 10})["address"] == 1
 for depth in (200, 20000):
     fails("mem.read", {"address": "(" * depth + "1" + ")" * depth}, "invalid memory range")
 fails("mem.read", {"address": "-" * 20000 + "1"}, "invalid memory range")
-assert call("session.capabilities")["api_version"] == "1.3", "the process survived the deep expressions"
+assert call("session.capabilities")["api_version"] == "1.4", "the process survived the deep expressions"
 
 # \u0000 would end a C string early: refused everywhere instead of silently truncating
 fails("debug.symbols.set", {"name": "ab\u0000cd", "value": 1}, "name")
@@ -733,6 +733,182 @@ for bad in (4, 7, 255):
     call("run.frames", {"count": 2})
     assert call("screen.capture")["data_base64"] == want, f"gate array mode {bad} must draw like mode 2"
 
+# ---- boot_ready.configure: entry address from the AMSDOS header of a file on the mounted disc ----
+LAYOUTS = {   # directory track, first sector id, sectors per track
+    "data": (0, 0xC1, 9), "system": (2, 0x41, 9), "ibm": (1, 0x01, 8), "nodir": (0, 0x20, 9),
+}
+
+
+def amsdos_disc(files, layout="data", short_tracks=()):
+    """A DSK (40 tracks) with the given files in the given directory layout.
+    files: (user, name, ext, content, block_override[, extent[, attributes]]); content is stored from block 2 on, one entry
+    each, a block being two 512-byte sectors. attributes: bit 0 read-only, bit 1 system (bit 7 of the extension bytes).
+    short_tracks: tracks whose sectors are 256 bytes long instead of 512."""
+    dir_track, first_id, per_track = LAYOUTS[layout]
+    tracks, sectors = 40, {}
+    ids = [first_id + i for i in range(per_track)]
+    directory = bytearray([0xE5]) * 2048
+    block = 2
+    entry = 0
+    for item in files:
+        user, name, ext, content, override = item[:5]
+        extent = item[5] if len(item) > 5 else 0
+        attributes = item[6] if len(item) > 6 else 0
+        blocks_needed = max(1, -(-len(content) // 1024))
+        stored = [block + i for i in range(blocks_needed)]            # where the data really goes
+        block += blocks_needed
+        for i, b in enumerate(stored):
+            for half in range(2):
+                logical = b * 2 + half
+                chunk = content[i * 1024 + half * 512:i * 1024 + half * 512 + 512].ljust(512, b"\xE5")
+                sectors[(dir_track + logical // per_track, ids[logical % per_track])] = chunk
+        blocks = stored if override is None else override              # what the directory entry claims
+        en = bytearray(32)
+        en[0] = user
+        en[1:9] = name.ljust(8).encode()
+        en[9:12] = ext.ljust(3).encode()
+        if attributes & 1:
+            en[9] |= 0x80
+        if attributes & 2:
+            en[10] |= 0x80
+        en[12] = extent
+        en[15] = min(128, -(-len(content) // 128))
+        for k, b in enumerate(blocks[:16]):
+            en[16 + k] = b
+        directory[entry * 32:entry * 32 + 32] = en
+        entry += 1
+    for k in range(4):
+        sectors[(dir_track + k // per_track, ids[k % per_track])] = bytes(directory[k * 512:(k + 1) * 512])
+    image = bytearray(256 + tracks * 0x1300)
+    image[:34] = b"MV - CPCEMU Disk-File\r\nDisk-Info\r\n"
+    image[0x30], image[0x31] = tracks, 1
+    image[0x32:0x34] = (0x1300).to_bytes(2, "little")
+    for tr in range(tracks):
+        base = 256 + tr * 0x1300
+        size_code, size = (1, 256) if tr in short_tracks else (2, 512)
+        image[base:base + 12] = b"Track-Info\r\n"
+        image[base + 0x10], image[base + 0x11] = tr, 0
+        image[base + 0x14], image[base + 0x15], image[base + 0x16], image[base + 0x17] = size_code, per_track, 0x4E, 0xE5
+        for s in range(per_track):
+            d = base + 0x18 + s * 8
+            image[d:d + 4] = bytes([tr, 0, ids[s], size_code])
+            data = sectors.get((tr, ids[s]), bytes([0xE5]) * 512)[:size]
+            image[base + 0x100 + s * size:base + 0x100 + (s + 1) * size] = data
+    return bytes(image)
+
+
+def amsdos_file(name, ext, kind, entry, size=300):
+    head = bytearray(128)
+    head[1:9] = name.ljust(8).encode()
+    head[9:12] = ext.ljust(3).encode()
+    head[0x12] = kind
+    head[0x15:0x17] = (0x4000).to_bytes(2, "little")
+    head[0x18:0x1A] = size.to_bytes(2, "little")
+    head[0x1A:0x1C] = entry.to_bytes(2, "little")
+    head[0x40:0x43] = size.to_bytes(3, "little")
+    head[0x43:0x45] = (sum(head[:0x43]) & 0xFFFF).to_bytes(2, "little")
+    return bytes(head) + bytes(size)
+
+
+disc = amsdos_disc([
+    (0, "GAME", "BIN", amsdos_file("GAME", "BIN", 2, 0x4000), None),
+    (0, "GAME", "BAS", amsdos_file("GAME", "BAS", 0, 0), None),
+    (0, "PLAIN", "TXT", b"just text, no header at all " * 10, None),
+    (0, "ZERO", "BIN", amsdos_file("ZERO", "BIN", 2, 0), None),
+    (1, "OTHER", "BIN", amsdos_file("OTHER", "BIN", 2, 0x5000), None),
+    (0, "LOW", "BIN", amsdos_file("LOW", "BIN", 2, 0x6000), [0]),
+    (0, "BIG", "BIN", amsdos_file("BIG", "BIN", 2, 0x7ABC, size=2500), None),
+    # the same name under two users: the user-0 file is the one that counts, wherever it sits in the directory
+    (1, "DUP", "BIN", amsdos_file("DUP", "BIN", 2, 0x5111), None),
+    (0, "DUP", "BIN", amsdos_file("DUP", "BIN", 2, 0x4100), None),
+    # a later extent listed before the first one: only extent 0 holds the start of the file
+    (0, "EXT", "BIN", amsdos_file("EXT", "BIN", 2, 0x7777), None, 1),
+    (0, "EXT", "BIN", amsdos_file("EXT", "BIN", 2, 0x4200), None),
+    (0, "RO", "BIN", amsdos_file("RO", "BIN", 2, 0x4300), None, 0, 3),               # read-only + system: bit 7 of the extension bytes
+    (0, "NOEXT", "", amsdos_file("NOEXT", "", 2, 0x4400), None),                  # a file without extension
+    (0, "PROT", "BIN", amsdos_file("PROT", "BIN", 2 | 1, 0x4500), None),          # protected binary (SAVE ,B,P): type 3
+    (0, "SCR", "BIN", amsdos_file("SCR", "BIN", 4, 0xC000), None),                # a screen image is not a program
+])
+call("disc.load", {"drive": 0, "data_base64": b64(disc), "name": "amsdos.dsk"})
+before = call("state.hash")["hash"]
+assert call("boot_ready.configure", {"file": "GAME.BIN"}) == {"configured": True, "address": 0x4000, "source": "amsdos_header", "file": "GAME.BIN"}
+assert call("boot_ready.status")["target"] == 0x4000
+assert call("boot_ready.configure", {"file": "big.bin"})["address"] == 0x7ABC          # case-insensitive, multi-block file
+assert call("boot_ready.configure", {"file": "RO.BIN"})["address"] == 0x4300           # attribute bits do not hide the name
+assert call("boot_ready.configure", {"file": "NOEXT"}) == {"configured": True, "address": 0x4400, "source": "amsdos_header", "file": "NOEXT"}
+assert call("boot_ready.configure", {"file": "PROT.BIN"})["address"] == 0x4500
+assert call("boot_ready.configure", {"file": "DUP.BIN"})["address"] == 0x4100            # user 0, not the user-1 file listed first
+assert call("boot_ready.configure", {"file": "EXT.BIN"})["address"] == 0x4200            # extent 0, not the extent listed first
+assert call("boot_ready.configure", {"file": "GAME.BIN", "address": 0x4000})["source"] == "amsdos_header"
+assert call("state.hash")["hash"] == before, "configuring the boot target is session setup, not machine state"
+call("boot_ready.configure", {"address": 0x1234})
+for params, message in (
+    ({"file": "GAME"}, "several files"),
+    ({"file": "GAME.BAS"}, "not a binary"),
+    ({"file": "PLAIN.TXT"}, "no AMSDOS header"),
+    ({"file": "ZERO.BIN"}, "no entry address"),
+    ({"file": "OTHER.BIN"}, "not found"),
+    ({"file": "MISSING.BIN"}, "not found"),
+    ({"file": "LOW.BIN"}, "could not be read"),
+    ({"file": "GAME.BIN", "address": 0x9999}, "differs"),
+    ({"file": "GAME.BIN", "drive": 1}, "not found"),          # drive 1 holds a different disc: the drive parameter is honoured
+    ({"file": "GAME.BIN", "drive": 2}, "drive must be"),
+    ({"file": "GAME.BIN", "drive": "x"}, "drive must be"),
+    ({"file": "GAME.BIN", "drive": -1}, "drive must be"),
+    ({"file": "SCR.BIN"}, "not a binary"),
+    ({"file": "NINECHARS.BIN"}, "NAME or NAME.EXT"),
+    ({"file": ""}, "NAME or NAME.EXT"),
+    ({"file": ".BIN"}, "NAME or NAME.EXT"),
+    ({"file": "TOOLONGNAME.BIN"}, "NAME or NAME.EXT"),
+    ({"file": "A.TOOL"}, "NAME or NAME.EXT"),
+    ({"file": 5}, "file must be a string"),
+):
+    reply = raw("boot_ready.configure", params)
+    assert "error" in reply and message in reply["error"]["message"], (params, message, reply)
+assert call("boot_ready.status")["target"] == 0x1234, "a failed configure must leave the previous target alone"
+assert call("boot_ready.configure", {"address": 0x2222}) == {"configured": True, "address": 0x2222, "source": "explicit"}
+assert call("boot_ready.configure", {}) == {"configured": False, "address": -1, "source": "none"}          # unchanged: no params, nothing configured
+
+# an address that is not an integer in 0..65535 leaves the target unset, as it always did (never truncated, never an error)
+for odd in ("x", 1.5, None, -1, 65536, 4294967301, True):
+    assert call("boot_ready.configure", {"address": odd}) == {"configured": False, "address": -1, "source": "none"}, odd
+assert call("boot_ready.configure", {"address": 0})["configured"] is True
+assert call("boot_ready.configure", {"address": 65535}) == {"configured": True, "address": 65535, "source": "explicit"}
+fails("boot_ready.configure", {"file": "GAME.BIN", "address": "x"}, "address must be")
+
+# a failed configure leaves the target, and with it `ready`, alone
+pc = call("cpu.registers")["pc"]
+call("boot_ready.configure", {"address": pc})
+assert call("boot_ready.status")["ready"] is True, "the machine sits at the target with nothing typed"
+fails("boot_ready.configure", {"file": "MISSING.BIN"}, "not found")
+assert call("boot_ready.status")["ready"] is True, "a failed configure must not unset the target"
+call("disc.load", {"drive": 0, "data_base64": b64(amsdos_disc([(0, "X", "BIN", amsdos_file("X", "BIN", 2, 0x4000), None)], layout="nodir"))})
+fails("boot_ready.configure", {"file": "X.BIN"}, "no AMSDOS directory")
+
+# a drive with no disc: checked in a fresh process (this session has discs in both drives by now)
+fresh = subprocess.Popen([str(binary)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=env)
+fresh.stdin.write(json.dumps({"jsonrpc": "2.0", "id": 1, "method": "boot_ready.configure", "params": {"file": "NAVE.BIN"}}) + "\n")
+fresh.stdin.flush()
+assert "no disc" in json.loads(fresh.stdout.readline())["error"]["message"]
+fresh.stdin.close()
+assert fresh.wait(timeout=10) == 0
+
+# the three directory layouts (data, system, IBM with 8 sectors per track) and a file whose first block is in a track of short sectors
+for layout in ("system", "ibm"):
+    files = [(0, f"F{n}", "BIN", amsdos_file(f"F{n}", "BIN", 2, 0x4000 + n), None) for n in range(1, 9)]
+    call("disc.load", {"drive": 0, "data_base64": b64(amsdos_disc(files, layout=layout))})
+    for n in range(1, 9):
+        assert call("boot_ready.configure", {"file": f"F{n}.BIN"})["address"] == 0x4000 + n, (layout, n)
+call("disc.load", {"drive": 0, "data_base64": b64(amsdos_disc([(0, "SHORT", "BIN", amsdos_file("SHORT", "BIN", 2, 0x4000), [23])], short_tracks={5}))})
+fails("boot_ready.configure", {"file": "SHORT.BIN"}, "could not be read")
+
+# the real fixture: the entry address read from NAVE.BIN is the one fixture.json fixes by hand
+fixture_dir = root / "Tests" / "fixtures" / "nave"
+fixture = json.loads((fixture_dir / "fixture.json").read_text())
+call("disc.load", {"drive": 1, "data_base64": b64((fixture_dir / "nave.dsk").read_bytes())})
+detected = call("boot_ready.configure", {"file": fixture["disk"]["amsdos_name"], "drive": 1})
+assert detected["address"] == int(fixture["entry"]["address"], 0) == 0x0B72 and detected["source"] == "amsdos_header", detected
+
 # ---- contract: api/schema.json and the code list exactly the same methods ----
 import re
 schema = json.loads((root / "api" / "schema.json").read_text())
@@ -752,4 +928,4 @@ fails("tape.nope", {}, "method not found")
 
 proc.stdin.close()
 assert proc.wait(timeout=10) == 0
-print("headless API 1.3: PASS (input, display, audio, tape, disc media, debugger)")
+print("headless API 1.4: PASS (input, display, audio, tape, disc media, debugger)")

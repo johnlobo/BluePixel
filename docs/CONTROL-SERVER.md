@@ -1,6 +1,6 @@
 # Servidor de control local (pasos 16 y 17)
 
-El proceso headless y la app macOS ofrecen CPCApi 1.3 por socket Unix y WebSocket.
+El proceso headless y la app macOS ofrecen CPCApi (los transportes llegaron con la 1.3; la versión actual es la 1.4) por socket Unix y WebSocket.
 El servidor está **apagado por defecto**. El transporte stdio de headless sigue funcionando igual.
 No hay escucha en interfaces de red externas: WebSocket se enlaza exclusivamente a `127.0.0.1`.
 

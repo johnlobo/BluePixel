@@ -174,7 +174,7 @@ with tempfile.TemporaryDirectory(prefix="bp-server-", dir="/tmp") as tmp:
     else:
         plain = subprocess.run([str(BINARY)], input=request("session.capabilities") + b"\n", capture_output=True,
                                env=dict(os.environ, BLUEPIXEL_ROM_DIR=str(ROOT / "web/roms")), timeout=10)
-        assert plain.returncode == 0 and json.loads(plain.stdout)["result"]["api_version"] == "1.3"
+        assert plain.returncode == 0 and json.loads(plain.stdout)["result"]["api_version"] == "1.4"
     server = Running(directory)
     idle = socket.create_connection(("127.0.0.1", server.port), timeout=5)
     idle.sendall(b"GET ")
@@ -185,7 +185,7 @@ with tempfile.TemporaryDirectory(prefix="bp-server-", dir="/tmp") as tmp:
         client = server.unix()
         assert line(client) == b"OK\n"
         capabilities = call(client, "session.capabilities")
-        assert capabilities["machine"] == "CPC 6128" and capabilities["api_version"] == "1.3"
+        assert capabilities["machine"] == "CPC 6128" and capabilities["api_version"] == "1.4"
         assert capabilities["transports"] == ["unix", "websocket"]
         call(client, "mem.write", {"address": 0x8000, "value": 42})
         assert call(client, "mem.read", {"address": 0x8000})["hex"] == "2a"

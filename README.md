@@ -67,4 +67,4 @@ La guía completa, el protocolo y los formatos están en [docs/HEADLESS.md](docs
 
 ## Control local de escritorio y headless
 
-El servidor opcional de CPCApi 1.3 admite sockets Unix y WebSocket en loopback, con token y validación de Origin. Está apagado por defecto. En macOS se activa desde **Settings → Control Server** o con `tools/bluepixel --control-server`. [Protocolo, opciones y ejemplos](docs/CONTROL-SERVER.md).
+El servidor opcional de CPCApi (transportes desde la 1.3, versión actual 1.4) admite sockets Unix y WebSocket en loopback, con token y validación de Origin. Está apagado por defecto. En macOS se activa desde **Settings → Control Server** o con `tools/bluepixel --control-server`. [Protocolo, opciones y ejemplos](docs/CONTROL-SERVER.md).
