@@ -58,7 +58,7 @@ jobs:
       - name: Pixel- and sample-exact golden scenarios (video, sound, tape polling), real ROMs
         env:
           BLUEPIXEL_ROM_DIR: ${{ github.workspace }}/web/roms
-        run: python3 Tests/headless/test_render_golden.py
+        run: LDFLAGS=-static python3 Tests/headless/test_render_golden.py   # rebuilds build/bluepixel-headless: keep it static for the last step
       - name: Differential fuzz against the pre-optimisation executable (e4be45c)
         env:
           BLUEPIXEL_ROM_DIR: ${{ github.workspace }}/web/roms
