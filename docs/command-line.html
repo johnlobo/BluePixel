@@ -48,6 +48,7 @@ open -a build/BluePixel.app --args juego.dsk /A</code></pre>
   <tr><td><code>/SN:fichero</code></td><td>Carga y arranca un snapshot.</td></tr>
   <tr><td><code>/SYM:fichero</code></td><td>Carga símbolos (<code>.noi</code>, <code>.map</code>, <code>.sym</code>, listas Maxam/WinAPE). Ver <a href="debugger.html#symbols">símbolos</a>.</td></tr>
   <tr><td><code>--type texto</code></td><td>Teclea el texto (<code>~</code> es Return).</td></tr>
+  <tr><td><code>--control-server</code></td><td>Activa el servidor local autenticado (apagado por defecto). Usa <code>--control-unix ruta</code>, <code>--control-websocket puerto</code>, <code>--control-token-file ruta</code> y <code>--control-origin origen</code> para configurarlo. Ver <a href="#control">control local</a>.</td></tr>
   <tr><td><code>-h</code>, <code>--help</code></td><td>Muestra la ayuda.</td></tr>
 </table>
 </div>
@@ -63,6 +64,11 @@ tools/bluepixel cpm.dsk datos.dsk /A:|CPM
 
 # Cargar un snapshot
 tools/bluepixel /SN partida.sna</code></pre>
+<h2 id="control">Control local por API</h2>
+<p><strong>Settings → Control Server → Enable Local Control</strong> activa Unix y WebSocket sobre la misma máquina visible. <strong>Connection Info…</strong> muestra las rutas y el puerto. La opción está apagada por defecto y no se guarda entre arranques.</p>
+<pre><code>tools/bluepixel --control-server --control-websocket 8765 --control-origin http://localhost:8080</code></pre>
+<p>El servidor escucha WebSocket solo en <code>127.0.0.1</code> y exige token. Los ficheros de token/socket tienen permisos privados. La máquina queda pausada; los comandos <code>run.*</code> avanzan el tiempo virtual. Al desactivarlo, usa Run para continuar. La grabación y el replay de sesiones deben estar detenidos para activar el control.</p>
+<p>Las opciones <code>--control-unix</code>, <code>--control-websocket</code>, <code>--control-token-file</code> y <code>--control-origin</code> configuran el servicio; por sí solas no lo activan. El protocolo y ejemplos de clientes están en <a href="CONTROL-SERVER.md">CONTROL-SERVER.md</a>.</p>
 </main>
 </div>
 

@@ -74,6 +74,11 @@ final class Settings {
 
 enum AppPaths {
     static let support: URL = {
+        if let path = ProcessInfo.processInfo.environment["BLUEPIXEL_DATA_DIR"], !path.isEmpty {
+            let directory = URL(fileURLWithPath: path)
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            return directory
+        }
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let u = base.appendingPathComponent("BluePixel")
         let old = base.appendingPathComponent("MacAPE")

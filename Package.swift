@@ -18,6 +18,6 @@ let package = Package(
         .target(name: "CPCHost", dependencies: ["CPCCore", "CPCApi"], path: "Sources/CPCHost", publicHeadersPath: "include"),
         .executableTarget(name: "cpcrun", dependencies: ["CPCCore", "CPCHost"], path: "Sources/cpcrun"),
         .executableTarget(name: "bluepixel-headless", dependencies: ["CPCApi", "CPCServer", "CPCHost"], path: "Sources/bluepixel-headless"),
-        .executableTarget(name: "BluePixel", dependencies: ["CPCCore", "CPCHost"], path: "Sources/BluePixel"),
+        .executableTarget(name: "BluePixel", dependencies: ["CPCCore", "CPCHost", "CPCApi", "CPCServer"], path: "Sources/BluePixel"),
     ]
 )

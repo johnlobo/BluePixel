@@ -77,8 +77,8 @@ Si no se alcanza, registra la mediana medida y el cuello de botella pendiente.
 - El CI de `54dda96` pasó Linux estático y WASM. La ampliación de CI en este cambio añade el adaptador, las ROMs
   reales y la herramienta de medición; consulta el resultado del último push antes de empezar.
 - No se han hecho optimizaciones nuevas de rendimiento ni mediciones de la VPS desde el desktop.
-- Siguen pendientes `boot_ready` por cabecera AMSDOS, servidor desktop opcional, Unix/WebSocket con token/Origin
-  y adaptador de GlasnostFWK. No son necesarios para medir el proceso headless por stdio.
+- Los pasos 16/17 (servidor desktop y Unix/WebSocket con token/Origin) están implementados en CPCApi 1.3; ver `CONTROL-SERVER.md`.
+- Siguen pendientes `boot_ready` por cabecera AMSDOS y el adaptador de GlasnostFWK. No son necesarios para medir el proceso headless por stdio.
 
 Prompt para retomar:
 

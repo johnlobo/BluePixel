@@ -16,6 +16,10 @@ struct LaunchOptions {
     var typed: String?, shot: String?, shotWin: String?, panel: String?
     var after = 4.0, panelAt = 1.0
     var help = false
+    var controlServer = false
+    var controlUnix: String?, controlTokenFile: String?
+    var controlPort: Int?
+    var controlOrigins: [String] = []
     var errors: [String] = []
 
     static let usage = """
@@ -27,6 +31,11 @@ struct LaunchOptions {
       /SYM:file       load assembler/debugger symbols (.noi, .sym, Maxam/WinAPE lists)
                       (/T, /SN and /SYM also accept the file as the next argument)
       --type text     type text (~ is Return)
+      --control-server             enable authenticated local control (off by default)
+      --control-unix path          Unix socket path (default: app support/Control/control.sock)
+      --control-websocket port     loopback WebSocket port (0 chooses a free port)
+      --control-token-file path    owner-only token file (default: app support/Control/token)
+      --control-origin origin      allow an exact browser Origin; may be repeated
       -h, --help      show this help
     """
 
@@ -40,6 +49,20 @@ struct LaunchOptions {
         }
         while i < args.count {
             let a = args[i]; i += 1
+            if a == "--control-server" { controlServer = true; continue }
+            if ["--control-unix", "--control-websocket", "--control-token-file", "--control-origin"].contains(a) {
+                guard i < args.count else { errors.append("\(a) needs a value"); continue }
+                let v = args[i]; i += 1
+                switch a {
+                case "--control-unix": controlUnix = v
+                case "--control-token-file": controlTokenFile = v
+                case "--control-origin": controlOrigins.append(v)
+                default:
+                    if let port = Int(v), (0...65535).contains(port) { controlPort = port }
+                    else { errors.append("Invalid control WebSocket port: \(v)") }
+                }
+                continue
+            }
             // Value-taking automation flags (--flag value).
             if ["--shot", "--after", "--panel", "--panelat", "--shotwin", "--type"].contains(a) {
                 guard i < args.count else { errors.append("\(a) needs a value"); continue }

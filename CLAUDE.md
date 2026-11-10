@@ -20,7 +20,7 @@ User manual (Spanish, HTML, start at [docs/index.html](docs/index.html)): living
 - `Sources/CPCApi/` — JSON-RPC 2.0 dispatcher in C (vendored `jsmn.h`); schema in `api/schema.json` (API 1.2, the contract: a test fails if the schema and
   the code list different methods). `api.c` core/state/run methods, `api_media.c` input/display/audio/tape/disc/ROM unload, `api_debug.c` `debug.*`,
   `api_util.c` + `api_internal.h` parsing and JSON helpers. A new method goes in the matching module, the schema and `Tests/headless/test_api_ext.py`.
-  `Sources/CPCServer/` — transports over it (stdio only; Unix socket, WebSocket and token/Origin checks are not built).
+  `Sources/CPCServer/` — stdio, authenticated Unix sockets and loopback WebSocket with token/Origin checks; see `docs/CONTROL-SERVER.md`. Desktop requests are queued to the emulator thread and use a borrowed CPCApi session.
   `Sources/CPCHost/` — file, ROM-manifest (`roms.json`) and SHA-256 helpers, so `CPCCore` and `CPCApi` do no file I/O.
 - `Sources/bluepixel-headless/` — Linux/macOS executable: one JSON-RPC request per line on stdin, one response per line on
   stdout. Guide, protocol and H2 status: [docs/HEADLESS.md](docs/HEADLESS.md).
@@ -192,8 +192,8 @@ controls blank (tab strips, segmented controls); use `screencapture` when the re
 ## Not done yet
 
 Headless (status table in `docs/HEADLESS.md`): the 50x realtime target is not met (about 12x on the 4 vCPU VPS; `perf` is blocked
-in the container, use callgrind); CPCApi 1.2 and the browser JSON-RPC migration are complete, with native/WASM state conformance
-passing locally. Chrome game loading, stepping and breakpoints are verified; the WASM adapter has a functional test in CI; no Unix socket or WebSocket transport;
+in the container, use callgrind); CPCApi 1.3 and the browser JSON-RPC migration are complete, with native/WASM state conformance
+passing locally. Chrome game loading, stepping and breakpoints are verified; the WASM adapter has a functional test in CI; desktop control and Unix/WebSocket transports are implemented (off by default), with shutdown cancellation and owner-thread dispatch;
 `boot_ready` needs an explicit entry address (no AMSDOS autodetect); full Linux/macOS/WASM fixture validation is covered by the expanded CI; check the latest run. For VPS performance work, follow `docs/HANDOFF-VPS-H2.md` and `tools/measure-headless.py`.
 
 Session record/playback is complete: core, File menu, transport bar (`Transport.swift`), reverse debugging (`ReverseDebug.swift`: Step Back
