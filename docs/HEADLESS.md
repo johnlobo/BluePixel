@@ -241,9 +241,12 @@ node Tests/wasm/portable.mjs --verify build/portable --expect-producers 2
 node Tests/wasm/portable.mjs --wasm web/bluepixel-capi.js --verify build/portable --expect-producers 2
 ```
 
-Local macOS arm64 ↔ wasm32 export, restore and continuation pass. The workflow
-provides the Linux comparison; its run, rather than local results, is the evidence
-for the three-platform gate. No big-endian host is covered.
+**Verified:** [workflow run 42846647095](https://github.com/johnlobo/BluePixel/actions/runs/42846647095)
+on commit `ba263e3` passed all three producers and all three consumers: Linux
+x86_64 (static), macOS arm64 and wasm32 have identical traces and canonical states,
+and all nine directed backend combinations restore and continue exactly.
+Local macOS arm64 ↔ wasm32 handoff and the negative evidence checks also pass.
+No big-endian host is covered.
 
 ## 19. GlasnostFWK integration
 
