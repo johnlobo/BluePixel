@@ -42,11 +42,20 @@ static void env_step(CPCPsg *p) {
     }
 }
 
+/* Volume index a channel plays at right now (the envelope when bit 4 of its register is set). */
+static inline uint8_t channel_amp(const CPCPsg *p, int i) {
+    uint8_t a = p->regs[8 + i];
+    return (a & 16) ? p->env_vol : (a & 15);
+}
+
+/* A level is (tone && noise) ? vol_table[amp] : 0 and vol_table[0] is 0, so a channel at amplitude 0 stays at 0 whatever its
+ * oscillators do: flips only count for channels that can be heard. The levels are recomputed only when the formula's result
+ * can differ from what is stored, which keeps them bit-identical to recomputing every tick. */
 bool psg_tick_slow(CPCPsg *p) {
     bool changed = !p->lvl_clean;
     if ((p->sub & 7) == 0) {
         for (int i = 0; i < 3; i++) {
-            if (++p->tone_cnt[i] >= (p->tone_per[i] ? p->tone_per[i] : 1)) { p->tone_cnt[i] = 0; p->tone_out[i] ^= 1; changed = true; }
+            if (++p->tone_cnt[i] >= (p->tone_per[i] ? p->tone_per[i] : 1)) { p->tone_cnt[i] = 0; p->tone_out[i] ^= 1; if (channel_amp(p, i)) changed = true; }
         }
     }
     if ((p->sub & 15) == 0) {
@@ -55,11 +64,12 @@ bool psg_tick_slow(CPCPsg *p) {
             p->noise_cnt = 0;
             uint32_t bit = (p->lfsr ^ (p->lfsr >> 3)) & 1;
             p->lfsr = (p->lfsr >> 1) | (bit << 16);
+            uint8_t before = p->noise_out;
             p->noise_out = p->lfsr & 1;
-            changed = true;
+            if (p->noise_out != before && (channel_amp(p, 0) | channel_amp(p, 1) | channel_amp(p, 2))) changed = true;
         }
         uint16_t ep = (uint16_t)(p->regs[11] | (p->regs[12] << 8)); if (!ep) ep = 1;
-        if (++p->env_cnt >= ep) { p->env_cnt = 0; env_step(p); changed = true; }
+        if (++p->env_cnt >= ep) { p->env_cnt = 0; uint8_t before = p->env_vol; env_step(p); if (p->env_vol != before) changed = true; }
     }
     if (!changed) return false;
     uint8_t mix = p->regs[7];

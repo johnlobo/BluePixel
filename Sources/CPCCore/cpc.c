@@ -645,30 +645,42 @@ void cpc_video_tick(CPC *c) {
 }
 
 /* ---------------- Audio ---------------- */
-/* `mix_fx` (AmDrum/Digiblaster on) and `tape_snd` (tape sound with the motor running) cannot change inside one instruction,
- * so advance() works them out once and passes them in. */
-static inline void audio_tick(CPC *c, bool mix_fx, bool tape_snd) {
-    if (psg_tick(&c->psg) || !c->psg.mix_valid) {      /* the mix only moves when a level does */
-        psg_mix(&c->psg, &c->psg.mix[0], &c->psg.mix[1], c->cfg.stereo);
-        c->psg.mix_valid = true;
-    }
-    float l = c->psg.mix[0], r = c->psg.mix[1];
-    if (mix_fx) { float d = (c->amdrum / 255.0f) * 0.5f; l = r = (l + r) * 0.5f + d; }
-    if (tape_snd && tape_read_level(c->tape)) { l += 0.02f; r += 0.02f; }
-    c->audio_acc[0] += l; c->audio_acc[1] += r; c->audio_acc_n++;
-    c->audio_phase += c->cfg.sample_rate;
-    if (c->audio_phase >= 1000000) {
-        c->audio_phase -= 1000000;
-        int n = c->audio_acc_n ? c->audio_acc_n : 1;
-        int w = __atomic_load_n(&c->audio_w, __ATOMIC_RELAXED);
-        int next = (w + 1) % AUDIO_CAP;
-        if (next != __atomic_load_n(&c->audio_r, __ATOMIC_ACQUIRE)) {
-            c->audio[w * 2] = c->audio_acc[0] / n * c->cfg.volume;
-            c->audio[w * 2 + 1] = c->audio_acc[1] / n * c->cfg.volume;
-            __atomic_store_n(&c->audio_w, next, __ATOMIC_RELEASE);
+/* Sound, tape and tape recording for `nops` microseconds. Video never reads what these write and they never read what video
+ * writes, so one instruction's worth of each can run as separate loops: the accumulators stay in registers here, and the
+ * per-tick order (sound, tape, recording) is the one the combined loop had.
+ * `mix_fx` (AmDrum/Digiblaster) and `tape_snd` (tape sound with the motor running) cannot change inside one instruction. */
+static void rec_tick(CPC *c);
+static void audio_advance(CPC *c, int nops, bool mix_fx, bool tape_snd, bool tape_on, bool recording) {
+    float acc0 = c->audio_acc[0], acc1 = c->audio_acc[1];
+    int acc_n = c->audio_acc_n, phase = c->audio_phase;
+    const int rate = c->cfg.sample_rate;
+    CPCPsg *psg = &c->psg;
+    for (int i = 0; i < nops; i++) {
+        if (psg_tick(psg) || !psg->mix_valid) {            /* the mix only moves when a level does */
+            psg_mix(psg, &psg->mix[0], &psg->mix[1], c->cfg.stereo);
+            psg->mix_valid = true;
         }
-        c->audio_acc[0] = c->audio_acc[1] = 0; c->audio_acc_n = 0;
+        float l = psg->mix[0], r = psg->mix[1];
+        if (mix_fx) { float d = (c->amdrum / 255.0f) * 0.5f; l = r = (l + r) * 0.5f + d; }
+        if (tape_snd && tape_read_level(c->tape)) { l += 0.02f; r += 0.02f; }
+        acc0 += l; acc1 += r; acc_n++;
+        phase += rate;
+        if (phase >= 1000000) {
+            phase -= 1000000;
+            int n = acc_n ? acc_n : 1;
+            int w = __atomic_load_n(&c->audio_w, __ATOMIC_RELAXED);
+            int next = (w + 1) % AUDIO_CAP;
+            if (next != __atomic_load_n(&c->audio_r, __ATOMIC_ACQUIRE)) {
+                c->audio[w * 2] = acc0 / n * c->cfg.volume;
+                c->audio[w * 2 + 1] = acc1 / n * c->cfg.volume;
+                __atomic_store_n(&c->audio_w, next, __ATOMIC_RELEASE);
+            }
+            acc0 = acc1 = 0; acc_n = 0;
+        }
+        if (tape_on) tape_tick(c->tape, 1);
+        if (recording) rec_tick(c);
     }
+    c->audio_acc[0] = acc0; c->audio_acc[1] = acc1; c->audio_acc_n = acc_n; c->audio_phase = phase;
 }
 
 int cpc_audio_available(const CPC *c) {
@@ -722,11 +734,9 @@ static void advance(CPC *c, int nops) {
     const bool recording = c->rec_active && c->tape_motor;       /* rec_tick returns at once otherwise */
     for (int i = 0; i < nops; i++) {
         cpc_video_tick(c);
-        audio_tick(c, mix_fx, tape_snd);
-        if (tape_on) tape_tick(c->tape, 1);
-        if (recording) rec_tick(c);
         c->cycles++;
     }
+    audio_advance(c, nops, mix_fx, tape_snd, tape_on, recording);
     fdc_tick(c->fdc, nops);
     c->t_counter += nops;
 }
