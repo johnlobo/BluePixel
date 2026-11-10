@@ -192,6 +192,7 @@ void cpc_clear_roms(CPC *c);
 bool cpc_load_cartridge(CPC *c, const uint8_t *data, size_t size);
 
 /* Emulation */
+void cpc_settle(CPC *c);                    /* apply pending sound/tape/FDC time (a no-op whenever the host can call it) */
 int cpc_step(CPC *c);                       /* run a single instruction, returns NOPs */
 void cpc_run_frame(CPC *c);                 /* run until the next frame flyback (or ~2 frames of time) */
 void cpc_key(CPC *c, int key, bool down);

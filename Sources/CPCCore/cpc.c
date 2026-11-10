@@ -603,7 +603,7 @@ static void frame_flyback(CPC *c) {
     amx_frame(c);
 }
 
-void cpc_video_tick(CPC *c) {
+static inline __attribute__((always_inline)) void video_tick(CPC *c) {
     CPCCrtc *k = &c->crtc;
     uint16_t ma = (k->ma_row + k->hcc) & 0x3FFF;
     emit_char(c, k->hde && k->vde, ma, k->vlc);
@@ -646,6 +646,8 @@ void cpc_video_tick(CPC *c) {
     }
     if (k->hcc == k->r[2] && !k->hsync) { k->hsync = true; k->hsc = 0; }
 }
+
+void cpc_video_tick(CPC *c) { video_tick(c); }
 
 /* ---------------- Audio ---------------- */
 /* Sound, tape and tape recording for `nops` microseconds. Video never reads what these write and they never read what video
@@ -737,13 +739,15 @@ uint8_t *cpc_tape_record_stop(CPC *c, size_t *size) {
  * as applying it a microsecond at a time, so the result is identical. */
 static void advance(CPC *c, int nops) {
     for (int i = 0; i < nops; i++) {
-        cpc_video_tick(c);
+        video_tick(c);
         c->cycles++;
     }
     c->sub_debt += nops;
     c->t_counter += nops;
     if (c->cfg.plus) settle(c);       /* the Plus DMA, run from the video tick, writes sound registers without a CPU port access */
 }
+
+void cpc_settle(CPC *c) { settle(c); }
 
 static void settle(CPC *c) {
     int n = c->sub_debt;
@@ -767,6 +771,7 @@ static int step_inner(CPC *c) {
     }
     DbgProfPre pre; Debugger *dp = c->dbg && c->dbg->prof && !c->dbg->quiet && !c->dbg->scanning ? c->dbg : NULL;
     if (dp) dbg_prof_before(c, &pre);
+    c->z80.fast_map = (c->dbg || c->asic.page_visible) ? NULL : (const uint8_t *const *)c->rd_map;   /* see cpc_mem_fetch */
     int n = z80_step(&c->z80, c->irq_line);
     if (dp) dbg_prof_after(c, &pre, n);
     if (ret_op && !c->z80.int_ack && c->z80.sp.w > c->dbg->step_out_sp) { c->dbg->step_out = false; c->dbg->hit = true; c->dbg->hit_index = -1; }

@@ -47,6 +47,10 @@ NOT_STATE = {
         "dbg": "debugger", "recorder": "session recorder", "stopped_recording": "session recorder",
         "player": "session player", "trace_io": "host callback", "trace_io_ctx": "host callback",
         "autotype": "pointer (the auto-type queue is serialized by cpc_autotype_state_visit)",
+        "z80.fast_map": "derived pointer, set before every instruction",
+        "psg.lvl_clean": "derived cache (zero means recompute)", "psg.mix_valid": "derived cache (zero means recompute)",
+        "psg.mix": "derived cache of the stereo mix",
+        "sub_debt": "sound/tape/FDC time not yet applied: settled before any state is saved, hashed or restored",
     },
     "fdc": {
         "cpc": "back pointer", "disc": "media pointers", "buf": "pointer (contents are serialized)",
