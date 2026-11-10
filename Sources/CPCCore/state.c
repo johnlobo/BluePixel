@@ -134,6 +134,7 @@ static void visit_io(Ser *s, CPC *c) {
     ser_u16(s, &p->noise_cnt); ser_u32(s, &p->lfsr); ser_u8(s, &p->noise_out);
     ser_u16(s, &p->env_cnt); ser_i8_in(s, &p->env_step, 0, 15); ser_u8_in(s, &p->env_vol, 15);   /* env_vol indexes vol_table[16] */ ser_bool(s, &p->env_hold); ser_bool(s, &p->env_up);
     ser_u8(s, &p->sub); ser_f32s(s, p->level, 3);
+    p->lvl_clean = false; p->mix_valid = false;      /* derived caches: recompute from the state just read */
     ser_u8(s, &c->psg_ctl); ser_u8(s, &c->amdrum);
     /* Sample generation phase: decides where the next output sample falls, so it is state, not presentation. */
     ser_f32s(s, c->audio_acc, 2); ser_int(s, &c->audio_acc_n); ser_int(s, &c->audio_phase);
@@ -238,6 +239,7 @@ static uint32_t rd32(const uint8_t *p) { uint32_t v = 0; for (int i = 0; i < 4; 
 static uint64_t rd64(const uint8_t *p) { uint64_t v = 0; for (int i = 0; i < 8; i++) v |= (uint64_t)p[i] << (8 * i); return v; }
 
 uint8_t *cpc_state_canonical(CPC *c, size_t *size) {
+    cpc_settle(c);
     Ser s = {.mode = SER_WRITE};
     emit(&s, c);
     if (s.bad) { free(s.buf); return NULL; }
@@ -245,6 +247,7 @@ uint8_t *cpc_state_canonical(CPC *c, size_t *size) {
 }
 
 CPCState *cpc_state_save(CPC *c) {
+    cpc_settle(c);
     size_t n; uint8_t *raw = cpc_state_canonical(c, &n); if (!raw) return NULL;
     uLongf zcap = compressBound((uLong)n);
     CPCState *st = malloc(sizeof *st + HEADER_BYTES + zcap); if (!st) { free(raw); return NULL; }
@@ -259,6 +262,7 @@ CPCState *cpc_state_save(CPC *c) {
 }
 
 uint64_t cpc_state_hash(CPC *c) {
+    cpc_settle(c);
     Ser s = {.mode = SER_HASH, .h = SER_FNV_OFFSET};
     emit(&s, c);
     /* Media is external to CPCState, but the hash must tell apart machines that would read different bytes
@@ -296,6 +300,7 @@ CPCState *cpc_state_from_bytes(const uint8_t *data, size_t size) {
 }
 
 bool cpc_state_restore(CPC *c, const CPCState *st, unsigned *hazards) {
+    cpc_settle(c);      /* pending time belongs to the machine being replaced */
     unsigned hz = 0;
     if (hazards) *hazards = 0;
     if (st->size < HEADER_BYTES) return false;

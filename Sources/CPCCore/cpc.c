@@ -54,7 +54,12 @@ static void build_palette(CPC *c) {
     }
 }
 
+static void build_pen_tables(void);
+static void settle(CPC *c);
+static bool pen_tables_ready;
+
 CPC *cpc_create(CPCModel model) {
+    if (!pen_tables_ready) build_pen_tables();   /* pure function of nothing: safe to repeat from two threads */
     CPC *c = calloc(1, sizeof *c);
     c->model = model;
     cpc_default_config(&c->cfg, model);
@@ -86,6 +91,7 @@ void cpc_destroy(CPC *c) {
 
 void cpc_configure(CPC *c, const CPCConfig *cfg) {
     c->cfg = *cfg;
+    c->psg.mix_valid = false;           /* the mix depends on cfg.stereo */
     c->crtc.type = cfg->type;
     c->z80.turbo = cfg->turbo;
     build_palette(c); asic_refresh_palette(c);
@@ -353,6 +359,7 @@ static void ppi_write(CPC *c, int func, uint8_t v) {
 
 /* ---------------- I/O decode ---------------- */
 void cpc_io_write(void *ctx, uint16_t port, uint8_t v) {
+    settle(ctx);
     CPC *c = ctx;
     if (c->trace_io) c->trace_io(c->trace_io_ctx, port, v, c->z80.pc);
     if (c->dbg && c->dbg->io_bps) dbg_io_event(c, port, v, true);
@@ -378,6 +385,7 @@ void cpc_io_write(void *ctx, uint16_t port, uint8_t v) {
 }
 
 uint8_t cpc_io_read(void *ctx, uint16_t port) {
+    settle(ctx);
     CPC *c = ctx;
     uint8_t v = 0xFF;
     if (c->dbg && c->dbg->io_bps) dbg_io_event(c, port, 0xFF, false);
@@ -438,12 +446,67 @@ static inline void put_row16(CPC *c, const uint32_t *px) {
 static inline uint32_t pen_rgb(CPC *c, int pen) { return c->cfg.plus ? c->asic.pal_rgb[pen] : c->hw_rgb[c->ga_palette[pen] & 31]; }
 uint32_t cpc_pen_rgb(CPC *c, int pen) { return pen_rgb(c, pen); }
 
+/* Pen index of every pixel of a screen byte, per mode: built once, so drawing a character is table lookups and stores.
+ * Mode 0/3: 2 pixels per byte (bits 7,3,5,1 and 6,2,4,0); mode 1: 4 pixels (bits 7-p and 3-p); mode 2: 8 pixels. */
+static uint8_t pen_m0[256][2], pen_m1[256][4];
+static void build_pen_tables(void) {
+    for (int b = 0; b < 256; b++) {
+        pen_m0[b][0] = (uint8_t)(((b >> 7) & 1) | (((b >> 3) & 1) << 1) | (((b >> 5) & 1) << 2) | (((b >> 1) & 1) << 3));
+        pen_m0[b][1] = (uint8_t)(((b >> 6) & 1) | (((b >> 2) & 1) << 1) | (((b >> 4) & 1) << 2) | (((b >> 0) & 1) << 3));
+        for (int p = 0; p < 4; p++) pen_m1[b][p] = (uint8_t)(((b >> (7 - p)) & 1) | (((b >> (3 - p)) & 1) << 1));
+    }
+    pen_tables_ready = true;
+}
+
+/* The common case, a CPC without the Plus ASIC and a character fully inside the frame buffer: same pixels as the generic
+ * path below, without the per-pixel bounds checks, pen decoding and palette indirection. */
+static inline void emit_char_fast(CPC *c, bool de, uint16_t ma, uint16_t ra) {
+    uint32_t *dst = c->frame + (size_t)c->beam_y * CPC_SCREEN_W + (size_t)c->beam_x;
+    const uint32_t *hw = c->hw_rgb;
+    const uint8_t *gp = c->ga_palette;
+    if (!de) {
+        uint32_t rgb = hw[gp[16] & 31];
+        for (int i = 0; i < 16; i++) dst[i] = rgb;
+        c->scroll_valid = false;
+        c->beam_x += 16;
+        return;
+    }
+    uint32_t addr = ((ma & 0x3000) << 2) | ((ra & 7) << 11) | ((ma & 0x3FF) << 1);
+    const uint8_t b0 = c->ram[addr], b1 = c->ram[addr + 1];
+    switch (c->ga_mode) {
+    case 1: {
+        const uint8_t *p0 = pen_m1[b0], *p1 = pen_m1[b1];
+        for (int p = 0; p < 4; p++) { uint32_t rgb = hw[gp[p0[p]] & 31]; dst[2 * p] = rgb; dst[2 * p + 1] = rgb; }
+        for (int p = 0; p < 4; p++) { uint32_t rgb = hw[gp[p1[p]] & 31]; dst[8 + 2 * p] = rgb; dst[8 + 2 * p + 1] = rgb; }
+        break;
+    }
+    case 0: case 3: {
+        const uint8_t *p0 = pen_m0[b0], *p1 = pen_m0[b1];
+        for (int p = 0; p < 2; p++) {
+            uint32_t rgb = hw[gp[p0[p]] & 31];
+            for (int i = 0; i < 4; i++) dst[4 * p + i] = rgb;
+        }
+        for (int p = 0; p < 2; p++) {
+            uint32_t rgb = hw[gp[p1[p]] & 31];
+            for (int i = 0; i < 4; i++) dst[8 + 4 * p + i] = rgb;
+        }
+        break;
+    }
+    default: {    /* mode 2, and any value a restored state may carry beyond 3: the generic path draws those as mode 2 too */
+        const uint32_t c0 = hw[gp[0] & 31], c1 = hw[gp[1] & 31];
+        for (int p = 0; p < 8; p++) { dst[p] = (b0 >> (7 - p)) & 1 ? c1 : c0; dst[8 + p] = (b1 >> (7 - p)) & 1 ? c1 : c0; }
+    }
+    }
+    c->beam_x += 16;
+}
+
 static void emit_char(CPC *c, bool de, uint16_t ma, uint16_t ra) {
     uint32_t px[16];
     CPCAsic *a = &c->asic;
     bool plus = c->cfg.plus && a->unlocked;
     if (c->crtc.hcc == 0) c->disp_x0 = c->beam_x;
     if (c->beam_x >= CPC_SCREEN_W + 16 || c->beam_y < 0 || c->beam_y >= CPC_SCREEN_H) { c->beam_x += 16; if (!de) c->scroll_valid = false; return; }
+    if (!c->cfg.plus && c->beam_x >= 0 && c->beam_x + 16 <= CPC_SCREEN_W) { emit_char_fast(c, de, ma, ra); return; }
     if (!de) {
         uint32_t rgb = pen_rgb(c, 16);
         for (int i = 0; i < 16; i++) px[i] = rgb;
@@ -540,7 +603,7 @@ static void frame_flyback(CPC *c) {
     amx_frame(c);
 }
 
-void cpc_video_tick(CPC *c) {
+static inline __attribute__((always_inline)) void video_tick(CPC *c) {
     CPCCrtc *k = &c->crtc;
     uint16_t ma = (k->ma_row + k->hcc) & 0x3FFF;
     emit_char(c, k->hde && k->vde, ma, k->vlc);
@@ -584,27 +647,45 @@ void cpc_video_tick(CPC *c) {
     if (k->hcc == k->r[2] && !k->hsync) { k->hsync = true; k->hsc = 0; }
 }
 
+void cpc_video_tick(CPC *c) { video_tick(c); }
+
 /* ---------------- Audio ---------------- */
-static void audio_tick(CPC *c) {
-    psg_tick(&c->psg);
-    float l, r;
-    psg_mix(&c->psg, &l, &r, c->cfg.stereo);
-    if (c->cfg.amdrum || c->cfg.digiblaster) { float d = (c->amdrum / 255.0f) * 0.5f; l = r = (l + r) * 0.5f + d; }
-    if (c->cfg.tape_sound && c->tape_motor && tape_read_level(c->tape)) { l += 0.02f; r += 0.02f; }
-    c->audio_acc[0] += l; c->audio_acc[1] += r; c->audio_acc_n++;
-    c->audio_phase += c->cfg.sample_rate;
-    if (c->audio_phase >= 1000000) {
-        c->audio_phase -= 1000000;
-        int n = c->audio_acc_n ? c->audio_acc_n : 1;
-        int w = __atomic_load_n(&c->audio_w, __ATOMIC_RELAXED);
-        int next = (w + 1) % AUDIO_CAP;
-        if (next != __atomic_load_n(&c->audio_r, __ATOMIC_ACQUIRE)) {
-            c->audio[w * 2] = c->audio_acc[0] / n * c->cfg.volume;
-            c->audio[w * 2 + 1] = c->audio_acc[1] / n * c->cfg.volume;
-            __atomic_store_n(&c->audio_w, next, __ATOMIC_RELEASE);
+/* Sound, tape and tape recording for `nops` microseconds. Video never reads what these write and they never read what video
+ * writes, so one instruction's worth of each can run as separate loops: the accumulators stay in registers here, and the
+ * per-tick order (sound, tape, recording) is the one the combined loop had.
+ * `mix_fx` (AmDrum/Digiblaster) and `tape_snd` (tape sound with the motor running) cannot change inside one instruction. */
+static void rec_tick(CPC *c);
+static void audio_advance(CPC *c, int nops, bool mix_fx, bool tape_snd, bool tape_on, bool recording) {
+    float acc0 = c->audio_acc[0], acc1 = c->audio_acc[1];
+    int acc_n = c->audio_acc_n, phase = c->audio_phase;
+    const int rate = c->cfg.sample_rate;
+    CPCPsg *psg = &c->psg;
+    for (int i = 0; i < nops; i++) {
+        if (psg_tick(psg) || !psg->mix_valid) {            /* the mix only moves when a level does */
+            psg_mix(psg, &psg->mix[0], &psg->mix[1], c->cfg.stereo);
+            psg->mix_valid = true;
         }
-        c->audio_acc[0] = c->audio_acc[1] = 0; c->audio_acc_n = 0;
+        float l = psg->mix[0], r = psg->mix[1];
+        if (mix_fx) { float d = (c->amdrum / 255.0f) * 0.5f; l = r = (l + r) * 0.5f + d; }
+        if (tape_snd && tape_read_level(c->tape)) { l += 0.02f; r += 0.02f; }
+        acc0 += l; acc1 += r; acc_n++;
+        phase += rate;
+        if (phase >= 1000000) {
+            phase -= 1000000;
+            int n = acc_n ? acc_n : 1;
+            int w = __atomic_load_n(&c->audio_w, __ATOMIC_RELAXED);
+            int next = (w + 1) % AUDIO_CAP;
+            if (next != __atomic_load_n(&c->audio_r, __ATOMIC_ACQUIRE)) {
+                c->audio[w * 2] = acc0 / n * c->cfg.volume;
+                c->audio[w * 2 + 1] = acc1 / n * c->cfg.volume;
+                __atomic_store_n(&c->audio_w, next, __ATOMIC_RELEASE);
+            }
+            acc0 = acc1 = 0; acc_n = 0;
+        }
+        if (tape_on) tape_tick(c->tape, 1);
+        if (recording) rec_tick(c);
     }
+    c->audio_acc[0] = acc0; c->audio_acc[1] = acc1; c->audio_acc_n = acc_n; c->audio_phase = phase;
 }
 
 int cpc_audio_available(const CPC *c) {
@@ -651,20 +732,33 @@ uint8_t *cpc_tape_record_stop(CPC *c, size_t *size) {
 }
 
 /* ---------------- Main loop ---------------- */
+/* Video runs every microsecond (it raises the interrupt and the CPU reads its status). Sound, tape, tape recording and the
+ * floppy controller raise nothing and are only seen through the CPU's own port accesses or from the host, so their time is
+ * accumulated as debt and applied in one go: settle() runs before every port access (cpc_io_read/write) and whenever control
+ * returns to the host (cpc_step, cpc_run_frame). Applying a debt is the same loop over the same ticks, in the same order,
+ * as applying it a microsecond at a time, so the result is identical. */
 static void advance(CPC *c, int nops) {
     for (int i = 0; i < nops; i++) {
-        cpc_video_tick(c);
-        audio_tick(c);
-        if (c->tape) tape_tick(c->tape, 1);
-        rec_tick(c);
+        video_tick(c);
         c->cycles++;
     }
-    fdc_tick(c->fdc, nops);
+    c->sub_debt += nops;
     c->t_counter += nops;
+    if (c->cfg.plus) settle(c);       /* the Plus DMA, run from the video tick, writes sound registers without a CPU port access */
 }
 
-int cpc_step(CPC *c) {
-    if (c->player) replay_apply_due(c);
+void cpc_settle(CPC *c) { settle(c); }
+
+static void settle(CPC *c) {
+    int n = c->sub_debt;
+    if (!n) return;
+    c->sub_debt = 0;
+    audio_advance(c, n, c->cfg.amdrum || c->cfg.digiblaster, c->cfg.tape_sound && c->tape_motor, c->tape != NULL, c->rec_active && c->tape_motor);
+    fdc_tick(c->fdc, n);
+}
+
+static int step_inner(CPC *c) {
+    if (c->player) { settle(c); replay_apply_due(c); }
     if (c->dbg) {
         c->z80.brk_enabled = c->dbg->break_instructions;
         if ((c->dbg->active || c->dbg->skip_once || c->dbg->temp_bp >= 0) && dbg_check_code(c)) return 0;
@@ -677,6 +771,9 @@ int cpc_step(CPC *c) {
     }
     DbgProfPre pre; Debugger *dp = c->dbg && c->dbg->prof && !c->dbg->quiet && !c->dbg->scanning ? c->dbg : NULL;
     if (dp) dbg_prof_before(c, &pre);
+/* Fetches may skip cpc_mem_fetch when it would do nothing but read the map: no visible ASIC page, and no debugger with access
+     * counters or memory-read breakpoints (a debugger that only holds symbols or code breakpoints does not look at fetches). */
+    c->z80.fast_map = (c->asic.page_visible || (c->dbg && (c->dbg->acc || c->dbg->read_bps))) ? NULL : (const uint8_t *const *)c->rd_map;
     int n = z80_step(&c->z80, c->irq_line);
     if (dp) dbg_prof_after(c, &pre, n);
     if (ret_op && !c->z80.int_ack && c->z80.sp.w > c->dbg->step_out_sp) { c->dbg->step_out = false; c->dbg->hit = true; c->dbg->hit_index = -1; }
@@ -687,13 +784,20 @@ int cpc_step(CPC *c) {
     return n;
 }
 
+int cpc_step(CPC *c) {
+    int n = step_inner(c);
+    settle(c);
+    return n;
+}
+
 void cpc_run_frame(CPC *c) {
     uint64_t start = c->cycles;
     c->frame_ready = false;
     while (!c->frame_ready && c->cycles - start < 40000) {
-        cpc_step(c);
-        if (c->z80.brk_hit || (c->dbg && c->dbg->hit)) return;
+        step_inner(c);
+        if (c->z80.brk_hit || (c->dbg && c->dbg->hit)) { settle(c); return; }
     }
+    settle(c);
     if (c->frame_ready && (c->recorder || c->player)) replay_frame_done(c);   /* instruction boundary just after the flyback */
 }
 
