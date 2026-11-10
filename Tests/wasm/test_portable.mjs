@@ -44,7 +44,7 @@ try {
   bad[0] ^= 1;
   writeFileSync(statePath, bad);
   verify(1, /BPST/);
-  const packed = deflateSync(inflateSync(state.subarray(32)), { level: 0 });
+  const packed = deflateSync(inflateSync(state.subarray(32)), { level: 1 });
   const header = Buffer.from(state.subarray(0, 32));
   header.writeUInt32LE(packed.length, 28);
   writeFileSync(statePath, Buffer.concat([header, packed]));
