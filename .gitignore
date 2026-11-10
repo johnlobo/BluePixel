@@ -9,3 +9,7 @@ roms/
 *.app
 .DS_Store
 tests/z80/*.com
+
+# Firmware bundled with the browser frontend.
+!web/roms/
+!web/roms/**

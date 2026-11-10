@@ -14,7 +14,7 @@ python3 Tests/headless/test_api.py
 python3 Tests/headless/test_acceptance_nave.py
 ```
 
-`build-headless.sh` reads `CC` (default `cc`), `CFLAGS` (default `-O2`) and `LDFLAGS` (empty by default). The executable accepts `--rom-dir PATH`; otherwise it checks `BLUEPIXEL_ROM_DIR`, `roms/` beside the executable, then `~/.config/bluepixel/roms`. The tests read `BLUEPIXEL_ROM_DIR` (required; ROMs are never in the repository) and optionally `BLUEPIXEL_FIXTURE_DIR` (default `Tests/fixtures/nave/`), and do not contain fixed local paths.
+`build-headless.sh` reads `CC` (default `cc`), `CFLAGS` (default `-O2`) and `LDFLAGS` (empty by default). The executable accepts `--rom-dir PATH`; otherwise it checks `BLUEPIXEL_ROM_DIR`, `roms/` beside the executable, then `~/.config/bluepixel/roms`. The tests read `BLUEPIXEL_ROM_DIR` (use `$PWD/web/roms` for the bundled firmware) and optionally `BLUEPIXEL_FIXTURE_DIR` (default `Tests/fixtures/nave/`), and do not contain fixed local paths.
 
 Example:
 
@@ -30,7 +30,7 @@ The dispatcher uses vendored [jsmn](https://github.com/zserge/jsmn), a small tok
 
 File-based DSK and symbol helpers now live in `CPCHost`; `CPCCore` parses in-memory symbols and disk data only. Optional I/O tracing uses a host callback instead of writing to stderr from the core.
 
-ROM images are not included in the repository or executable. The ROM directory contains a `roms.json` manifest with `machines.cpc6128.{os,basic,amsdos}`, each entry providing a basename, 16384-byte size and SHA-256. See [`roms.example.json`](../roms.example.json) and [`api/roms.schema.json`](../api/roms.schema.json). The headless loader rejects missing, wrong-sized or hash-mismatched ROMs before accepting commands. The API also accepts ROM bytes through `rom.load`.
+The firmware is bundled in `web/roms/` with a manifest, and is loaded automatically by the web frontend. The headless executable still loads firmware from a ROM directory or through the API; it does not embed it. The ROM directory contains a `roms.json` manifest with `machines.cpc6128.{os,basic,amsdos}`, each entry providing a basename, 16384-byte size and SHA-256. See [`roms.example.json`](../roms.example.json) and [`api/roms.schema.json`](../api/roms.schema.json). The headless loader rejects missing, wrong-sized or hash-mismatched ROMs before accepting commands. The API also accepts ROM bytes through `rom.load`.
 
 `state.hash` is FNV-1a 64 over the canonical state stream, followed by the CRC of each mounted disc and the bytes of the loaded ROMs and cartridge. Restoring still expects the same media and ROM configuration; differences are reported as `hazards`.
 
@@ -44,7 +44,7 @@ On the available macOS arm64 host, after a 300-frame warm-up, a 1,000-frame BASI
 
 The supplied `nave` fixture hashes matched `SHA256SUMS`. The full acceptance script loads the DSK and symbols, resets the CPC6128, waits for configured entry `0x0B72`, runs `RUN"NAVE"`, checks the game status and movement limits, captures the display, and compares cold-start and restored-state replays. On the available macOS arm64 host it passed with hash `a8750fbe248c354e` (H1 state format; the canonical format gives `be44e742783fb94c`, see below), equal cold-start hashes, and equal restore replay. It ran 2,740 virtual frames in 4.687 seconds (11.7x real time); `run.frames` accounted for 4.628 seconds, while input, memory, hash, state, capture and transport took 0.060 seconds. This is below the 50x Linux VPS target and is not a Linux measurement.
 
-The web app still calls its older direct WASM bridge instead of `CPCApi`. H1 makes the API available to native builds; routing web through the same dispatcher remains necessary for the architecture's shared-semantics guarantee. `boot_ready` currently requires a configured address; AMSDOS header auto-detection is pending. `screen.capture` returns the last completed frame in RGBA8 order. Passing `{"metadata":true}` additionally returns the screen mode, CRTC type and registers, hardware palette indices, and current ARGB palette.
+The web frontend now uses the same `CPCApi` dispatcher as headless; the old direct bridge has been removed. `boot_ready` currently requires a configured address; AMSDOS header auto-detection is pending. `screen.capture` returns the last completed frame in RGBA8 order. Passing `{"metadata":true}` additionally returns the screen mode, CRTC type and registers, hardware palette indices, and current ARGB palette.
 
 H2 results and the Linux profiling method are recorded below; the canonical state format has its own section.
 
@@ -69,7 +69,7 @@ The H2 median is about 9.8% higher in this emulated environment, but still far b
 
 ### 2. Estado canónico
 
-**HECHO** (formato de estado 1, API 1.1). Medido en Linux x86_64 (contenedor Ubuntu 24.04, GCC 13.3). wasm32 y macOS siguen sin medir; ver "Sin verificar".
+**HECHO** (formato de estado 1, API 1.1). Validado en Linux x86_64; macOS arm64 y wasm32 también coinciden en las 35 comparaciones del harness de conformidad (1000 frames), además de la aceptación nativa con hash de referencia.
 
 **Formato.** `Sources/CPCCore/ser.h` es el único serializador. Cada parte de la máquina tiene una función de recorrido (`visit_*` en `state.c`, `fdc_state_visit`, `tape_state_visit`, `cpc_autotype_state_visit`) que llama a las primitivas `ser_u8/u16/u32/u64/int/bool/f32/f64` campo a campo, en un orden fijo. La misma función hace las cuatro cosas: escribir (`state.save`), hashear (`state.hash`), validar y leer (`state.restore`). No hay un segundo serializador ni una lista de campos aparte que mantener sincronizada. Se han borrado la imagen del struct C (`LIVE_FIELDS`, `scrub`) y los `*_state_save/restore` de FDC, cinta y autotipeo.
 
@@ -114,19 +114,22 @@ The H2 median is about 9.8% higher in this emulated environment, but still far b
 
 `check_state_coverage.py` y `test_state_abi.py` corren en el CI de Linux. El CI usa ROMs desechables: el flujo y los hashes cambian, pero se sigue comprobando que coinciden entre layouts.
 
-**Sin verificar.** `-fpack-struct` cambia offsets y padding, pero no el tamaño de los punteros ni el orden de bytes. La igualdad entre wasm32 y nativo es la batería de conformidad del punto 3. Aquí no hay Emscripten ni `gcc-multilib` para una build de 32 bits, ni host big endian ni macOS. Riesgo conocido para comparar plataformas: el PSG guarda niveles `float` (`psg.level`, `audio_acc`). Si un compilador fusiona operaciones (FMA, que clang activa por defecto en arm64), el valor puede diferir en el último bit y con él el hash, aunque la máquina emulada sea la misma. Se verá en el punto 18.
+**Límites de la prueba histórica Linux.** `-fpack-struct` cambia offsets y padding, pero no el tamaño de los punteros ni el orden de bytes. La igualdad entre wasm32 y nativo es la batería de conformidad del punto 3. El contenedor original no tenía Emscripten ni macOS. La comparación macOS/wasm32 se ha completado después; no hay comprobación en host big endian. Riesgo conocido para comparar plataformas: el PSG guarda niveles `float` (`psg.level`, `audio_acc`). Si un compilador fusiona operaciones (FMA, que clang activa por defecto en arm64), el valor puede diferir en el último bit y con él el hash, aunque la máquina emulada sea la misma. Se verá en el punto 18.
 
 ### 3. Web sobre CPCApi
 
-**PARCIAL.** Hecho y medido en Linux (API 1.2): todo lo que `web/bridge.c` hace ya se puede pedir a CPCApi (entrada, monitor, render, audio, cinta, discos, ROMs, depurador completo), con tests nativos en `Tests/headless/test_api_ext.py` (también bajo ASan/UBSan con `BLUEPIXEL_SANITIZE=1`). **No hecho:** compilar a WASM, migrar la UI, borrar `web/bridge.c` y correr la conformidad nativo contra WASM. Requieren Emscripten y un navegador, que la VPS no tiene. Cero de los 10 puntos de hash nativo/WASM se han comparado.
+**HECHO para la migración a CPCApi y sus pruebas funcionales.** El frontend usa `web/capi-rpc-client.js`; el bridge C antiguo y sus binarios se eliminaron. Se mantienen los binarios `bluepixel-capi.js/.wasm` precompilados y las ROMs en `web/roms/`, con arranque automático del CPC 6128.
 
-Lo que queda, en orden (en un equipo con Emscripten; guía completa con criterios y trampas en [HANDOFF-15b.md](HANDOFF-15b.md)):
+Verificación:
 
-1. `tools/build-wasm-capi.sh` compila el núcleo + CPCApi + `web/capi_exports.c` a `web/bluepixel-capi.js/.wasm`. Escrito y revisado, **sin ejecutar** (no hay `emcc` aquí). Es posible que pida ajustes de flags.
-2. `node Tests/wasm/conformance.mjs --wasm web/bluepixel-capi.js` (con `BLUEPIXEL_ROM_DIR`): misma secuencia de peticiones al binario nativo y al WASM, compara `run.frames`, `state.hash` y `cpu.registers` cada 100 fotogramas durante 1000 y los bytes de `state.save` al final. Verificado aquí solo con `--self-test` (nativo contra un segundo proceso nativo: 35/35 iguales) y con un control negativo (una máscara de tecla distinta: 14/35 iguales, salida 1). El lado WASM del harness no se ha ejecutado.
-3. Migrar `web/app.js` y `web/debugger-window.js` de `core._bp_*` a peticiones JSON-RPC (tabla abajo). Los binarios (ROM, DSK, SNA, cinta) viajan en `data_base64`.
-4. Borrar `web/bridge.c`, regenerar y decidir si `bluepixel.js/.wasm` se siguen versionando, y probar el navegador a mano (arranque, disco, cinta, audio, depurador).
-5. Cambiar el job de CI para que construya con emsdk y corra el paso 2.
+- Chrome local: cargar `nave.dsk` con F1, ejecutar `RUN"NAVE`, teclado, abrir F7, paso de instrucciones y parar en breakpoint.
+- `node Tests/wasm/test_web_client.mjs`: ROMs, discos A/B y exportaciones repetidas sin fugas de buffers, arranque real del juego y movimiento por teclado, joystick, render/audio, SNA, cinta y depurador (símbolos, memoria, condiciones y pasos). Las pruebas de joystick verifican la API; no se ha usado un gamepad físico ni se ha comprobado audio a oído.
+- `conformance.mjs --wasm`: 35/35 iguales con las ROMs fijadas durante 1000 frames en macOS arm64/wasm32, incluidos los bytes de estado.
+- CI de `54dda96`: Linux estático y WASM aprobados. El job WASM ahora añade la prueba del adaptador y conformidad con ROMs reales; el de Linux ejecuta la herramienta reproducible de medición y guarda resultados como artefacto.
+
+La prueba del adaptador encontró y corrigió tres problemas: el límite de símbolos int32 rechazaba valores válidos en wasm32 por usar un literal `long` sin signo; exportar discos no liberaba su buffer; errores de validación de condiciones se propagaban fuera del resultado esperado por la UI. Se conservan los nombres reales de los discos al cargarlos.
+
+Para retomar el rendimiento en Linux real: [HANDOFF-VPS-H2.md](HANDOFF-VPS-H2.md), con `python3 tools/measure-headless.py --profile`.
 
 Equivalencias `bridge.c` a CPCApi:
 
@@ -169,8 +172,8 @@ Diferencias con `bridge.c` a tener en cuenta al migrar (no hay test de paridad c
 - Los tipos de breakpoint llegan como texto, no como el número del enum.
 - La API valida más que `bridge.c`: `set_condition` rechaza `pass_count` mayor que 1000000 y condiciones de más de 159 bytes (el depurador las truncaba en silencio), `debug.mem.read` rechaza longitudes de más de 4096 y direcciones que pasan de 0xFFFF (`bp_debug_read_memory` no tenía tope y daba la vuelta con `& 0xFFFF`), `input.key` rechaza filas mayores que 9 (antes se ignoraban) y los parámetros enteros que cambian estado (valor de un símbolo, ids) deben ser enteros.
 - Las expresiones del depurador (`address: "(1+2)*3"`, condiciones) anidan como máximo 64 niveles; antes una petición con 20000 paréntesis mataba el proceso por desbordamiento de pila. Es un arreglo del núcleo (`dbg_eval`), no solo de la API.
-- **`web/bridge.c` ya no compila contra el núcleo actual:** `cc -fsyntax-only` falla en `bridge.c:43` y `:67` (`CPC` no tiene miembro `disc`). El `web/bluepixel.wasm` versionado no se puede regenerar desde el código actual. Es anterior a este trabajo, y es otra razón para hacer la migración en lugar de parchear el bridge.
-- `tools/build-wasm-capi.sh` fija `-sSTACK_SIZE=1048576`. Los 130 KB de tokens del parser y los 190 KB de `jsmn` viven en el heap, no en la pila, porque la pila por defecto de Emscripten es pequeña (dato recordado, no comprobado aquí).
+- El bridge antiguo no compilaba contra el núcleo H2 y se eliminó al completar la migración. `tools/build-web.sh` reconstruye ahora el módulo CPCApi.
+- `tools/build-wasm-capi.sh` fija `-sSTACK_SIZE=1048576`. Los 130 KB de tokens del parser y los 190 KB de `jsmn` viven en el heap, no en la pila, para no depender de la pequeña pila por defecto de Emscripten; la build y el harness se han ejecutado correctamente.
 
 ### 4. Pendientes H1
 
@@ -188,4 +191,4 @@ python3 Tests/headless/test_acceptance_nave.py     PASS nave: hash=a8750fbe248c3
 python3 Tests/headless/bench_nave.py               repeats=5, median=1.90x, min=1.73x, max=1.95x
 ```
 
-ROMs stayed outside the repository and executable. The QEMU environment verified x86_64 Linux compilation, API behavior, fixture behavior and the hash invariant; it does not verify the physical Haswell performance target. The native/WASM checkpoint test and canonical state equivalence also remain unverified.
+ROMs stayed outside the repository and executable. The QEMU environment verified x86_64 Linux compilation, API behavior, fixture behavior and the hash invariant; it does not verify the physical Haswell performance target. Those were historical H1 measurements; native/WASM checkpoints are now verified as described in section 3.

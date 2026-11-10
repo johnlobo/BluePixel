@@ -1,10 +1,12 @@
 # Traspaso: paso 15b (WASM sobre CPCApi y migración de la UI web)
 
-Estado a 2026-11-10, `main` en `8247654` (PR #5). Este documento es autosuficiente: léelo entero antes de tocar nada.
+Estado de origen a 2026-11-10, `main` en `8247654` (PR #5). El paso 15b se retomó después en `h2-core`; resultados actuales en [HEADLESS.md, sección 3](HEADLESS.md#3-web-sobre-cpcapi). Este documento conserva el traspaso original y sus criterios.
 Lo escribió una sesión de Claude en la VPS de Linux, donde no hay Emscripten, Swift ni navegador. Todo lo que aquí
 se marca **sin verificar** nunca se ha ejecutado.
 
-## Qué está hecho (verificado en Linux x86-64 estático)
+> **15b completado en el desktop.** Resultados y pruebas vigentes en `HEADLESS.md`, sección 3. Para continuar en Linux real usa [HANDOFF-VPS-H2.md](HANDOFF-VPS-H2.md). El resto de este archivo es el traspaso histórico original.
+
+## Qué estaba hecho (verificado en Linux x86-64 estático)
 
 - CPCApi 1.2: 57 métodos en `api/schema.json`, el contrato. Cubre todo lo que hace `web/bridge.c` (tabla de equivalencias y
   lista de diferencias de comportamiento en `docs/HEADLESS.md`, sección 3). `Tests/headless/test_api_ext.py` falla si el

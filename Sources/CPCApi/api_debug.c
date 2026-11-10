@@ -179,7 +179,7 @@ static const char *symbol_methods(CPCApiSession *s, Parser *p, int a, const char
         if (!name || !*name) err = "missing symbol name";
         else if (!api_req_int(p, api_field(p, a, "value"), &value)) err = "value must be an integer";
         else if (strlen(name) >= sizeof((DbgSymbol *)0)->name) err = "symbol name too long (max 47 bytes)";
-        else if (value < -0x80000000L || value > 0x7FFFFFFFL) err = "value out of range";
+        else if (value < INT32_MIN || value > INT32_MAX) err = "value out of range";
         else if (c->dbg->nsyms >= MAX_SYMBOLS && !dbg_symbol_lookup(c->dbg, name, &(int32_t){0})) err = "symbol table is full";
         else { dbg_symbol_set(c, name, (int32_t)value); apibuf_printf(b, "true"); }
         free(name);

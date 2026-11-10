@@ -15,7 +15,7 @@ emcc Sources/CPCCore/*.c Sources/CPCApi/api.c Sources/CPCApi/api_util.c Sources/
   -I Sources/CPCCore/include -I Sources/CPCApi/include -I Sources/CPCApi -sUSE_ZLIB=1 -lz \
   -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createBluePixelCore \
   -sENVIRONMENT=web,node -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=67108864 -sSTACK_SIZE=1048576 \
-  -sEXPORTED_RUNTIME_METHODS=HEAPU8,stringToUTF8,UTF8ToString,lengthBytesUTF8 \
+  -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32,HEAPF32,stringToUTF8,UTF8ToString,lengthBytesUTF8 \
   -sEXPORTED_FUNCTIONS='["_malloc","_free","_bpapi_create","_bpapi_destroy","_bpapi_dispatch"]' \
   -o "$OUT"
 echo "Built $OUT"

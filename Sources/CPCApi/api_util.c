@@ -7,6 +7,7 @@
 #include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <errno.h>
 
 int api_parse(Parser *p){
  jsmntok_t*raw=malloc(API_MAX_TOKENS*sizeof*raw);if(!raw)return 0;   /* heap, not stack: 190 KB would overflow a WebAssembly stack */
@@ -71,7 +72,7 @@ char *api_str(Parser *p, int i) {
     r[j] = 0;
     return r;
 }
-long api_num(Parser*p,int i,long d){if(!i)return d;int start=p->t[i].start+(p->t[i].type=='s'),end=p->t[i].end-(p->t[i].type=='s');int n=end-start;if(n<=0||n>=64)return d;char b[64];memcpy(b,p->s+start,(size_t)n);b[n]=0;char*e;long v=strtol(b,&e,0);return *e?d:v;}
+long api_num(Parser*p,int i,long d){if(!i)return d;int start=p->t[i].start+(p->t[i].type=='s'),end=p->t[i].end-(p->t[i].type=='s');int n=end-start;if(n<=0||n>=64)return d;char b[64];memcpy(b,p->s+start,(size_t)n);b[n]=0;char*e;errno=0;long v=strtol(b,&e,0);return *e||errno==ERANGE?d:v;}
 bool api_boolean(Parser*p,int i,bool d){if(!i)return d;if(p->t[i].type=='v'){int n=p->t[i].end-p->t[i].start;if(n==4&&!memcmp(p->s+p->t[i].start,"true",4))return true;if(n==5&&!memcmp(p->s+p->t[i].start,"false",5))return false;}return d;}
 long api_address_value(Parser*p,CPC*c,int i){if(!i)return-1;if(p->t[i].type!='s')return api_num(p,i,-1);char*expr=api_str(p,i);if(!expr)return-1;int32_t v=-1;char error[128];bool ok=dbg_eval(c,expr,&v,error,sizeof error);free(expr);return ok?v:-1;}
 static const char B64[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

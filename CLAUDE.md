@@ -25,8 +25,8 @@ User manual (Spanish, HTML, start at [docs/index.html](docs/index.html)): living
 - `Sources/bluepixel-headless/` — Linux/macOS executable: one JSON-RPC request per line on stdin, one response per line on
   stdout. Guide, protocol and H2 status: [docs/HEADLESS.md](docs/HEADLESS.md).
 - `Sources/cpcrun/` — test runner and diagnostics for the core (no UI).
-- `web/` — browser frontend and C/WebAssembly bridge. Build with `tools/build-web.sh`; see `web/README.md`. It still calls
-  `web/bridge.c` directly, not `CPCApi`.
+- `web/` — browser frontend using the portable C emulator through CPCApi JSON-RPC. Build with `tools/build-web.sh`;
+  see `web/README.md` and `web/capi-rpc-client.js`.
 - `tools/` — `bundle.sh` (builds `build/BluePixel.app` with icon), `bluepixel` (runs the bundle from a terminal),
   `build-headless.sh` (plain `cc` build of the headless executable, no Swift), `fetch_z80_tests.sh`,
   `extract_z80_timing.py`. `Resources/` holds the app icon.
@@ -93,7 +93,7 @@ SANITIZE=0 python3 Tests/headless/check_state_coverage.py   # SANITIZE=0 when li
 `BLUEPIXEL_EXPECT_HASH` overrides the acceptance reference hash (empty disables the check); the hash only holds for the ROMs pinned
 in the fixture's `roms.json`. CI (`.github/workflows/headless.yml`, on PRs and pushes to `main`, `h1-headless`, `h2-core`) builds the
 static Linux binary with disposable ROMs from `Tests/headless/make_test_roms.py <dir>` and runs `test_api.py`, `test_api_ext.py` (plain and sanitized),
-`check_state_coverage.py`, `test_state_abi.py` and the conformance harness self-test; it does not run the nave acceptance. `deploy-pages.yml` publishes `web/` to GitHub Pages.
+`check_state_coverage.py`, `test_state_abi.py` and the conformance harness self-test. It also runs real-ROM nave acceptance and five timings with `tools/measure-headless.py`; the WASM job exercises the web adapter and native/WASM conformance. `deploy-pages.yml` publishes `web/` to GitHub Pages.
 
 Other `cpcrun` commands: `boot` (renders a frame to BMP; options `--disc --type --wait --space --return --frames
 --wav --out`; env `VIEW=raster|vram`, `MIDFRAME=<cycles>`, `DUMP=1`, `IOLOG=1 IOFROM=<frame>`), `dis`, `inttest`,
@@ -192,13 +192,14 @@ controls blank (tab strips, segmented controls); use `screencapture` when the re
 ## Not done yet
 
 Headless (status table in `docs/HEADLESS.md`): the 50x realtime target is not met (about 12x on the 4 vCPU VPS; `perf` is blocked
-in the container, use callgrind); CPCApi 1.2 covers the capabilities of `web/bridge.c` (differences listed in `docs/HEADLESS.md`), but it is not compiled to WASM yet (`tools/build-wasm-capi.sh` is written and untested, no Emscripten on the VPS) and the web app still uses `bridge.c` (mapping table in `docs/HEADLESS.md`, step-by-step handoff in `docs/HANDOFF-15b.md`); no Unix socket or WebSocket
-transport; `boot_ready` needs an explicit entry address (no AMSDOS autodetect); no Linux/macOS/WASM hash comparison.
+in the container, use callgrind); CPCApi 1.2 and the browser JSON-RPC migration are complete, with native/WASM state conformance
+passing locally. Chrome game loading, stepping and breakpoints are verified; the WASM adapter has a functional test in CI; no Unix socket or WebSocket transport;
+`boot_ready` needs an explicit entry address (no AMSDOS autodetect); full Linux/macOS/WASM fixture validation is covered by the expanded CI; check the latest run. For VPS performance work, follow `docs/HANDOFF-VPS-H2.md` and `tools/measure-headless.py`.
 
 Session record/playback is complete: core, File menu, transport bar (`Transport.swift`), reverse debugging (`ReverseDebug.swift`: Step Back
 ⌥F7, Step Back Over ⌥⌘F8, Reverse Continue ⌥F9, Run Back to Cursor ⌥F4, "Who Wrote/Read This?"), disc writes and markers (`CPC_MARK_TEXT`,
 stored in the `.cpcrec` and saved back when edited). Integrated Maxam-compatible assembler
 (menu item says "Not available yet"), disc/sector editor, Format Disc, Flip Disc, AVI/WAV/YM recording, Symbiface II (IDE/RTC/PS2 mouse), 4 MB Yarek RAM, printer, ZIP/RAR,
 tape CSV, DSC/HDR discs, gamepad joystick. Debugger ideas not built: DeZog/VS Code protocol, AY channel viewer.
-The first browser port is in `web/`: CPC 6128, bundled `web/roms/` ROM choices, DSK, SNA, keyboard, audio and disk export. Plus,
-tapes, debugger and session tools are not yet available in the browser UI.
+The browser port is in `web/`: CPC 6128, bundled ROMs with automatic CPC 6128 startup, DSK, SNA, tape, keyboard, audio, disk export and debugger. Plus
+configuration and session tools are not available in the browser UI.

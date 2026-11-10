@@ -5,6 +5,28 @@ on:
   pull_request:
     branches: [main, h1-headless, h2-core]
 jobs:
+  wasm-conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mymindstorm/setup-emsdk@v14
+      - name: Build native CPCApi host
+        run: tools/build-headless.sh
+      - name: Prepare disposable ROMs
+        run: python3 Tests/headless/make_test_roms.py "$RUNNER_TEMP/bluepixel-test-roms"
+      - name: Build CPCApi WebAssembly
+        run: tools/build-wasm-capi.sh
+      - name: Compare native and WebAssembly machines
+        env:
+          BLUEPIXEL_ROM_DIR: ${{ runner.temp }}/bluepixel-test-roms
+        run: node Tests/wasm/conformance.mjs --wasm web/bluepixel-capi.js
+      - name: Exercise the browser adapter with the nave fixture
+        run: node Tests/wasm/test_web_client.mjs
+      - name: Compare native and WebAssembly with the pinned fixture ROMs
+        env:
+          BLUEPIXEL_ROM_DIR: ${{ github.workspace }}/web/roms
+        run: node Tests/wasm/conformance.mjs --wasm web/bluepixel-capi.js
+
   linux-x86_64-static:
     runs-on: ubuntu-latest
     steps:
@@ -31,6 +53,17 @@ jobs:
         run: python3 Tests/headless/check_state_coverage.py
       - name: Canonical state is independent of struct layout (default vs packed build, handoff both ways)
         run: python3 Tests/headless/test_state_abi.py
+      - name: Exercise the VPS measurement tool and real-ROM acceptance
+        env:
+          BLUEPIXEL_ROM_DIR: ${{ github.workspace }}/web/roms
+        run: python3 tools/measure-headless.py --output "$RUNNER_TEMP/bluepixel-measure"
+      - name: Save reproducible measurements
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-headless-measurements
+          path: |
+            ${{ runner.temp }}/bluepixel-measure/*.json
+            ${{ runner.temp }}/bluepixel-measure/*.log
       - name: Verify static Linux executable
         run: |
           file build/bluepixel-headless
