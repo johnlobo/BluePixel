@@ -6,11 +6,10 @@
 //   node Tests/wasm/conformance.mjs --self-test                      native vs a second native process: checks the harness
 //
 // Needs BLUEPIXEL_ROM_DIR (the ROMs pinned by Tests/fixtures/nave/roms.json) and build/bluepixel-headless.
-import { spawn } from "node:child_process";
+import { nativeBackend, wasmBackend } from "./backends.mjs";
 import { readFileSync } from "node:fs";
-import { createInterface } from "node:readline";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const fixture = path.join(root, "Tests", "fixtures", "nave");
@@ -23,37 +22,6 @@ if (!selfTest && wasmIndex < 0) { console.error("usage: conformance.mjs --wasm <
 
 const FRAMES = 1000, STEP = 100;
 const b64 = (file) => readFileSync(file).toString("base64");
-
-function nativeBackend() {
-  const child = spawn(path.join(root, "build", "bluepixel-headless"), [], { stdio: ["pipe", "pipe", "inherit"], env: process.env });
-  const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
-  return {
-    name: "native",
-    async call(request) { child.stdin.write(request + "\n"); const { value } = await lines.next(); return value; },
-    async close() { child.stdin.end(); await new Promise((resolve) => child.on("close", resolve)); },
-  };
-}
-
-async function wasmBackend(modulePath) {
-  const { default: create } = await import(pathToFileURL(path.resolve(modulePath)).href);
-  const core = await create();
-  const session = core._bpapi_create();
-  if (!session) throw new Error("bpapi_create failed");
-  return {
-    name: "wasm",
-    async call(request) {
-      const size = core.lengthBytesUTF8(request) + 1;
-      const ptr = core._malloc(size);
-      core.stringToUTF8(request, ptr, size);
-      const out = core._bpapi_dispatch(session, ptr);
-      core._free(ptr);
-      const reply = core.UTF8ToString(out);
-      core._free(out);
-      return reply;
-    },
-    async close() { core._bpapi_destroy(session); },
-  };
-}
 
 let nextId = 0;
 const request = (method, params = {}) => JSON.stringify({ jsonrpc: "2.0", id: ++nextId, method, params });
