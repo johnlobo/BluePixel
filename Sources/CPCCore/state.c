@@ -134,6 +134,7 @@ static void visit_io(Ser *s, CPC *c) {
     ser_u16(s, &p->noise_cnt); ser_u32(s, &p->lfsr); ser_u8(s, &p->noise_out);
     ser_u16(s, &p->env_cnt); ser_i8_in(s, &p->env_step, 0, 15); ser_u8_in(s, &p->env_vol, 15);   /* env_vol indexes vol_table[16] */ ser_bool(s, &p->env_hold); ser_bool(s, &p->env_up);
     ser_u8(s, &p->sub); ser_f32s(s, p->level, 3);
+    p->lvl_clean = false; p->mix_valid = false;      /* derived caches: recompute from the state just read */
     ser_u8(s, &c->psg_ctl); ser_u8(s, &c->amdrum);
     /* Sample generation phase: decides where the next output sample falls, so it is state, not presentation. */
     ser_f32s(s, c->audio_acc, 2); ser_int(s, &c->audio_acc_n); ser_int(s, &c->audio_phase);

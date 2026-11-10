@@ -24,6 +24,7 @@ void psg_write_reg(CPCPsg *p, uint8_t reg, uint8_t v) {
     reg &= 15;
     static const uint8_t mask[16] = {255, 15, 255, 15, 255, 15, 31, 255, 31, 31, 31, 255, 255, 15, 255, 255};
     p->regs[reg] = v & mask[reg];
+    p->lvl_clean = false;
     if (reg < 6) { int ch = reg >> 1; p->tone_per[ch] = (uint16_t)(p->regs[ch * 2] | (p->regs[ch * 2 + 1] << 8)); }
     if (reg == 13) env_reset(p);
 }
@@ -41,11 +42,12 @@ static void env_step(CPCPsg *p) {
     }
 }
 
-void psg_tick(CPCPsg *p) {
+bool psg_tick(CPCPsg *p) {
+    bool changed = !p->lvl_clean;
     p->sub++;
     if ((p->sub & 7) == 0) {
         for (int i = 0; i < 3; i++) {
-            if (++p->tone_cnt[i] >= (p->tone_per[i] ? p->tone_per[i] : 1)) { p->tone_cnt[i] = 0; p->tone_out[i] ^= 1; }
+            if (++p->tone_cnt[i] >= (p->tone_per[i] ? p->tone_per[i] : 1)) { p->tone_cnt[i] = 0; p->tone_out[i] ^= 1; changed = true; }
         }
     }
     if ((p->sub & 15) == 0) {
@@ -55,10 +57,12 @@ void psg_tick(CPCPsg *p) {
             uint32_t bit = (p->lfsr ^ (p->lfsr >> 3)) & 1;
             p->lfsr = (p->lfsr >> 1) | (bit << 16);
             p->noise_out = p->lfsr & 1;
+            changed = true;
         }
         uint16_t ep = (uint16_t)(p->regs[11] | (p->regs[12] << 8)); if (!ep) ep = 1;
-        if (++p->env_cnt >= ep) { p->env_cnt = 0; env_step(p); }
+        if (++p->env_cnt >= ep) { p->env_cnt = 0; env_step(p); changed = true; }
     }
+    if (!changed) return false;
     uint8_t mix = p->regs[7];
     for (int i = 0; i < 3; i++) {
         bool t = (mix >> i) & 1 ? true : p->tone_out[i];
@@ -67,6 +71,8 @@ void psg_tick(CPCPsg *p) {
         uint8_t amp = (a & 16) ? p->env_vol : (a & 15);
         p->level[i] = (t && n) ? vol_table[amp] : 0.0f;
     }
+    p->lvl_clean = true;
+    return true;
 }
 
 void psg_mix(const CPCPsg *p, float *l, float *r, bool stereo) {

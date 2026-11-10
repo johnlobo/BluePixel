@@ -90,6 +90,7 @@ void cpc_destroy(CPC *c) {
 
 void cpc_configure(CPC *c, const CPCConfig *cfg) {
     c->cfg = *cfg;
+    c->psg.mix_valid = false;           /* the mix depends on cfg.stereo */
     c->crtc.type = cfg->type;
     c->z80.turbo = cfg->turbo;
     build_palette(c); asic_refresh_palette(c);
@@ -645,9 +646,11 @@ void cpc_video_tick(CPC *c) {
 
 /* ---------------- Audio ---------------- */
 static void audio_tick(CPC *c) {
-    psg_tick(&c->psg);
-    float l, r;
-    psg_mix(&c->psg, &l, &r, c->cfg.stereo);
+    if (psg_tick(&c->psg) || !c->psg.mix_valid) {      /* the mix only moves when a level does */
+        psg_mix(&c->psg, &c->psg.mix[0], &c->psg.mix[1], c->cfg.stereo);
+        c->psg.mix_valid = true;
+    }
+    float l = c->psg.mix[0], r = c->psg.mix[1];
     if (c->cfg.amdrum || c->cfg.digiblaster) { float d = (c->amdrum / 255.0f) * 0.5f; l = r = (l + r) * 0.5f + d; }
     if (c->cfg.tape_sound && c->tape_motor && tape_read_level(c->tape)) { l += 0.02f; r += 0.02f; }
     c->audio_acc[0] += l; c->audio_acc[1] += r; c->audio_acc_n++;

@@ -43,6 +43,10 @@ typedef struct {
     bool env_hold, env_up;
     uint8_t sub;
     float level[3];
+    /* Not state: caches. The channel levels and the stereo mix are recomputed only when something they depend on changed;
+     * zero (calloc, reset, a restored state) means "recompute on the next tick", so a stale cache cannot exist. */
+    bool lvl_clean, mix_valid;
+    float mix[2];
 } CPCPsg;
 
 typedef struct { uint16_t addr, loop_addr; uint8_t prescale; uint16_t pause, loop_cnt; int tick; bool stopped; } CPCDma;
@@ -215,7 +219,7 @@ void cpc_mem_write(void *ctx, uint16_t addr, uint8_t v);
 /* PSG */
 void psg_reset(CPCPsg *p);
 void psg_write_reg(CPCPsg *p, uint8_t reg, uint8_t v);
-void psg_tick(CPCPsg *p);
+bool psg_tick(CPCPsg *p);   /* true when the channel levels were recomputed (they may have changed) */
 void psg_mix(const CPCPsg *p, float *l, float *r, bool stereo);
 
 /* ASIC (Amstrad Plus) */
