@@ -63,7 +63,7 @@ node Tests/wasm/test_web_client.mjs
 ```
 
 Publica en `docs/perf/h2-profile.md` las diez funciones más caras antes/después y la tabla real de velocidad.
-El objetivo sigue siendo mediana ≥50x con los flags por defecto, sin `-march=native` por defecto.
+El objetivo original era mediana ≥50x con los flags por defecto, sin `-march=native` por defecto. **Actualización 2026-11-10:** tras las optimizaciones exactas la mediana es ~21x y el propietario decidió dejarlo así (ver `docs/perf/h2-profile.md`, "Decisión").
 Si no se alcanza, registra la mediana medida y el cuello de botella pendiente.
 
 ## Estado al entregar
