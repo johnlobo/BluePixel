@@ -78,7 +78,7 @@ Si no se alcanza, registra la mediana medida y el cuello de botella pendiente.
   reales y la herramienta de medición; consulta el resultado del último push antes de empezar.
 - No se han hecho optimizaciones nuevas de rendimiento ni mediciones de la VPS desde el desktop.
 - Los pasos 16/17 (servidor desktop y Unix/WebSocket con token/Origin) están implementados en CPCApi 1.3; ver `CONTROL-SERVER.md`.
-- Siguen pendientes `boot_ready` por cabecera AMSDOS y el adaptador de GlasnostFWK. No son necesarios para medir el proceso headless por stdio.
+- `boot_ready` por cabecera AMSDOS (API 1.4, `boot_ready.configure {"file": ...}`) y el adaptador de GlasnostFWK ya están hechos. No eran necesarios para medir el proceso headless por stdio.
 
 Prompt para retomar:
 

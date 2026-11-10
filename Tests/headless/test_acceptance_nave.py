@@ -133,7 +133,10 @@ def cold_run(fixture_dir, image_path=None):
     client.call("symbols.load", {"data_base64": base64.b64encode(symbols).decode()})
     client.call("machine.reset")
     entry = int(fixture["entry"]["address"], 0)
-    client.call("boot_ready.configure", {"address": entry})
+    # the entry address comes from the AMSDOS header of NAVE.BIN on the mounted disc; fixture.json fixes the same value by hand
+    detected = client.call("boot_ready.configure", {"file": fixture["disk"]["amsdos_name"]})
+    require(detected["address"] == entry and detected["source"] == "amsdos_header",
+            f"AMSDOS header says {detected}, fixture says {entry:#06x}")
 
     # Boot the ROM firmware on virtual frames, then queue the BASIC command.
     client.run_frames(200)

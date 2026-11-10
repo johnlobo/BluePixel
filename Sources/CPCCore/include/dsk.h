@@ -53,6 +53,12 @@ int dsk_sector_size(const CPCSector *s);
 typedef struct { char name[9], ext[4]; uint8_t user; bool system, read_only; } DskFile;
 /* AMSDOS directory (first extent of each file); -1 when no known format is found. */
 int dsk_catalogue(const CPCDisc *d, DskFile *out, int max);
+/* First `n` (at most 512) bytes of a file's data: the start of the first block of its first directory extent. `name`/`ext` are
+ * upper-case, without padding. Returns the byte count, or DSK_FILE_NO_DIRECTORY, DSK_FILE_NOT_FOUND, DSK_FILE_UNREADABLE. */
+#define DSK_FILE_NO_DIRECTORY (-1)
+#define DSK_FILE_NOT_FOUND (-2)
+#define DSK_FILE_UNREADABLE (-3)
+int dsk_file_head(const CPCDisc *d, const char *name, const char *ext, int user, uint8_t *out, int n);
 /* System-format disc with a CP/M boot sector (track 0, sector &41). */
 bool dsk_is_cpm_boot(const CPCDisc *d);
 #endif

@@ -39,7 +39,7 @@ try {
   ws.send(JSON.stringify({ jsonrpc: "2.0", id: 42, method: "session.capabilities", params: {} }));
   const reply = await response;
   assert.equal(reply.id, 42);
-  assert.equal(reply.result.api_version, "1.3");
+  assert.equal(reply.result.api_version, "1.4");
   assert.deepEqual(reply.result.transports, ["websocket"]);
   const closed = deadline(new Promise(resolve => ws.addEventListener("close", resolve, { once: true })));
   ws.close(1000);

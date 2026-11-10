@@ -56,9 +56,9 @@ jobs:
           echo "BLUEPIXEL_ROM_DIR=$RUNNER_TEMP/bluepixel-test-roms" >> "$GITHUB_ENV"
       - name: Run headless API smoke on Linux
         run: LDFLAGS=-static python3 Tests/headless/test_api.py
-      - name: Headless API 1.3 (input, display, audio, tape, discs, debugger, schema contract)
+      - name: Headless API 1.4 (input, display, audio, tape, discs, debugger, schema contract)
         run: LDFLAGS=-static python3 Tests/headless/test_api_ext.py   # rebuilds build/bluepixel-headless: keep it static for the last step
-      - name: Headless API 1.3 under ASan/UBSan (memory errors and leaks)
+      - name: Headless API 1.4 under ASan/UBSan (memory errors and leaks)
         run: BLUEPIXEL_SANITIZE=1 python3 Tests/headless/test_api_ext.py
       - name: Authenticated Unix and WebSocket control transports
         run: BLUEPIXEL_NO_BUILD=1 python3 Tests/headless/test_server.py
