@@ -54,7 +54,11 @@ static void build_palette(CPC *c) {
     }
 }
 
+static void build_pen_tables(void);
+static bool pen_tables_ready;
+
 CPC *cpc_create(CPCModel model) {
+    if (!pen_tables_ready) build_pen_tables();   /* pure function of nothing: safe to repeat from two threads */
     CPC *c = calloc(1, sizeof *c);
     c->model = model;
     cpc_default_config(&c->cfg, model);
@@ -438,12 +442,67 @@ static inline void put_row16(CPC *c, const uint32_t *px) {
 static inline uint32_t pen_rgb(CPC *c, int pen) { return c->cfg.plus ? c->asic.pal_rgb[pen] : c->hw_rgb[c->ga_palette[pen] & 31]; }
 uint32_t cpc_pen_rgb(CPC *c, int pen) { return pen_rgb(c, pen); }
 
+/* Pen index of every pixel of a screen byte, per mode: built once, so drawing a character is table lookups and stores.
+ * Mode 0/3: 2 pixels per byte (bits 7,3,5,1 and 6,2,4,0); mode 1: 4 pixels (bits 7-p and 3-p); mode 2: 8 pixels. */
+static uint8_t pen_m0[256][2], pen_m1[256][4];
+static void build_pen_tables(void) {
+    for (int b = 0; b < 256; b++) {
+        pen_m0[b][0] = (uint8_t)(((b >> 7) & 1) | (((b >> 3) & 1) << 1) | (((b >> 5) & 1) << 2) | (((b >> 1) & 1) << 3));
+        pen_m0[b][1] = (uint8_t)(((b >> 6) & 1) | (((b >> 2) & 1) << 1) | (((b >> 4) & 1) << 2) | (((b >> 0) & 1) << 3));
+        for (int p = 0; p < 4; p++) pen_m1[b][p] = (uint8_t)(((b >> (7 - p)) & 1) | (((b >> (3 - p)) & 1) << 1));
+    }
+    pen_tables_ready = true;
+}
+
+/* The common case, a CPC without the Plus ASIC and a character fully inside the frame buffer: same pixels as the generic
+ * path below, without the per-pixel bounds checks, pen decoding and palette indirection. */
+static inline void emit_char_fast(CPC *c, bool de, uint16_t ma, uint16_t ra) {
+    uint32_t *dst = c->frame + (size_t)c->beam_y * CPC_SCREEN_W + (size_t)c->beam_x;
+    const uint32_t *hw = c->hw_rgb;
+    const uint8_t *gp = c->ga_palette;
+    if (!de) {
+        uint32_t rgb = hw[gp[16] & 31];
+        for (int i = 0; i < 16; i++) dst[i] = rgb;
+        c->scroll_valid = false;
+        c->beam_x += 16;
+        return;
+    }
+    uint32_t addr = ((ma & 0x3000) << 2) | ((ra & 7) << 11) | ((ma & 0x3FF) << 1);
+    const uint8_t b0 = c->ram[addr], b1 = c->ram[addr + 1];
+    switch (c->ga_mode) {
+    case 1: {
+        const uint8_t *p0 = pen_m1[b0], *p1 = pen_m1[b1];
+        for (int p = 0; p < 4; p++) { uint32_t rgb = hw[gp[p0[p]] & 31]; dst[2 * p] = rgb; dst[2 * p + 1] = rgb; }
+        for (int p = 0; p < 4; p++) { uint32_t rgb = hw[gp[p1[p]] & 31]; dst[8 + 2 * p] = rgb; dst[8 + 2 * p + 1] = rgb; }
+        break;
+    }
+    case 2: {
+        const uint32_t c0 = hw[gp[0] & 31], c1 = hw[gp[1] & 31];
+        for (int p = 0; p < 8; p++) { dst[p] = (b0 >> (7 - p)) & 1 ? c1 : c0; dst[8 + p] = (b1 >> (7 - p)) & 1 ? c1 : c0; }
+        break;
+    }
+    default: {    /* modes 0 and 3 */
+        const uint8_t *p0 = pen_m0[b0], *p1 = pen_m0[b1];
+        for (int p = 0; p < 2; p++) {
+            uint32_t rgb = hw[gp[p0[p]] & 31];
+            for (int i = 0; i < 4; i++) dst[4 * p + i] = rgb;
+        }
+        for (int p = 0; p < 2; p++) {
+            uint32_t rgb = hw[gp[p1[p]] & 31];
+            for (int i = 0; i < 4; i++) dst[8 + 4 * p + i] = rgb;
+        }
+    }
+    }
+    c->beam_x += 16;
+}
+
 static void emit_char(CPC *c, bool de, uint16_t ma, uint16_t ra) {
     uint32_t px[16];
     CPCAsic *a = &c->asic;
     bool plus = c->cfg.plus && a->unlocked;
     if (c->crtc.hcc == 0) c->disp_x0 = c->beam_x;
     if (c->beam_x >= CPC_SCREEN_W + 16 || c->beam_y < 0 || c->beam_y >= CPC_SCREEN_H) { c->beam_x += 16; if (!de) c->scroll_valid = false; return; }
+    if (!c->cfg.plus && c->beam_x >= 0 && c->beam_x + 16 <= CPC_SCREEN_W) { emit_char_fast(c, de, ma, ra); return; }
     if (!de) {
         uint32_t rgb = pen_rgb(c, 16);
         for (int i = 0; i < 16; i++) px[i] = rgb;
