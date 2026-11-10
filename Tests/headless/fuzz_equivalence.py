@@ -8,7 +8,7 @@ and a digest of every audio sample. Use it to prove a speed-up changed nothing o
 
   python3 Tests/headless/fuzz_equivalence.py --reference /path/to/old/bluepixel-headless [--seeds 200] [--start 1]
 
-Needs BLUEPIXEL_ROM_DIR. The reference is any earlier build; CI builds one from a pinned commit.
+Needs BLUEPIXEL_ROM_DIR (the same ROMs for both executables). The reference is any earlier build; CI builds one from a pinned commit.
 """
 import argparse
 import base64

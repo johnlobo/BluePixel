@@ -12,7 +12,8 @@ the check also hashes every sample queued by audio.read, so a faster PSG must pr
   python3 Tests/headless/test_render_golden.py            check against the recorded hashes
   python3 Tests/headless/test_render_golden.py --record   print the table (only from a binary known to be right)
 
-Needs BLUEPIXEL_ROM_DIR. BLUEPIXEL_BINARY overrides the executable, BLUEPIXEL_NO_BUILD=1 skips the build.
+The hashes cover the ROM bytes, so they are only valid with the firmware bundled in web/roms (the default here; BLUEPIXEL_ROM_DIR
+overrides it and then the table will not match). BLUEPIXEL_BINARY overrides the executable, BLUEPIXEL_NO_BUILD=1 skips the build.
 """
 import base64
 import json
@@ -23,6 +24,7 @@ import sys
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[2]
+os.environ["BLUEPIXEL_ROM_DIR"] = os.environ.get("BLUEPIXEL_ROM_DIR") or str(root / "web" / "roms")
 binary = Path(os.environ.get("BLUEPIXEL_BINARY") or root / "build" / "bluepixel-headless")
 if not os.environ.get("BLUEPIXEL_BINARY") and os.environ.get("BLUEPIXEL_NO_BUILD") != "1":
     subprocess.run([str(root / "tools" / "build-headless.sh")], check=True, cwd=root, stdout=subprocess.DEVNULL)
