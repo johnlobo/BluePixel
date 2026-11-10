@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import os
+import shlex
 import struct
 import subprocess
 import sys
@@ -14,7 +15,7 @@ from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-BINARY = ROOT / "build" / "bluepixel-headless"
+BINARY = Path(os.environ.get("BLUEPIXEL_HEADLESS_BINARY") or ROOT / "build" / "bluepixel-headless")
 
 
 def require(condition, message):
@@ -25,7 +26,7 @@ def require(condition, message):
 class Client:
     def __init__(self):
         self.process = subprocess.Popen(
-            [str(BINARY)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            shlex.split(os.environ.get("BLUEPIXEL_HEADLESS_PREFIX", "")) + [str(BINARY)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True, bufsize=1,
         )
         self.ident = 0

@@ -6,8 +6,9 @@ export async function createBluePixelApi(createModule) {
   const session = wasm._bpapi_create();
   if (!session) throw new Error("Could not allocate the CPC machine.");
   let requestId = 0;
-  const textEncoder = new TextEncoder();
   const textDecoder = new TextDecoder();
+  let discExportPtr = 0;
+  let destroyed = false;
   function rpc(method, params = {}) {
     const request = JSON.stringify({ jsonrpc: "2.0", id: ++requestId, method, params });
     const size = wasm.lengthBytesUTF8(request) + 1;
@@ -50,16 +51,28 @@ export async function createBluePixelApi(createModule) {
   const facade = Object.create(wasm);
   Object.assign(facade, {
     initialize: () => true,
-    destroy: () => wasm._bpapi_destroy(session),
+    destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      facade.releaseDiscExport();
+      for (const ptr of framePtrs) wasm._free(ptr);
+      framePtrs.length = 0;
+      if (facade.lastErrorPtr) wasm._free(facade.lastErrorPtr);
+      wasm._bpapi_destroy(session);
+    },
     loadRom(slot, ptr, size) {
       const role = ({ [-1]: "os", 0: "basic", 7: "amsdos" })[slot];
       if (!role) return false;
       return size ? rpc("rom.load", { role, data_base64: toBase64(fromHeap(ptr, size)) }) : rpc("rom.unload", { role });
     },
-    loadDisc(drive, ptr, size) { return rpc("disc.load", { drive, name: `bluepixel-${drive ? "b" : "a"}.dsk`, data_base64: toBase64(fromHeap(ptr, size)) }); },
+    loadDisc(drive, ptr, size, name = `bluepixel-${drive ? "b" : "a"}.dsk`) { return rpc("disc.load", { drive, name, data_base64: toBase64(fromHeap(ptr, size)) }); },
     discName(drive, ptr, size) { const name = rpc("disc.info", { drive }).name; wasm.stringToUTF8(name, ptr, size); return name.length; },
-    exportDisc(drive, sizePtr) { return copyOut(fromBase64(rpc("disc.export", { drive }).data_base64), sizePtr); },
-    releaseDiscExport() {},
+    exportDisc(drive, sizePtr) {
+      facade.releaseDiscExport();
+      discExportPtr = copyOut(fromBase64(rpc("disc.export", { drive }).data_base64), sizePtr);
+      return discExportPtr;
+    },
+    releaseDiscExport() { if (discExportPtr) wasm._free(discExportPtr); discExportPtr = 0; },
     loadSnapshot(ptr, size) { return rpc("snapshot.load", { data_base64: toBase64(fromHeap(ptr, size)) }); },
     saveSnapshot(sizePtr) { return copyOut(fromBase64(rpc("snapshot.save").data_base64), sizePtr); },
     freeBuffer(ptr) { wasm._free(ptr); },
@@ -130,7 +143,16 @@ export async function createBluePixelApi(createModule) {
     debugBreakpointCondition(id, ptr, size) { const value = bpList().find(bp => bp.id === id)?.condition || ""; wasm.stringToUTF8(value, ptr, size); return value.length; },
     debugRemoveBreakpoint(id) { return rpc("debug.breakpoints.remove", { id }); },
     debugAddMemoryBreakpoint(start, end, write) { return rpc("debug.breakpoints.add_memory", { start, end, access: write ? "write" : "read" }).id; },
-    debugSetBreakpointCondition(id, ptr, passCount) { const result = rpc("debug.breakpoints.set_condition", { id, condition: fromStringPtr(ptr), pass_count: passCount }); facade.lastBreakpointError = result.error; return result.set; },
+    debugSetBreakpointCondition(id, ptr, passCount) {
+      try {
+        const result = rpc("debug.breakpoints.set_condition", { id, condition: fromStringPtr(ptr), pass_count: passCount });
+        facade.lastBreakpointError = result.error;
+        return result.set;
+      } catch (error) {
+        facade.lastBreakpointError = error.message;
+        return false;
+      }
+    },
     debugLastError() { facade.lastErrorPtr ??= wasm._malloc(256); if (facade.lastErrorPtr) wasm.stringToUTF8(facade.lastBreakpointError || "", facade.lastErrorPtr, 256); return facade.lastErrorPtr || 0; },
     debugSymbolSet(ptr, value) { return rpc("debug.symbols.set", { name: fromStringPtr(ptr), value }); },
     debugSymbolClear() { return rpc("debug.symbols.clear"); },

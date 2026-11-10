@@ -381,7 +381,7 @@ loadDefaultROMs();
     if (!file) return;
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      if (!transfer(bytes, (ptr, size) => core.loadDisc(drive, ptr, size))) {
+      if (!transfer(bytes, (ptr, size) => core.loadDisc(drive, ptr, size, file.name))) {
         throw new Error("This is not a supported DSK image.");
       }
       currentDiskNames[drive] = file.name;

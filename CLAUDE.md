@@ -93,7 +93,7 @@ SANITIZE=0 python3 Tests/headless/check_state_coverage.py   # SANITIZE=0 when li
 `BLUEPIXEL_EXPECT_HASH` overrides the acceptance reference hash (empty disables the check); the hash only holds for the ROMs pinned
 in the fixture's `roms.json`. CI (`.github/workflows/headless.yml`, on PRs and pushes to `main`, `h1-headless`, `h2-core`) builds the
 static Linux binary with disposable ROMs from `Tests/headless/make_test_roms.py <dir>` and runs `test_api.py`, `test_api_ext.py` (plain and sanitized),
-`check_state_coverage.py`, `test_state_abi.py` and the conformance harness self-test; it does not run the nave acceptance. `deploy-pages.yml` publishes `web/` to GitHub Pages.
+`check_state_coverage.py`, `test_state_abi.py` and the conformance harness self-test. It also runs real-ROM nave acceptance and five timings with `tools/measure-headless.py`; the WASM job exercises the web adapter and native/WASM conformance. `deploy-pages.yml` publishes `web/` to GitHub Pages.
 
 Other `cpcrun` commands: `boot` (renders a frame to BMP; options `--disc --type --wait --space --return --frames
 --wav --out`; env `VIEW=raster|vram`, `MIDFRAME=<cycles>`, `DUMP=1`, `IOLOG=1 IOFROM=<frame>`), `dis`, `inttest`,
@@ -193,8 +193,8 @@ controls blank (tab strips, segmented controls); use `screencapture` when the re
 
 Headless (status table in `docs/HEADLESS.md`): the 50x realtime target is not met (about 12x on the 4 vCPU VPS; `perf` is blocked
 in the container, use callgrind); CPCApi 1.2 and the browser JSON-RPC migration are complete, with native/WASM state conformance
-passing locally. Full browser interaction and the new emsdk CI job still need a clean run; no Unix socket or WebSocket transport;
-`boot_ready` needs an explicit entry address (no AMSDOS autodetect); no Linux/macOS/WASM hash comparison.
+passing locally. Chrome game loading, stepping and breakpoints are verified; the WASM adapter has a functional test in CI; no Unix socket or WebSocket transport;
+`boot_ready` needs an explicit entry address (no AMSDOS autodetect); full Linux/macOS/WASM fixture validation is covered by the expanded CI; check the latest run. For VPS performance work, follow `docs/HANDOFF-VPS-H2.md` and `tools/measure-headless.py`.
 
 Session record/playback is complete: core, File menu, transport bar (`Transport.swift`), reverse debugging (`ReverseDebug.swift`: Step Back
 ⌥F7, Step Back Over ⌥⌘F8, Reverse Continue ⌥F9, Run Back to Cursor ⌥F4, "Who Wrote/Read This?"), disc writes and markers (`CPC_MARK_TEXT`,
