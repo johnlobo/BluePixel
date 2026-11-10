@@ -82,7 +82,7 @@ se marca **sin verificar** nunca se ha ejecutado.
 Pasos pendientes del plan H2: (13) velocidad, de 12x a 50x por vCPU, con callgrind (`perf` no funciona en el contenedor);
 (16) servidor en el desktop, apagado por defecto; (17) socket Unix, WebSocket, token y Origin; (18) comparación de hash
 Linux/macOS/WASM; (19) adaptador de GlasnostFWK y CI con el fixture `nave`. El prompt completo de H2 está en
-`/config/workspace/glasnost-test/bluepixel-h2-prompt.md` de la VPS (copia local si la necesitas: pídela).
+[prompts/bluepixel-h2-prompt.md](prompts/bluepixel-h2-prompt.md) (base reutilizable para H3).
 
 ## Cómo retomarlo con Claude en el desktop
 
