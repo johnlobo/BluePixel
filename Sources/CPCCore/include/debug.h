@@ -59,6 +59,8 @@ typedef struct Debugger {
     char log_lines[DBG_LOG_LINES][192]; uint32_t log_total;   /* logpoint output ring */   /* stop after a RET that leaves the frame entered at step_out_sp */
     uint8_t watch[65536];          /* bit0 = read watch, bit1 = write watch */
     int io_bps;
+    int read_bps;                  /* enabled memory-read breakpoints, as of the last dbg_rebuild_watch: instruction fetches only need the
+                                    * debugger while this or the access counters are in use (the fast fetch path checks it) */
     bool hit; int hit_index;       /* last breakpoint that stopped the machine */
     uint16_t ev_addr; uint8_t ev_value, ev_prev; bool ev_valid;
     uint64_t reset_cycles_base;

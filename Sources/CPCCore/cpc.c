@@ -771,7 +771,9 @@ static int step_inner(CPC *c) {
     }
     DbgProfPre pre; Debugger *dp = c->dbg && c->dbg->prof && !c->dbg->quiet && !c->dbg->scanning ? c->dbg : NULL;
     if (dp) dbg_prof_before(c, &pre);
-    c->z80.fast_map = (c->dbg || c->asic.page_visible) ? NULL : (const uint8_t *const *)c->rd_map;   /* see cpc_mem_fetch */
+/* Fetches may skip cpc_mem_fetch when it would do nothing but read the map: no visible ASIC page, and no debugger with access
+     * counters or memory-read breakpoints (a debugger that only holds symbols or code breakpoints does not look at fetches). */
+    c->z80.fast_map = (c->asic.page_visible || (c->dbg && (c->dbg->acc || c->dbg->read_bps))) ? NULL : (const uint8_t *const *)c->rd_map;
     int n = z80_step(&c->z80, c->irq_line);
     if (dp) dbg_prof_after(c, &pre, n);
     if (ret_op && !c->z80.int_ack && c->z80.sp.w > c->dbg->step_out_sp) { c->dbg->step_out = false; c->dbg->hit = true; c->dbg->hit_index = -1; }
