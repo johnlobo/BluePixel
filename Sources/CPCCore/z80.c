@@ -35,7 +35,11 @@ void z80_reset(Z80 *z) {
 #define A z->af.h
 #define F z->af.l
 
-static inline uint8_t fetch8(Z80 *z) { uint8_t v = z->fetch(z->ctx, z->pc); z->pc++; return v; }
+static inline uint8_t fetch8(Z80 *z) {
+    uint8_t v = __builtin_expect(z->fast_map != NULL, 1) ? z->fast_map[z->pc >> 14][z->pc & 0x3FFF] : z->fetch(z->ctx, z->pc);
+    z->pc++;
+    return v;
+}
 static inline uint16_t fetch16(Z80 *z) { uint8_t l = fetch8(z); uint8_t h = fetch8(z); return (uint16_t)(l | (h << 8)); }
 static inline uint16_t rd16(Z80 *z, uint16_t a) { uint8_t l = RD(a); uint8_t h = RD(a + 1); return (uint16_t)(l | (h << 8)); }
 static inline void wr16(Z80 *z, uint16_t a, uint16_t v) { WR(a, v & 0xFF); WR(a + 1, v >> 8); }

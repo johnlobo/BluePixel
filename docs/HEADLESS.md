@@ -52,6 +52,13 @@ H2 results and the Linux profiling method are recorded below; the canonical stat
 
 ### 1. Velocidad
 
+**Actualización 2026-11-10, VPS física (Linux x86-64, 4 vCPU Haswell):** mediana **20,99x** (19,17x a 22,37x) con `-O2` por defecto, frente a
+11,53x antes de optimizar; 6.944 millones de instrucciones frente a 13.399 millones, mismo hash `be44e742783fb94c` en todas las muestras.
+Objetivo 50x **no alcanzado.** Todas las optimizaciones son exactas y están verificadas contra el ejecutable anterior
+(`Tests/headless/test_render_golden.py`, `Tests/headless/fuzz_equivalence.py`, `cpcrun`). Tablas, perfil y el motivo por el que ir más
+allá exige decidir sobre los buffers de fotograma del estado canónico: [perf/h2-profile.md](perf/h2-profile.md), sección "VPS real".
+Lo que sigue es el texto original de H2 (mediciones en QEMU), conservado como historial.
+
 **PARCIAL.** Profile first, then optimize only measured hot paths. On the H1 Linux VPS described in the supplied report, `-O2` took 5.1–5.6 s for 2,740 frames (9.8–10.6x); `-O3 -march=native` took 4.5–4.8 s (11.5–12.3x). These are third-party reference measurements, not measurements from this checkout.
 
 This Mac has no physical x86_64 Linux host. I used Ubuntu 24.04 x86_64/GCC 13.3.0 under QEMU on an Apple Silicon Mac, 4 guest CPUs. This allowed Linux builds and profiling but emulates the x86 CPU, so its wall times cannot stand in for the Haswell VPS. `perf` was unavailable for the VM's running kernel; gprof (`-O2 -pg`) was used instead. Each profile is one 1,370-frame cold acceptance run. The detailed top-ten tables are in [`docs/perf/h2-profile.md`](perf/h2-profile.md).

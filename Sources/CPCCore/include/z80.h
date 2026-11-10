@@ -23,6 +23,8 @@ struct Z80 {
     uint64_t instructions; /* retired instruction counter */
     void *ctx;
     uint8_t (*rd)(void *ctx, uint16_t addr);
+    const uint8_t *const *fast_map;      /* when set (4 x 16K blocks), opcode and operand bytes are read straight from it; the
+                                           * host sets it only while `fetch` would do nothing but that. Not state. */
     uint8_t (*fetch)(void *ctx, uint16_t addr);   /* instruction stream bytes (opcode, operands): like rd, but told apart for the debugger */
     void (*wr)(void *ctx, uint16_t addr, uint8_t v);
     uint8_t (*in)(void *ctx, uint16_t port);

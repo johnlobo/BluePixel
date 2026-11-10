@@ -366,6 +366,16 @@ call("machine.reset")
 assert call("debug.status")["break"] is False, "machine.reset must clear the debugger stop"
 clear_breakpoints()
 
+# a read breakpoint also fires when the CPU fetches an instruction from that address (the instruction stream counts as reads)
+load_program()
+clear_breakpoints()
+assert call("debug.attach")["enabled"] is True
+call("debug.breakpoints.add_memory", {"start": 0x4011, "end": 0x4011, "access": "read"})
+fetched = call("run.frames", {"count": 3})
+assert fetched["break"], "a read breakpoint on code must fire when the code is executed"
+call("debug.resume")
+clear_breakpoints()
+
 # memory breakpoint access modes: the program reads 8000 and writes C000
 def runs_into(access, address):
     load_program()
@@ -675,6 +685,53 @@ assert set(base64.b64decode(default)) != {0, 255}, "the test needs a picture tha
 assert default == call("screen.render", {"pal": True, "scanlines": True})["data_base64"], "pal and scanlines default to true"
 assert default != call("screen.render", {"pal": False, "scanlines": True})["data_base64"], "pal changes the picture"
 assert default != call("screen.render", {"pal": True, "scanlines": False})["data_base64"], "scanlines changes the picture"
+
+# a restored state may carry a gate-array mode beyond 3 (the canonical restore does not bound it): it is drawn as mode 2, the
+# way the generic renderer always did, by every drawing path
+import struct as _struct
+import zlib as _zlib
+
+
+def machine_in_mode(mode):
+    load_program()
+    image = bytearray(base64.b64decode(call("snapshot.save", {"version": 1})["data_base64"]))
+    image[0x100 + 0x4000:0x100 + 0x4002] = bytes([0x18, 0xFE])
+    image[0x40] = (image[0x40] & ~3) | mode | 0x0C
+    image[0x43:0x43 + 18] = bytes([63, 40, 46, 0x8E, 38, 0, 25, 30, 0, 7, 0, 0, 0x30, 0, 0, 0, 0, 0])
+    image[0x100:0x100 + 0x4000] = bytes(range(256)) * 64
+    image[0x100 + 0xC000:0x100 + 0x10000] = bytes((i * 7 + 3) & 255 for i in range(0x4000))
+    for i in range(17):
+        image[0x2F + i] = (i * 5 + 1) & 31
+    call("snapshot.load", {"data_base64": b64(bytes(image))})
+    call("run.frames", {"count": 2})
+
+
+def canonical(blob):
+    raw = base64.b64decode(blob)
+    return raw, bytearray(_zlib.decompress(raw[32:]))
+
+
+streams = []
+for mode in range(4):
+    machine_in_mode(mode)
+    streams.append(canonical(call("state.save")["data_base64"])[1])
+offset = [i for i in range(min(map(len, streams))) if [s[i] for s in streams] == [0, 1, 2, 3]]
+assert len(offset) == 1, offset
+machine_in_mode(2)
+header, stream = canonical(call("state.save")["data_base64"])
+call("run.frames", {"count": 2})
+want = call("screen.capture")["data_base64"]
+for bad in (4, 7, 255):
+    patched = bytearray(stream)
+    patched[offset[0]] = bad
+    packed = _zlib.compress(bytes(patched))
+    head = bytearray(header[:32])
+    head[24:28] = _struct.pack("<I", len(patched))
+    head[28:32] = _struct.pack("<I", len(packed))
+    machine_in_mode(2)
+    assert call("state.restore", {"data_base64": b64(bytes(head) + packed)})["restored"] is True, bad
+    call("run.frames", {"count": 2})
+    assert call("screen.capture")["data_base64"] == want, f"gate array mode {bad} must draw like mode 2"
 
 # ---- contract: api/schema.json and the code list exactly the same methods ----
 import re

@@ -83,6 +83,8 @@ ROMs are never committed. `BLUEPIXEL_ROM_DIR` must point at a directory with a v
 ```bash
 export BLUEPIXEL_ROM_DIR=/path/to/roms
 python3 Tests/headless/test_api.py              # API smoke
+python3 Tests/headless/test_render_golden.py       # video and sound exactness against hashes recorded from e4be45c (run after ANY change to CPCCore timing, video, PSG, tape, FDC)
+python3 Tests/headless/fuzz_equivalence.py --reference <old bluepixel-headless> --seeds 300   # random machines, reference build vs current
 python3 Tests/headless/test_api_ext.py          # API 1.2: input, display, audio, tape, discs, debugger, schema contract (BLUEPIXEL_SANITIZE=1: ASan/UBSan build)
 node Tests/wasm/conformance.mjs --self-test     # conformance harness, native vs a second native process; --wasm <js> for the real comparison
 python3 Tests/headless/test_acceptance_nave.py  # rebuilds first (BLUEPIXEL_NO_BUILD=1 skips); checks the fixture's reference hash
@@ -191,7 +193,7 @@ controls blank (tab strips, segmented controls); use `screencapture` when the re
 
 ## Not done yet
 
-Headless (status table in `docs/HEADLESS.md`): the 50x realtime target is not met (about 12x on the 4 vCPU VPS; `perf` is blocked
+Headless (status table in `docs/HEADLESS.md`): the 50x realtime target is not met (about 21x on the 4 vCPU VPS after the exact optimizations in `docs/perf/h2-profile.md`; going further needs a decision about the frame buffers in the canonical state; `perf` is blocked
 in the container, use callgrind); CPCApi 1.2 and the browser JSON-RPC migration are complete, with native/WASM state conformance
 passing locally. Chrome game loading, stepping and breakpoints are verified; the WASM adapter has a functional test in CI; no Unix socket or WebSocket transport;
 `boot_ready` needs an explicit entry address (no AMSDOS autodetect); full Linux/macOS/WASM fixture validation is covered by the expanded CI; check the latest run. For VPS performance work, follow `docs/HANDOFF-VPS-H2.md` and `tools/measure-headless.py`.

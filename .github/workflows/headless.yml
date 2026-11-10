@@ -31,6 +31,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # the equivalence fuzz builds a reference executable from a pinned older commit
       - name: Install static zlib and gdb (state coverage reads the debug info)
         run: sudo apt-get update && sudo apt-get install -y zlib1g-dev gdb
       - name: Build static Linux executable
@@ -53,6 +55,17 @@ jobs:
         run: python3 Tests/headless/check_state_coverage.py
       - name: Canonical state is independent of struct layout (default vs packed build, handoff both ways)
         run: python3 Tests/headless/test_state_abi.py
+      - name: Pixel- and sample-exact golden scenarios (video, sound, tape polling), real ROMs
+        env:
+          BLUEPIXEL_ROM_DIR: ${{ github.workspace }}/web/roms
+        run: LDFLAGS=-static python3 Tests/headless/test_render_golden.py   # rebuilds build/bluepixel-headless: keep it static for the last step
+      - name: Differential fuzz against the pre-optimisation executable (e4be45c)
+        env:
+          BLUEPIXEL_ROM_DIR: ${{ github.workspace }}/web/roms
+        run: |
+          git worktree add "$RUNNER_TEMP/reference" e4be45c
+          (cd "$RUNNER_TEMP/reference" && LDFLAGS=-static tools/build-headless.sh)
+          python3 Tests/headless/fuzz_equivalence.py --reference "$RUNNER_TEMP/reference/build/bluepixel-headless" --seeds 300
       - name: Exercise the VPS measurement tool and real-ROM acceptance
         env:
           BLUEPIXEL_ROM_DIR: ${{ github.workspace }}/web/roms

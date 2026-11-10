@@ -336,9 +336,9 @@ static void fdc_tick_one(FDC *f, int us) {
  * one-microsecond transitions so crossings and newly-started timers remain byte-for-byte equal. */
 void fdc_tick(FDC *f, int us) {
     if (!f || us <= 0) return;
-    for (int drive = 0; drive < 4; drive++) if (f->seeking[drive]) goto active;
-    if (f->state == S_IDLE) { f->rot_us = (f->rot_us + us) % REV_US; return; }
-active:
+    uint32_t any_seek;
+    memcpy(&any_seek, f->seeking, sizeof any_seek);       /* the four flags are four adjacent bytes: one test for "any seeking" */
+    if (!any_seek && f->state == S_IDLE) { f->rot_us = (f->rot_us + us) % REV_US; return; }
     while (us-- > 0) {
         bool seeking = false;
         for (int drive = 0; drive < 4; drive++) seeking |= f->seeking[drive];

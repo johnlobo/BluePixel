@@ -27,12 +27,13 @@ bool cpc_dbg_break(const CPC *c) { return c->dbg && c->dbg->hit; }
 
 void dbg_rebuild_watch(Debugger *d) {
     memset(d->watch, d->acc ? W_READ | W_WRITE : 0, sizeof d->watch);     /* the access map sees every access */
-    d->io_bps = 0; d->nchange = 0;
+    d->io_bps = 0; d->nchange = 0; d->read_bps = 0;
     for (int i = 0; i < DBG_MAX_BP; i++) {
         DbgBreakpoint *b = &d->bp[i];
         if (!b->used || !b->enabled) continue;
         if (b->type == BP_CODE) d->watch[b->start] |= W_CODE;
         else if (b->type == BP_MEM_READ || b->type == BP_MEM_WRITE) {
+            if (b->type == BP_MEM_READ) d->read_bps++;
             for (uint32_t a = b->start; a <= b->end; a++) d->watch[a] |= b->type == BP_MEM_READ ? W_READ : W_WRITE;
         } else if (b->type == BP_CHANGE) d->nchange++;
         else d->io_bps++;
