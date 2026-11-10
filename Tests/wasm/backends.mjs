@@ -36,4 +36,3 @@ export async function wasmBackend(modulePath) {
     async close() { core._bpapi_destroy(session); },
   };
 }
-
