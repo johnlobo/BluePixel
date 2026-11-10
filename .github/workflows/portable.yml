@@ -1,0 +1,83 @@
+name: Portable state conformance
+on:
+  push:
+    branches: [main, h2-core]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  produce:
+    name: Export ${{ matrix.backend }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, backend: linux-x86_64}
+          - {os: macos-latest, backend: macos-native}
+          - {os: ubuntu-latest, backend: wasm32}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: mymindstorm/setup-emsdk@v14
+        if: matrix.backend == 'wasm32'
+      - name: Build backend and export pinned-fixture evidence
+        env:
+          BACKEND: ${{ matrix.backend }}
+        run: |
+          if [ "$BACKEND" = wasm32 ]; then
+            tools/build-wasm-capi.sh
+            node Tests/wasm/portable.mjs --wasm web/bluepixel-capi.js --export build/portable --label "$BACKEND"
+          else
+            if [ "$BACKEND" = linux-x86_64 ]; then export LDFLAGS=-static; fi
+            tools/build-headless.sh
+            node Tests/wasm/portable.mjs --export build/portable --label "$BACKEND"
+          fi
+      - name: Verify the evidence gate rejects altered or incomplete artifacts
+        if: matrix.backend != 'wasm32'
+        run: node Tests/wasm/test_portable.mjs build/portable
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable-${{ matrix.backend }}
+          path: build/portable/
+          if-no-files-found: error
+  handoff:
+    name: Restore all states on ${{ matrix.backend }}
+    needs: produce
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, backend: linux-x86_64}
+          - {os: macos-latest, backend: macos-native}
+          - {os: ubuntu-latest, backend: wasm32}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: mymindstorm/setup-emsdk@v14
+        if: matrix.backend == 'wasm32'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: portable-*
+          path: build/portable-inputs
+      - name: Compare traces and restore every foreign checkpoint
+        env:
+          BACKEND: ${{ matrix.backend }}
+        run: |
+          if [ "$BACKEND" = wasm32 ]; then
+            tools/build-wasm-capi.sh
+            node Tests/wasm/portable.mjs --wasm web/bluepixel-capi.js --verify build/portable-inputs
+          else
+            if [ "$BACKEND" = linux-x86_64 ]; then export LDFLAGS=-static; fi
+            tools/build-headless.sh
+            node Tests/wasm/portable.mjs --verify build/portable-inputs
+          fi

@@ -206,3 +206,66 @@ python3 Tests/headless/bench_nave.py               repeats=5, median=1.90x, min=
 ```
 
 ROMs stayed outside the repository and executable. The QEMU environment verified x86_64 Linux compilation, API behavior, fixture behavior and the hash invariant; it does not verify the physical Haswell performance target. Those were historical H1 measurements; native/WASM checkpoints are now verified as described in section 3.
+
+## 18. Linux/macOS/WASM: shared traces and state handoff
+
+`Tests/wasm/portable.mjs` uses the pinned CPC 6128 ROMs in `web/roms/` and the
+same `nave.dsk`/`.noi` on every backend. It exports ten checkpoints over 1,000
+frames with keyboard input: canonical state hashes, CPU registers, RGBA screen
+SHA-256, palette/CRTC metadata and float32 audio SHA-256. It also saves two BPST
+states, including one with a key held, and records their exact 100-frame continuation.
+The game must reach `game_status == 0x5A`; equal errors or an unbooted machine
+cannot satisfy the test.
+
+`.github/workflows/portable.yml` has three producers (static Linux x86_64,
+macOS arm64, wasm32). Each uploads a report and both states. Three consumer jobs
+require all three producers, compare source revision, ROM/fixture identities,
+traces and canonical bytes, then restore **every producer's states** on their
+backend and verify the saved position and continuation. Reports and BPST files
+remain available as `portable-*` workflow artifacts. This tests all nine directed
+backend combinations, not just two instances on the same runner.
+
+BPST's zlib encoding can differ between zlib versions, so the byte comparison
+uses the uncompressed canonical stream and the header's machine fields; it does
+not require identical compression. `cpu.registers.nops` is a cumulative host
+profiling counter, excluded from canonical state, and is excluded from restore
+comparisons. The actual CPU registers, frame count, state and screen remain exact.
+Audio queues are host buffers: the straight-line trace compares their output;
+state handoff compares canonical PSG state and subsequent machine execution.
+
+```sh
+tools/build-headless.sh
+node Tests/wasm/portable.mjs --export build/portable/mac --label macos-arm64
+node Tests/wasm/portable.mjs --wasm web/bluepixel-capi.js --export build/portable/wasm --label wasm32
+node Tests/wasm/portable.mjs --verify build/portable --expect-producers 2
+node Tests/wasm/portable.mjs --wasm web/bluepixel-capi.js --verify build/portable --expect-producers 2
+```
+
+**Verified:** [workflow run 42846647095](https://github.com/johnlobo/BluePixel/actions/runs/42846647095)
+on commit `ba263e3` passed all three producers and all three consumers: Linux
+x86_64 (static), macOS arm64 and wasm32 have identical traces and canonical states,
+and all nine directed backend combinations restore and continue exactly.
+Local macOS arm64 ↔ wasm32 handoff and the negative evidence checks also pass.
+No big-endian host is covered.
+
+## 19. GlasnostFWK integration
+
+GlasnostFWK's `tools/glasnost/bluepixel_adapter.py` owns a private stdio headless
+process and provides run, memory, input, capture, exact save/restore and stop.
+Requests have a deadline; process/protocol failures close the session, and cleanup
+terminates a stuck child. It negotiates CPCApi 1.x/state format 1 and requires all
+three CPC 6128 ROMs. No display server, listening port or real-time sleeps are used.
+
+`tests/bluepixel_smoke.py` in GlasnostFWK tests the **current SDK build**, using its
+shared test DSK and matching symbols rather than the frozen BluePixel fixture.
+Three independent cold boots check running status, game clock, drone activity,
+all four player limits, ground/HUD drawing, RGBA capture, exact restore and
+continuation; their hashes/screens/frame counts must agree. JSON evidence includes
+source revision, binary/media/symbol/manifest SHA-256, per-method times, cold-boot
+time and end-to-end speed at 50 Hz. GlasnostFWK CI builds a pinned BluePixel commit
+and uploads this report after building the framework. Its emulator pin can be
+advanced independently of this conformance harness.
+
+AMSDOS entry autodetection remains unimplemented. The adapter's boot wait polls
+the game's explicit ready symbol under a virtual-frame limit; it does not depend
+on `boot_ready` autodetection. Existing AmSpiriT smoke tests remain available.
