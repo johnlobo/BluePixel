@@ -96,6 +96,14 @@ try {
   assert(core.debugSymbolCount() > 0);
   assert.equal(string((ptr, size) => core.debugSymbolName(0, ptr, size)), "web_test");
   assert.equal(core.debugSymbolValue(0), 0x8000);
+  for (const value of [-2147483648, 2147483647]) {
+    text("web_test", ptr => core.debugSymbolSet(ptr, value));
+    assert.equal(core.debugSymbolValue(0), value);
+  }
+  for (const value of [-2147483649, 2147483648]) {
+    assert.throws(() => text("web_test", ptr => core.debugSymbolSet(ptr, value)));
+    assert.equal(core.debugSymbolValue(0), 2147483647, "rejected values must not change the symbol");
+  }
   core.debugSymbolClear();
   core.debugToggleCodeBreakpoint(pc);
   assert(core.debugHasCodeBreakpoint(pc));
