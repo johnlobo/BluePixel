@@ -55,6 +55,7 @@ static void build_palette(CPC *c) {
 }
 
 static void build_pen_tables(void);
+static void settle(CPC *c);
 static bool pen_tables_ready;
 
 CPC *cpc_create(CPCModel model) {
@@ -358,6 +359,7 @@ static void ppi_write(CPC *c, int func, uint8_t v) {
 
 /* ---------------- I/O decode ---------------- */
 void cpc_io_write(void *ctx, uint16_t port, uint8_t v) {
+    settle(ctx);
     CPC *c = ctx;
     if (c->trace_io) c->trace_io(c->trace_io_ctx, port, v, c->z80.pc);
     if (c->dbg && c->dbg->io_bps) dbg_io_event(c, port, v, true);
@@ -383,6 +385,7 @@ void cpc_io_write(void *ctx, uint16_t port, uint8_t v) {
 }
 
 uint8_t cpc_io_read(void *ctx, uint16_t port) {
+    settle(ctx);
     CPC *c = ctx;
     uint8_t v = 0xFF;
     if (c->dbg && c->dbg->io_bps) dbg_io_event(c, port, 0xFF, false);
@@ -727,22 +730,31 @@ uint8_t *cpc_tape_record_stop(CPC *c, size_t *size) {
 }
 
 /* ---------------- Main loop ---------------- */
+/* Video runs every microsecond (it raises the interrupt and the CPU reads its status). Sound, tape, tape recording and the
+ * floppy controller raise nothing and are only seen through the CPU's own port accesses or from the host, so their time is
+ * accumulated as debt and applied in one go: settle() runs before every port access (cpc_io_read/write) and whenever control
+ * returns to the host (cpc_step, cpc_run_frame). Applying a debt is the same loop over the same ticks, in the same order,
+ * as applying it a microsecond at a time, so the result is identical. */
 static void advance(CPC *c, int nops) {
-    const bool mix_fx = c->cfg.amdrum || c->cfg.digiblaster;
-    const bool tape_snd = c->cfg.tape_sound && c->tape_motor;
-    const bool tape_on = c->tape != NULL;
-    const bool recording = c->rec_active && c->tape_motor;       /* rec_tick returns at once otherwise */
     for (int i = 0; i < nops; i++) {
         cpc_video_tick(c);
         c->cycles++;
     }
-    audio_advance(c, nops, mix_fx, tape_snd, tape_on, recording);
-    fdc_tick(c->fdc, nops);
+    c->sub_debt += nops;
     c->t_counter += nops;
+    if (c->cfg.plus) settle(c);       /* the Plus DMA, run from the video tick, writes sound registers without a CPU port access */
 }
 
-int cpc_step(CPC *c) {
-    if (c->player) replay_apply_due(c);
+static void settle(CPC *c) {
+    int n = c->sub_debt;
+    if (!n) return;
+    c->sub_debt = 0;
+    audio_advance(c, n, c->cfg.amdrum || c->cfg.digiblaster, c->cfg.tape_sound && c->tape_motor, c->tape != NULL, c->rec_active && c->tape_motor);
+    fdc_tick(c->fdc, n);
+}
+
+static int step_inner(CPC *c) {
+    if (c->player) { settle(c); replay_apply_due(c); }
     if (c->dbg) {
         c->z80.brk_enabled = c->dbg->break_instructions;
         if ((c->dbg->active || c->dbg->skip_once || c->dbg->temp_bp >= 0) && dbg_check_code(c)) return 0;
@@ -765,13 +777,20 @@ int cpc_step(CPC *c) {
     return n;
 }
 
+int cpc_step(CPC *c) {
+    int n = step_inner(c);
+    settle(c);
+    return n;
+}
+
 void cpc_run_frame(CPC *c) {
     uint64_t start = c->cycles;
     c->frame_ready = false;
     while (!c->frame_ready && c->cycles - start < 40000) {
-        cpc_step(c);
-        if (c->z80.brk_hit || (c->dbg && c->dbg->hit)) return;
+        step_inner(c);
+        if (c->z80.brk_hit || (c->dbg && c->dbg->hit)) { settle(c); return; }
     }
+    settle(c);
     if (c->frame_ready && (c->recorder || c->player)) replay_frame_done(c);   /* instruction boundary just after the flyback */
 }
 

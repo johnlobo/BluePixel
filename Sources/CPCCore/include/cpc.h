@@ -159,6 +159,8 @@ struct CPC {
 
     uint64_t cycles;               /* elapsed microseconds */
     uint64_t t_counter;            /* debugger T counter */
+    int sub_debt;                  /* not state: microseconds of sound/tape/FDC time not yet applied. Always 0 whenever the host
+                                    * can look at the machine; the CPU's own port accesses settle it first (see cpc.c, settle) */
 
     /* debugger hooks */
     struct Debugger *dbg;
