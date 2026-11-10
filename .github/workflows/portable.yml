@@ -15,7 +15,7 @@ jobs:
       matrix:
         include:
           - {os: ubuntu-latest, backend: linux-x86_64}
-          - {os: macos-latest, backend: macos-arm64}
+          - {os: macos-latest, backend: macos-native}
           - {os: ubuntu-latest, backend: wasm32}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
@@ -38,6 +38,9 @@ jobs:
             tools/build-headless.sh
             node Tests/wasm/portable.mjs --export build/portable --label "$BACKEND"
           fi
+      - name: Verify the evidence gate rejects altered or incomplete artifacts
+        if: matrix.backend != 'wasm32'
+        run: node Tests/wasm/test_portable.mjs build/portable
       - uses: actions/upload-artifact@v4
         with:
           name: portable-${{ matrix.backend }}
@@ -51,7 +54,7 @@ jobs:
       matrix:
         include:
           - {os: ubuntu-latest, backend: linux-x86_64}
-          - {os: macos-latest, backend: macos-arm64}
+          - {os: macos-latest, backend: macos-native}
           - {os: ubuntu-latest, backend: wasm32}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
