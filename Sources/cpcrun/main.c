@@ -533,15 +533,14 @@ static int run_rectest(const char *roms, const char *disc) {
           /* ground truth: forward from frame 900 with a real watch, last hit before X */
           cpc_player_seek(d, 900);
           int bp = dbg_add_mem_bp(d, wa, wa, want_read, !want_read); CPCReverseHit truth = {0}; dd->active = true; dd->hit = false;
-          uint64_t X = 0; int steps_after = mid ? 1234 : 0;
+          int steps_after = mid ? 1234 : 0;
           for (int f = 0; f < 80; f++) { cpc_run_frame(d); dd->hit = false; }       /* run 80 frames, then stop on a frame boundary */
           cpc_player_seek(d, 900);
           { uint64_t end_frame = d->frames + 80; dd->hit = false;
             while (d->frames < end_frame) { uint64_t t = d->cycles; uint16_t pc = d->z80.pc; cpc_step(d);
                 if (dd->hit) { truth = (CPCReverseHit){true, t, pc, 0, bp, dd->ev_addr, dd->ev_value, dd->ev_prev}; dd->hit = false; } }
             for (int s = 0; s < steps_after; s++) { uint64_t t = d->cycles; uint16_t pc = d->z80.pc; cpc_step(d);
-                if (dd->hit) { truth = (CPCReverseHit){true, t, pc, 0, bp, dd->ev_addr, dd->ev_value, dd->ev_prev}; dd->hit = false; } }
-            X = d->cycles; }
+                if (dd->hit) { truth = (CPCReverseHit){true, t, pc, 0, bp, dd->ev_addr, dd->ev_value, dd->ev_prev}; dd->hit = false; } } }
           dbg_remove_bp(d, bp); dd->hit = false; dd->active = true;
           uint64_t hx = cpc_state_hash(d);
           if (!truth.found) continue;
@@ -551,9 +550,11 @@ static int run_rectest(const char *roms, const char *disc) {
           bool found = cpc_reverse_end(d, sc, true, &got);
           bool same = found && got.cycles == truth.cycles && got.pc == truth.pc && got.addr == wa && d->cycles == truth.cycles && d->z80.pc == truth.pc;
           if (!same) { badw++; printf("  watch %04X %s: expected t=%llu pc=%04X, got found=%d t=%llu pc=%04X (machine at %llu pc=%04X)\n", wa, want_read ? "read" : "write", (unsigned long long)truth.cycles, truth.pc, found, (unsigned long long)got.cycles, got.pc, (unsigned long long)d->cycles, d->z80.pc); }
-          /* cancel path: back to where it started, exactly */
+          /* cancel path: a search that is abandoned leaves the machine exactly where it was when the search began */
+          uint64_t hc = cpc_state_hash(d), tc = d->cycles;
           sc = cpc_reverse_begin(d, mode == 1 ? CPC_REV_READ : CPC_REV_WRITE, wa, wa); cpc_reverse_slice(d, sc); cpc_reverse_end(d, sc, false, NULL);
-          (void)hx; (void)slices; (void)X;
+          if (cpc_state_hash(d) != hc || d->cycles != tc) { badw++; printf("  watch %04X %s: a cancelled search left the machine at %llu, not at %llu\n", wa, want_read ? "read" : "write", (unsigned long long)d->cycles, (unsigned long long)tc); }
+          (void)hx; (void)slices;
       }
       CHECK(!badw && usedw >= 4, "reverse watch finds the latest write/read exactly where a forward watch says (and stops before the instruction)");
       /* breakpoints: user counters, pass counts and logpoints are left alone */
