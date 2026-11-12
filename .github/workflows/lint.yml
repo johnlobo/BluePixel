@@ -1,0 +1,17 @@
+name: Lint
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  warnings-and-format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format (pinned, must match .clang-format)
+        run: python3 -m pip install --user clang-format==23.1.5
+      - name: -Wall -Wextra -Wshadow -Werror and clang-format check
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          clang-format --version
+          tools/lint.sh

@@ -103,7 +103,9 @@ bool cpc_recording_mark_add(CPCRecording *r, uint32_t frame, const char *text) {
 size_t cpc_recording_mark_count(const CPCRecording *r) { return r->nmarks; }
 bool cpc_recording_mark_get(const CPCRecording *r, size_t i, uint32_t *frame, const char **text) {
     if (i >= r->nmarks) return false;
-    if (frame) *frame = r->marks[i].frame; if (text) *text = r->marks[i].text; return true;
+    if (frame) *frame = r->marks[i].frame;
+    if (text) *text = r->marks[i].text;
+    return true;
 }
 void cpc_recording_mark_remove(CPCRecording *r, size_t i) {
     if (i >= r->nmarks) return;
@@ -239,7 +241,8 @@ uint64_t cpc_player_length(const CPC *c) { return c->player ? cpc_recording_fram
 bool cpc_player_finished(const CPC *c) { return c->player && cpc_player_frame(c) >= cpc_player_length(c); }
 bool cpc_player_desync(const CPC *c, uint64_t *frame) {
     if (!c->player || !c->player->desync) return false;
-    if (frame) *frame = c->player->desync_frame; return true;
+    if (frame) *frame = c->player->desync_frame;
+    return true;
 }
 size_t cpc_player_keyframes(const CPC *c) {
     size_t n = 0; if (!c->player) return 0;
@@ -418,7 +421,7 @@ static uint8_t peek8(const CPC *c, uint16_t a) { return c->rd_map[a >> 14][a & 0
 static bool is_call(uint8_t op) { return op == 0xCD || (op & 0xC7) == 0xC4; }
 static bool is_rst(uint8_t op) { return (op & 0xC7) == 0xC7; }
 static bool is_ret(uint8_t op, uint8_t op2) { return op == 0xC9 || (op & 0xC7) == 0xC0 || (op == 0xED && (op2 & 0xC7) == 0x45); }
-static bool is_run(uint8_t op, uint8_t op2) { return op == 0x76 || (op == 0xED && ((op2 & 0xF4) == 0xB0 || (op2 & 0xF4) == 0xB0 + 8)); }   /* HALT, LDIR/CPIR/INIR/OTIR and the D forms */
+static bool is_run(uint8_t op, uint8_t op2) { return op == 0x76 || (op == 0xED && (op2 & 0xF4) == 0xB0); }   /* HALT, LDIR/CPIR/INIR/OTIR and the D forms (the mask drops bit 3) */
 
 /* One interval of a CPC_REV_STEPOVER scan. */
 static bool slice_stepover(CPC *c, CPCReverseScan *s) {
@@ -584,8 +587,8 @@ CPCRecording *cpc_recording_deserialize(const uint8_t *data, size_t size) {
         uint32_t unit = i_u32(&in), idx = i_u32(&in), sz = i_u32(&in); const uint8_t *b = i_take(&in, sz);
         if (in.bad || unit > 3 || idx >= DSK_MAX_TRACKS * 2) { in.bad = true; break; }
         r->pre = realloc(r->pre, (r->npre + 1) * sizeof *r->pre);
-        Pre *pp = &r->pre[r->npre]; pp->unit = unit; pp->idx = idx; memset(&pp->t, 0, sizeof pp->t);
-        if (!dsk_track_unpack(&pp->t, b, b + sz)) { in.bad = true; break; }
+        Pre *pre = &r->pre[r->npre]; pre->unit = unit; pre->idx = idx; memset(&pre->t, 0, sizeof pre->t);
+        if (!dsk_track_unpack(&pre->t, b, b + sz)) { in.bad = true; break; }
         r->npre++;
     }
     uint32_t nm = i_u32(&in);

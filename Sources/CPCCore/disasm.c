@@ -8,14 +8,13 @@ static uint16_t b16(Rd *r) { uint8_t l = b8(r); uint8_t h = b8(r); return (uint1
 
 static const char *R8[8] = {"B", "C", "D", "E", "H", "L", "(HL)", "A"};
 static const char *RP[4] = {"BC", "DE", "HL", "SP"};
-static const char *RP2[4] = {"BC", "DE", "HL", "AF"};
 static const char *CC[8] = {"NZ", "Z", "NC", "C", "PO", "PE", "P", "M"};
 static const char *ALU[8] = {"ADD A,", "ADC A,", "SUB ", "SBC A,", "AND ", "XOR ", "OR ", "CP "};
 static const char *ROT[8] = {"RLC", "RRC", "RL", "RR", "SLA", "SRA", "SLL", "SRL"};
 
 int z80_disassemble(uint16_t pc, uint8_t (*peek)(void *, uint16_t), void *ctx, char *out, int outsize) {
     Rd r = {pc, peek, ctx};
-    char s[48]; s[0] = 0;
+    char s[64]; s[0] = 0;
     const char *ixn = NULL;                       /* "IX"/"IY" if prefixed */
     uint8_t op = b8(&r);
     while (op == 0xDD || op == 0xFD) {
