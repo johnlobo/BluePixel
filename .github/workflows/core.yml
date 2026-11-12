@@ -1,0 +1,30 @@
+name: Core tests
+# Z80 exercisers (zexdoc, zexall) plus the cpcrun exactness tests on the nave fixture. See tools/run-core-tests.sh.
+# Measured on a 4 vCPU Linux box: zexdoc and zexall take about 115 s each and run in parallel with the other
+# tests, so the whole script is about 2 minutes; that is cheap enough to run on every PR and push.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install zlib headers
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
+      - name: Cache the Z80 exercisers
+        uses: actions/cache@v4
+        with:
+          path: tests/z80
+          key: z80-exercisers-v1-${{ hashFiles('tools/run-core-tests.sh') }}
+      - name: Build cpcrun and run the core tests
+        run: tools/run-core-tests.sh
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-test-logs
+          path: build/core/logs

@@ -55,22 +55,32 @@ LDFLAGS="-static" tools/build-headless.sh     # -> build/bluepixel-headless; CC,
 
 ## Tests
 
-There is no XCTest suite. Verification is `cpcrun` plus screenshots; run these before committing core changes:
+There is no XCTest suite. The core tests are `cpcrun` commands, and one script runs all of them on Linux or macOS using only
+repository material (ROMs from `web/roms`, the nave fixture disc, exercisers fetched and hash-checked into `tests/z80/`):
 
 ```bash
-R=/Users/drodri/Documents/WinAPE20B2/ROM
-.build/release/cpcrun zex Tests/z80/zexdoc.com        # ~70 s; must report no "ERROR"; also zexall.com
-for t in dbgtest mftest amxtest; do .build/release/cpcrun $t $R; done
-.build/release/cpcrun steptest $R ~/Proyectos/boop/boop.dsk   # also logtest; needs a disc that boots a game
-.build/release/cpcrun symtest <symbols file> <symbol name>
+tools/run-core-tests.sh                # builds build/core/cpcrun with cc (needs -lz), ~2 min, exit 1 on any failure
+tools/run-core-tests.sh --skip-zexall  # or --only statetest ...; logs in build/core/logs/
+```
+
+It fails on a non-zero exit, any `FAIL` line, any `missing <rom>` message, any exerciser `ERROR`. CI: `.github/workflows/core.yml`
+(PRs and pushes to `main`). Disc tests take `cpcrun <test> <roms> <disc> [game]`; `game` is `boop` (default) or `nave`
+(the fixture, used by the script); a per-game table in `Sources/cpcrun/main.c` holds the program-specific parts (run command,
+scripted keys, per-frame routine, RAM range). By hand, with a ROM folder that has the WinAPE names (`web/roms` does):
+
+```bash
+cc -std=gnu11 -O2 -ISources/CPCCore/include -ISources/CPCApi/include -ISources/CPCHost/include Sources/CPCCore/*.c Sources/CPCHost/host_files.c Sources/cpcrun/main.c -lz -o build/core/cpcrun
+build/core/cpcrun zex tests/z80/zexdoc.com                     # ~2 min; must report no "ERROR"; also zexall.com
+for t in dbgtest mftest amxtest; do build/core/cpcrun $t web/roms; done
+build/core/cpcrun steptest web/roms Tests/fixtures/nave/nave.dsk nave   # also logtest
+build/core/cpcrun symtest <symbols file> <symbol name>
 ```
 
 `disctest` (a BASIC program writes a file during a session; replay/seek/clone must reproduce state and disc), `sotest` (reverse Step Over + markers), `tracetest` (break on change, access map, profiler + speed cost) and
-`statetest` (save/restore at 9 points incl. mid-frame, 200 frames each) and `rectest` (record boop with every event
+`statetest` (save/restore at 9 points incl. mid-frame, 200 frames each) and `rectest` (record the game with every event
 type, replay in another machine, 80 random seeks, injected input must be detected, edit cuts the recording) are the
 exactness tests for the savestate/replay work: run them after touching anything in `CPCCore` that holds state.
-They load ROMs by WinAPE file names (`OS6128.ROM`, `BASIC1-1.ROM`, `AMSDOS.ROM`); with a `roms.json` folder (lower-case
-names) link them under those names first, or they print `missing ...` and run without firmware. Also run
+They load ROMs by WinAPE file names (`OS6128.ROM`, `BASIC1-1.ROM`, `AMSDOS.ROM`); a folder with other names prints `missing ...` and runs without firmware. Also run
 `python3 Tests/headless/check_state_coverage.py` (every field reaches the canonical state, restore fuzz under ASan;
 needs gdb) and `python3 Tests/headless/test_state_abi.py` (same bytes from a normal and a `-fpack-struct` build).
 
