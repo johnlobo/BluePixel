@@ -42,7 +42,9 @@ void cpc_render(const uint32_t *src, uint32_t *dst, bool pal, bool render_both, 
         for (int i = 0; i < n; i++) {
             uint32_t p = dst[i];
             int r = ((p >> 16) & 255) * num / 100, g = ((p >> 8) & 255) * num / 100, b = (p & 255) * num / 100;
-            if (r > 255) r = 255; if (g > 255) g = 255; if (b > 255) b = 255;
+            if (r > 255) r = 255;
+            if (g > 255) g = 255;
+            if (b > 255) b = 255;
             dst[i] = 0xFF000000u | (r << 16) | (g << 8) | b;
         }
     }

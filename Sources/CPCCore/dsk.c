@@ -117,7 +117,7 @@ CPCDisc *dsk_load(const uint8_t *d, size_t size, const char *path) {
             const uint8_t *si = ti + 0x18 + s * 8;
             CPCSector *sec = &tr->sec[s];
             sec->c = si[0]; sec->h = si[1]; sec->r = si[2]; sec->n = si[3]; sec->st1 = si[4]; sec->st2 = si[5];
-            size_t len = ext ? (si[6] | (si[7] << 8)) : (size_t)(128 << (sec->n & 7));
+            size_t len = ext ? (size_t)(si[6] | (si[7] << 8)) : (size_t)(128 << (sec->n & 7));
             if (!ext && sec->n > 6) len = 0x2000;
             sec->len = (uint16_t)len;
             sec->data = calloc(1, len ? len : 1);

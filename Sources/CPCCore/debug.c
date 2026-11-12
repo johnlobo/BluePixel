@@ -534,7 +534,7 @@ int dbg_symbols_parse(CPC *c, const char *text, size_t size) {
             if (!strncmp(tok[1], "l__", 3) || !strncmp(tok[1], "s__", 3) || !strncmp(tok[1], ".__.", 4) || !parse_num(tok[2], &v)) continue;   /* skip linker section lengths/starts */
             snprintf(name, sizeof name, "%s", tok[1]);
         }
-        else if (!strcasecmp(tok[0], "al") && nt >= 3) { if (!parse_num(tok[1], &v)) { char *e; v = (int32_t)strtol(tok[1], &e, 16); if (e == tok[1]) continue; } snprintf(name, sizeof name, "%s", tok[2][0] == '.' ? tok[2] + 1 : tok[2]); }
+        else if (!strcasecmp(tok[0], "al") && nt >= 3) { if (!parse_num(tok[1], &v)) { char *num_end; v = (int32_t)strtol(tok[1], &num_end, 16); if (num_end == tok[1]) continue; } snprintf(name, sizeof name, "%s", tok[2][0] == '.' ? tok[2] + 1 : tok[2]); }
         else if (strlen(tok[0]) == 8 && strspn(tok[0], "0123456789ABCDEFabcdef") == 8) {   /* SDCC/ASxxxx .map: 0000ADDR name module */
             if (!strncmp(tok[1], "l__", 3) || !strncmp(tok[1], "s__", 3) || !strncmp(tok[1], ".__.", 4)) continue;
             v = (int32_t)strtol(tok[0], NULL, 16); snprintf(name, sizeof name, "%s", tok[1]);

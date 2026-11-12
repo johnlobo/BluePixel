@@ -14,9 +14,11 @@ CPCDisc *dsk_load_file(const char *path) {
 }
 
 bool dsk_save_file(CPCDisc *disc,const char *path) {
-    if(!disc||!path)return false;size_t size=0;uint8_t *data=dsk_serialize(disc,&size);if(!data)return false;
+    if(!disc||!path)return false;
+    size_t size=0;uint8_t *data=dsk_serialize(disc,&size);if(!data)return false;
     FILE *f=fopen(path,"wb");if(!f){free(data);return false;}bool ok=fwrite(data,1,size,f)==size;
-    if(fclose(f)!=0)ok=false;free(data);
+    if(fclose(f)!=0)ok=false;
+    free(data);
     if(ok){disc->dirty=false;if(path!=disc->path)strncpy(disc->path,path,sizeof disc->path-1);}
     return ok;
 }

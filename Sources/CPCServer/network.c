@@ -893,7 +893,10 @@ void cpc_server_stop(CPCServer *s) {
     if (s->cancel) {
         s->cancel(s->context);
     }
-    (void)write(s->wake[1], "x", 1);
+    /* Wake the worker poll(). A failed write (pipe already full) means a wake byte is pending, so it is ignored;
+     * the variable is only there because glibc marks write() warn_unused_result and a (void) cast does not silence it. */
+    ssize_t woke = write(s->wake[1], "x", 1);
+    (void)woke;
     pthread_join(s->thread, NULL);
     cleanup(s);
 }

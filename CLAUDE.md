@@ -187,6 +187,11 @@ controls blank (tab strips, segmented controls); use `screencapture` when the re
 
 - C99 in the core, 4-space indent, short comments that say *why*. Swift follows the surrounding style (dense,
   one-line handlers are normal here). Keep `CPCCore` free of AppKit/Foundation.
+- Formatting: `Sources/CPCApi/api.c`, `api_util.c`, `Sources/CPCServer/network.c`, `stdio.c` and `Sources/bluepixel-headless/main.c` are
+  formatted with clang-format 23.1.5 (`.clang-format`: 4 spaces, 120 columns, braces always); run it on those files after editing. `Sources/CPCCore`
+  keeps its dense style (short one-line handlers) and is never reformatted; neither is the vendored `jsmn.h`.
+- Warnings are errors in CI: `tools/lint.sh` (`.github/workflows/lint.yml`) builds every portable C source with `-Wall -Wextra -Wshadow -Werror`
+  at `-O0` and `-O2` and runs `clang-format --dry-run --Werror` on the formatted files. Fix the cause (rename, braces, cast); do not add pragmas or `-Wno-`.
 - Temporary test harnesses in the app (env-var hooks) must be removed before committing: `grep -n "DBG[A-Z0-9]*TEST\|DBGB[0-9]"`.
 - Commit messages: imperative summary, then a short paragraph of what and why.
 - `.dsk` files and WinAPE's own files (`WinApe.exe`, `CPC_Symbols.ttf`, the CHM) are not in the repo. CPC ROMs for the browser build are in `web/roms/`.

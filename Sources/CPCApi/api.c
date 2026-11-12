@@ -335,9 +335,9 @@ static char *dispatch_inner(CPCApiSession *s, const char *request, Parser *pp) {
         free(payload);
         free(b);
     } else if (!strcmp(m, "snapshot.save")) {
-        long version = api_num(pp, api_field(pp, a, "version"), 3);
+        long snap_version = api_num(pp, api_field(pp, a, "version"), 3);
         size_t n = 0;
-        uint8_t *b = cpc_snapshot_save(c, (int)version, 0, true, &n);
+        uint8_t *b = cpc_snapshot_save(c, (int)snap_version, 0, true, &n);
         if (!b) {
             err = "snapshot save failed";
         } else {
