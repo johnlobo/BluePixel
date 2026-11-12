@@ -12,6 +12,8 @@
 # "missing <rom>" message (the machine would run without firmware, which makes the result meaningless), on
 # a failure count other than "0 failure(s)", and for the exercisers on any "ERROR" or an incomplete run.
 # Full logs are in $BUILD_DIR/logs/<test>.log.
+# Progress goes to stderr while the tests run (one line per finished test, and every 15 s which exercisers are
+# still running); the summary goes to stdout at the end.
 set -u
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
@@ -38,6 +40,7 @@ done
 
 sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 die() { echo "error: $*" >&2; exit 1; }
+say() { printf '[%4ss] %s\n' "$SECONDS" "$*" >&2; }
 
 # ---- inputs: ROMs (checked against the hashes pinned in roms.json) and the fixture disc ----
 [ -f "$DISC" ] || die "missing fixture disc $DISC"
@@ -54,10 +57,11 @@ ZEXALL_SHA=6e2da55147a04f28d303d5da6a1e6b771557ac244653590a0f24a2d39c8537e8
 fetch_zex() {   # name, expected sha
     local f="$Z80_DIR/$1.com"
     if [ -f "$f" ] && [ "$(sha256 "$f")" = "$2" ]; then return 0; fi
+    say "fetching $1.com"
     mkdir -p "$Z80_DIR"
     local try
     for try in 1 2 3; do
-        curl -sfL --retry 2 -o "$f.part" "https://raw.githubusercontent.com/anotherlin/z80emu/master/testfiles/$1.com" \
+        curl -sfL --retry 2 --connect-timeout 15 --max-time 60 -o "$f.part" "https://raw.githubusercontent.com/anotherlin/z80emu/master/testfiles/$1.com" \
             && [ "$(sha256 "$f.part")" = "$2" ] && mv "$f.part" "$f" && return 0
         sleep 2
     done
@@ -69,6 +73,7 @@ fetch_zex() {   # name, expected sha
 mkdir -p "$BUILD_DIR/logs"
 rm -f "$BUILD_DIR"/logs/* "$BUILD_DIR/cpcrun"
 CPCRUN="$BUILD_DIR/cpcrun"
+say "building cpcrun ($CC $CFLAGS)"
 # CPCHost/rom_files.c needs the CPCApi dispatcher and cpcrun does not use it, so only host_files.c is built.
 "$CC" -std=gnu11 -D_DEFAULT_SOURCE $CFLAGS -DNDEBUG -pthread \
     -I"$ROOT/Sources/CPCCore/include" -I"$ROOT/Sources/CPCApi/include" -I"$ROOT/Sources/CPCHost/include" \
@@ -147,22 +152,44 @@ detail() {      # name kind: a short fact from the log for the summary line
 }
 
 # the exercisers are the long pole: run them in the background while the quick tests run in sequence
-PIDS=()
+result() {      # name kind: "PASS" or "FAIL: reason", from the finished test's log
+    local secs rc why
+    read -r secs rc <"$BUILD_DIR/logs/$1.rc" || { secs=0; rc=255; }
+    why="$(verdict "$1" "$2" "$rc")"
+    if [ -z "$why" ]; then echo "PASS (${secs}s)"; else echo "FAIL: $why"; fi
+}
+PIDS=(); BG=()
 for t in "${TESTS[@]}"; do
     IFS='|' read -r name kind cmd <<<"$t"
     selected "$name" || continue
     [ "$kind" = zex ] || continue
     # shellcheck disable=SC2086
-    run_one "$name" $cmd & PIDS+=($!)
+    run_one "$name" $cmd & PIDS+=($!); BG+=("$name")
 done
+[ ${#BG[@]} -eq 0 ] || say "started in the background (the slowest tests): ${BG[*]}"
 for t in "${TESTS[@]}"; do
     IFS='|' read -r name kind cmd <<<"$t"
     selected "$name" || continue
     [ "$kind" = zex ] && continue
     # shellcheck disable=SC2086
     run_one "$name" $cmd
+    say "$name: $(result "$name" "$kind")"
+done
+# wait for the exercisers, saying so every 15 s so a long wait is not a silent one (their logs are block-buffered,
+# so a count of finished groups read from here would lag and mislead)
+WAITED=0
+while :; do
+    alive=""
+    for name in ${BG[@]+"${BG[@]}"}; do
+        [ -f "$BUILD_DIR/logs/$name.rc" ] && continue
+        alive="$alive $name"
+    done
+    [ -n "$alive" ] || break
+    [ $((WAITED % 15)) -ne 0 ] || say "waiting for:$alive"
+    sleep 1; WAITED=$((WAITED + 1))
 done
 for p in ${PIDS[@]+"${PIDS[@]}"}; do wait "$p"; done
+for name in ${BG[@]+"${BG[@]}"}; do say "$name: $(result "$name" zex)"; done
 
 # ---- summary ----
 FAILED=0; COUNT=0

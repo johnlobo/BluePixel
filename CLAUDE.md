@@ -59,7 +59,7 @@ There is no XCTest suite. The core tests are `cpcrun` commands, and one script r
 repository material (ROMs from `web/roms`, the nave fixture disc, exercisers fetched and hash-checked into `tests/z80/`):
 
 ```bash
-tools/run-core-tests.sh                # builds build/core/cpcrun with cc (needs -lz), ~2 min, exit 1 on any failure
+tools/run-core-tests.sh                # builds build/core/cpcrun with cc (needs -lz), ~2 min, progress on stderr, exit 1 on any failure
 tools/run-core-tests.sh --skip-zexall  # or --only statetest ...; logs in build/core/logs/
 ```
 
