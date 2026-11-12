@@ -80,6 +80,13 @@ static void load_roms(CPC *c, const char *dir, CPCModel m) {
     if (m != CPC_MODEL_464) { snprintf(p, sizeof p, "%s/AMSDOS.ROM", dir); if ((b = slurp(p, &n))) { cpc_load_rom(c, 7, b, n); free(b); } }
 }
 
+/* True when `text` is somewhere in the 64 KB the Z80 sees (event-free read). */
+static bool ram_contains(CPC *c, const char *text) {
+    size_t n = strlen(text);
+    for (uint32_t a = 0; a + n <= 0x10000; a++) { size_t k = 0; while (k < n && cpc_peek(c, (uint16_t)(a + k)) == (uint8_t)text[k]) k++; if (k == n) return true; }
+    return false;
+}
+
 static int run_tapetest(const char *roms, const char *dir) {
     char wav[1024]; snprintf(wav, sizeof wav, "%s/tape.wav", dir);
     CPC *c = cpc_create(CPC_MODEL_464); load_roms(c, roms, CPC_MODEL_464); cpc_reset(c, true);
@@ -102,7 +109,10 @@ static int run_tapetest(const char *roms, const char *dir) {
     for (int i = 0; i < 100; i++) cpc_run_frame(c);
     char out[1024]; snprintf(out, sizeof out, "%s/tape.bmp", dir);
     write_bmp(out, cpc_frame(c), CPC_SCREEN_W, CPC_SCREEN_H);
-    cpc_destroy(c); return 0;
+    /* the second machine was only ever typed `load "t"` and `run`: the program text can only come from the recorded tape */
+    bool ok = ram_contains(c, "hello from tape");
+    printf("%s: the program recorded to tape is in RAM after loading it back\n", ok ? "ok" : "FAIL");
+    cpc_destroy(c); return ok ? 0 : 1;
 }
 
 static int run_snaptest(const char *roms, const char *dir) {
@@ -120,7 +130,10 @@ static int run_snaptest(const char *roms, const char *dir) {
     for (int i = 0; i < 200; i++) cpc_run_frame(c);
     char out[1024]; snprintf(out, sizeof out, "%s/snap.bmp", dir);
     write_bmp(out, cpc_frame(c), CPC_SCREEN_W, CPC_SCREEN_H);
-    cpc_destroy(c); return 0;
+    /* the restored machine was only ever typed `print a$`: the value of a$ can only come from the snapshot */
+    bool ok = ram_contains(c, "snap ok");
+    printf("%s: BASIC variable restored from the snapshot\n", ok ? "ok" : "FAIL");
+    cpc_destroy(c); return ok ? 0 : 1;
 }
 
 static uint8_t dis_peek(void *ctx, uint16_t a) { return ((uint8_t *)ctx)[a]; }
@@ -221,7 +234,10 @@ static int run_inttest(const char *roms) {
         if (c->z80.int_ack) { printf("INT at %llu (+%llu)\n", (unsigned long long)(c->cycles - f0), (unsigned long long)(c->cycles - last)); last = c->cycles; n++; }
     }
     printf("%d interrupts in 4 frames\n", n);
-    cpc_destroy(c); return 0;
+    cpc_destroy(c);
+    /* 6 interrupts per 52-line frame: a change in the gate array interrupt counter or the frame length shows here */
+    if (n != 24) { printf("FAIL: expected 24 interrupts in 4 frames\n"); return 1; }
+    return 0;
 }
 
 static int run_symtest(const char *path, const char *name) {
@@ -231,6 +247,33 @@ static int run_symtest(const char *path, const char *name) {
     const char *back = ok ? dbg_symbol_for_address(c->dbg, (uint16_t)v) : NULL;
     printf("%d symbols; %s = %s%04X; address -> %s\n", n, name, ok ? "" : "(missing) ", v & 0xFFFF, back ? back : "(none)");
     cpc_destroy(c); return ok ? 0 : 1;
+}
+
+/* ---- per-game parameters for the tests that need a disc that boots a game ----
+   Default is boop (the original development case); `nave` is the GlasnostFWK fixture in Tests/fixtures/nave.
+   The checks are identical for every game; only the things that are specific to a program are here:
+   the BASIC command, the keys of the scripted session, one routine that runs once per frame (code breakpoint,
+   log message, reverse continue), the instruction after it, and the RAM range where the game keeps changing data. */
+typedef struct {
+    const char *name, *run;                 /* name of the disc entry, BASIC command that starts it */
+    int keys[4], hold[4];                   /* keys pressed at frames 900, 1000, 1100, 1200 and for how many frames */
+    uint16_t frame_fn, frame_fn_next;       /* routine reached once per frame and the address of the next instruction */
+    const char *log_text;                   /* logpoint message used on frame_fn */
+    unsigned min_logs;                      /* logpoint lines expected in 50 frames: boop reaches frame_fn every frame, nave every 2nd */
+    uint16_t watch_lo, watch_hi;            /* RAM scanned for bytes to use as watch targets */
+} Game;
+static const Game GAMES[] = {
+    { "boop", "run\"boop\n", {CPCK_SPACE, CPCK_RETURN, CPCK_DOWN, CPCK_RETURN}, {5, 5, 4, 5},
+      0x6BB9, 0x6BB9 + 3, "scan A={A} HL={HL} frames={peek(#B8B4):d}", 40, 0x4000, 0xB000 },
+    /* nave: fwk_input_update (XOR A, 1 byte) runs once per game loop pass, every 2nd frame (measured: 25 passes in 50 frames); fwk_system_frame_count is at 0x2262; the game's
+       data (status, entities, input) lives in 0x1F00..0x2400; the keys are the cursor keys the game reads from the matrix */
+    { "nave", "run\"nave\n", {CPCK_RIGHT, CPCK_DOWN, CPCK_LEFT, CPCK_UP}, {30, 30, 30, 30},
+      0x1D45, 0x1D45 + 1, "input A={A} HL={HL} frames={peek(#2262):d}", 20, 0x1F00, 0x2400 },
+};
+static const Game *G = &GAMES[0];
+static int select_game(const char *name) {
+    for (size_t i = 0; i < sizeof GAMES / sizeof *GAMES; i++) if (!strcmp(GAMES[i].name, name)) { G = &GAMES[i]; return 1; }
+    fprintf(stderr, "unknown game '%s' (known: boop, nave)\n", name); return 0;
 }
 
 static int run_steptest(const char *roms, const char *disc) {
@@ -249,7 +292,7 @@ static int run_steptest(const char *roms, const char *disc) {
     c = cpc_create(CPC_MODEL_6128); load_roms(c, roms, CPC_MODEL_6128); cpc_reset(c, true);
     CPCDisc *dk = disc ? dsk_load_file(disc) : NULL; if (dk) fdc_insert(c->fdc, 0, dk);
     for (int i = 0; i < 100; i++) cpc_run_frame(c);
-    if (dk) { cpc_autotype(c, "run\"boop\n"); for (int i = 0; i < 700; i++) cpc_run_frame(c); }
+    if (dk) { cpc_autotype(c, G->run); for (int i = 0; i < 700; i++) cpc_run_frame(c); }
     d = dbg_attach(c);
     int stuck = 0, runs = 0;
     for (int i = 0; i < 300; i++) {
@@ -284,13 +327,13 @@ static int run_logtest(const char *roms, const char *disc) {
     CPC *c = cpc_create(CPC_MODEL_6128); load_roms(c, roms, CPC_MODEL_6128); cpc_reset(c, true);
     CPCDisc *dk = dsk_load_file(disc); fdc_insert(c->fdc, 0, dk);
     for (int i = 0; i < 100; i++) cpc_run_frame(c);
-    cpc_autotype(c, "run\"boop\n"); for (int i = 0; i < 700; i++) cpc_run_frame(c);
+    cpc_autotype(c, G->run); for (int i = 0; i < 700; i++) cpc_run_frame(c);
     Debugger *d = dbg_attach(c);
-    int i = dbg_add_code_bp(c, 0x6BB9);
-    dbg_set_log(c, i, "scan A={A} HL={HL} frames={peek(#B8B4):d}");
+    int i = dbg_add_code_bp(c, G->frame_fn);
+    dbg_set_log(c, i, G->log_text);
     for (int f = 0; f < 50; f++) cpc_run_frame(c);
     CHECK(!d->hit, "logpoint does not stop the machine");
-    CHECK(dbg_log_total(d) >= 40, "logpoint logged every frame");
+    CHECK(dbg_log_total(d) >= G->min_logs, "logpoint logged on every pass");
     printf("  %u lines, last: %s\n", dbg_log_total(d), dbg_log_line(d, dbg_log_total(d) - 1));
     dbg_set_log(c, i, "");
     for (int f = 0; f < 5 && !d->hit; f++) cpc_run_frame(c);
@@ -300,17 +343,15 @@ static int run_logtest(const char *roms, const char *disc) {
     return fails ? 1 : 0;
 }
 
-/* ---- shared scripted session used by the state and replay tests (boop: load, menu, start) ---- */
+/* ---- shared scripted session used by the state and replay tests (load, menu or first moves, play) ---- */
 static CPC *script_boot(const char *roms, const char *disc) {
     CPC *c = cpc_create(CPC_MODEL_6128); load_roms(c, roms, CPC_MODEL_6128); cpc_reset(c, true);
     CPCDisc *dk = dsk_load_file(disc); fdc_insert(c->fdc, 0, dk); return c;
 }
 static void script_frame(CPC *c, int i) {
-    if (i == 100) cpc_autotype(c, "run\"boop\n");
-    if (i == 900) cpc_key(c, CPCK_SPACE, true); if (i == 905) cpc_key(c, CPCK_SPACE, false);
-    if (i == 1000) cpc_key(c, CPCK_RETURN, true); if (i == 1005) cpc_key(c, CPCK_RETURN, false);
-    if (i == 1100) cpc_key(c, CPCK_DOWN, true); if (i == 1104) cpc_key(c, CPCK_DOWN, false);
-    if (i == 1200) cpc_key(c, CPCK_RETURN, true); if (i == 1205) cpc_key(c, CPCK_RETURN, false);
+    static const int at[4] = {900, 1000, 1100, 1200};
+    if (i == 100) cpc_autotype(c, G->run);
+    for (int k = 0; k < 4; k++) { if (i == at[k]) cpc_key(c, G->keys[k], true); if (i == at[k] + G->hold[k]) cpc_key(c, G->keys[k], false); }
     cpc_run_frame(c);
 }
 
@@ -483,8 +524,8 @@ static int run_rectest(const char *roms, const char *disc) {
       /* find bytes of game RAM that change often, to use as watch targets */
       cpc_player_seek(d, 900); static uint8_t snap[65536]; static int changes[65536];
       for (int f = 0; f < 80; f++) { for (int a = 0; a < 65536; a++) snap[a] = cpc_peek(d, (uint16_t)a); cpc_run_frame(d);
-                                     for (int a = 0x4000; a < 0xB000; a++) if (cpc_peek(d, (uint16_t)a) != snap[a]) changes[a]++; }
-      int targets[3], nt = 0; for (int a = 0x4000; a < 0xB000 && nt < 3; a += 1) if (changes[a] >= 3 && changes[a] <= 40) { targets[nt++] = a; a += 97; }
+                                     for (int a = G->watch_lo; a < G->watch_hi; a++) if (cpc_peek(d, (uint16_t)a) != snap[a]) changes[a]++; }
+      int targets[3], nt = 0; for (int a = G->watch_lo; a < G->watch_hi && nt < 3; a += 1) if (changes[a] >= 3 && changes[a] <= 40) { targets[nt++] = a; a += 97; }
       printf("  watch targets:"); for (int i = 0; i < nt; i++) printf(" %04X(%d changes)", targets[i], changes[targets[i]]); printf("\n");
       int badw = 0, usedw = 0;
       for (int i = 0; i < nt; i++) for (int mode = 0; mode < 2; mode++) for (int mid = 0; mid < 2; mid++) {
@@ -517,19 +558,19 @@ static int run_rectest(const char *roms, const char *disc) {
       CHECK(!badw && usedw >= 4, "reverse watch finds the latest write/read exactly where a forward watch says (and stops before the instruction)");
       /* breakpoints: user counters, pass counts and logpoints are left alone */
       { cpc_player_seek(d, 1000); for (int f = 0; f < 60; f++) cpc_run_frame(d);
-        int bp = dbg_add_code_bp(d, 0x6BB9); dd->bp[bp].pass_count = 7; dd->bp[bp].count = 3; dd->bp[bp].hits = 2;
-        int lg = dbg_add_code_bp(d, 0x6BB9 + 3); dbg_set_log(d, lg, "nope"); uint32_t logs0 = dbg_log_total(dd);
+        int bp = dbg_add_code_bp(d, G->frame_fn); dd->bp[bp].pass_count = 7; dd->bp[bp].count = 3; dd->bp[bp].hits = 2;
+        int lg = dbg_add_code_bp(d, G->frame_fn_next); dbg_set_log(d, lg, "nope"); uint32_t logs0 = dbg_log_total(dd);
         uint64_t X = d->cycles, hx = cpc_state_hash(d);
-        /* truth: where was PC at 6BB9 last? */
+        /* truth: where was PC at frame_fn last? */
         cpc_player_seek(d, 1000); dd->active = true; CPCReverseHit truth = {0};
-        int tb = dbg_add_code_bp(d, 0x6BB9); dd->bp[tb].block = NULL; dd->scanning = true;
+        int tb = dbg_add_code_bp(d, G->frame_fn); dd->bp[tb].block = NULL; dd->scanning = true;
         while (d->cycles < X) { uint64_t t = d->cycles; uint16_t pc = d->z80.pc; int n = cpc_step(d); if (dd->hit) { truth = (CPCReverseHit){true, t, pc, 1, tb}; } dd->hit = false; if (n == 0) dd->skip_once = true; }
         dd->scanning = false; dbg_remove_bp(d, tb); dbg_set_log(d, tb, ""); dd->skip_once = false;
         cpc_player_goto_cycles(d, X, true);
         CHECK(cpc_state_hash(d) == hx, "returned to the starting position");
         CPCReverseScan *sc = cpc_reverse_begin(d, CPC_REV_BREAKPOINTS, 0, 0); CPCReverseHit got = {0}; while (!cpc_reverse_slice(d, sc)) {}
         bool found = cpc_reverse_end(d, sc, true, &got);
-        CHECK(found && truth.found && got.cycles == truth.cycles && got.kind == 1 && d->z80.pc == 0x6BB9, "reverse continue finds the last time a code breakpoint was reached");
+        CHECK(found && truth.found && got.cycles == truth.cycles && got.kind == 1 && d->z80.pc == G->frame_fn, "reverse continue finds the last time a code breakpoint was reached");
         CHECK(dd->bp[bp].pass_count == 7 && dd->bp[bp].count == 3 && dd->bp[bp].hits == 2 && dbg_log_total(dd) == logs0, "the user's counters, pass counts and logpoints are untouched");
         /* nothing earlier: stays put */
         cpc_player_seek(d, 1000); for (int f = 0; f < 30; f++) cpc_run_frame(d); uint64_t hy = cpc_state_hash(d);
@@ -859,18 +900,19 @@ int main(int argc, char **argv) {
     if (argc >= 6 && !strcmp(argv[1], "dis")) return run_dis(argv[2], strtoul(argv[3], 0, 0), strtoul(argv[4], 0, 0), atoi(argv[5]));
     if (argc >= 3 && !strcmp(argv[1], "dbgtest")) return run_dbgtest(argv[2]);
     if (argc >= 3 && !strcmp(argv[1], "mftest")) return run_mftest(argv[2]);
-    if (argc >= 3 && !strcmp(argv[1], "steptest")) return run_steptest(argv[2], argc >= 4 ? argv[3] : NULL);
-    if (argc >= 4 && !strcmp(argv[1], "logtest")) return run_logtest(argv[2], argv[3]);
+    /* disc tests: cpcrun <test> <roms> <disc> [game]; steptest also runs without a disc */
+    if (argc >= 3 && !strcmp(argv[1], "steptest")) { if (argc >= 5 && !select_game(argv[4])) return 2; return run_steptest(argv[2], argc >= 4 ? argv[3] : NULL); }
+    if (argc >= 4 && !strcmp(argv[1], "logtest")) { if (argc >= 5 && !select_game(argv[4])) return 2; return run_logtest(argv[2], argv[3]); }
     if (argc >= 3 && !strcmp(argv[1], "tracetest")) return run_tracetest(argv[2]);
     if (argc >= 3 && !strcmp(argv[1], "sotest")) return run_sotest(argv[2]);
-    if (argc >= 4 && !strcmp(argv[1], "disctest")) return run_disctest(argv[2], argv[3]);
-    if (argc >= 4 && !strcmp(argv[1], "rectest")) return run_rectest(argv[2], argv[3]);
-    if (argc >= 4 && !strcmp(argv[1], "statetest")) return run_statetest(argv[2], argv[3]);
+    if (argc >= 4 && !strcmp(argv[1], "disctest")) { if (argc >= 5 && !select_game(argv[4])) return 2; return run_disctest(argv[2], argv[3]); }
+    if (argc >= 4 && !strcmp(argv[1], "rectest")) { if (argc >= 5 && !select_game(argv[4])) return 2; return run_rectest(argv[2], argv[3]); }
+    if (argc >= 4 && !strcmp(argv[1], "statetest")) { if (argc >= 5 && !select_game(argv[4])) return 2; return run_statetest(argv[2], argv[3]); }
     if (argc >= 3 && !strcmp(argv[1], "amxtest")) return run_amxtest(argv[2]);
     if (argc >= 4 && !strcmp(argv[1], "symtest")) return run_symtest(argv[2], argv[3]);
     if (argc >= 3 && !strcmp(argv[1], "inttest")) return run_inttest(argv[2]);
     if (argc >= 2 && !strcmp(argv[1], "boot")) return run_boot(argc - 2, argv + 2);
     if (argc >= 3 && !strcmp(argv[1], "zex")) return run_zex(argv[2]);
-    fprintf(stderr, "usage: cpcrun zex <file.com>\n");
+    fprintf(stderr, "usage: cpcrun zex <file.com> | <test> <roms> [disc [game]] (see tools/run-core-tests.sh)\n");
     return 1;
 }
