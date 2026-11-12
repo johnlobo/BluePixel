@@ -62,8 +62,8 @@ Las pruebas con clientes reales cubren headless y desktop, incluidos permisos, t
 **Actualización 2026-11-10, VPS física (Linux x86-64, 4 vCPU Haswell):** mediana **20,99x** (19,17x a 22,37x) con `-O2` por defecto, frente a
 11,53x antes de optimizar; 6.944 millones de instrucciones frente a 13.399 millones, mismo hash `be44e742783fb94c` en todas las muestras.
 Objetivo 50x **no alcanzado, y el propietario decidió dejarlo así (2026-11-10)**; se reabrirá si GlasnostFWK lo necesita. Todas las optimizaciones son exactas y están verificadas contra el ejecutable anterior
-(`Tests/headless/test_render_golden.py`, `Tests/headless/fuzz_equivalence.py`, `cpcrun`). Tablas, perfil y el motivo por el que ir más
-allá exige decidir sobre los buffers de fotograma del estado canónico: [perf/h2-profile.md](perf/h2-profile.md), sección "VPS real".
+(`Tests/headless/test_render_golden.py`, `Tests/headless/fuzz_equivalence.py`, `cpcrun`). Tablas y perfil: [perf/h2-profile.md](perf/h2-profile.md), sección "VPS real". El análisis de viabilidad del 2026-11-12 (mismo documento,
+"Análisis de viabilidad de 50x") mide que el bloqueo no son los buffers de fotograma: hacen falta cuatro cambios de núcleo juntos, y se recomienda no hacerlos todavía.
 Lo que sigue es el texto original de H2 (mediciones en QEMU), conservado como historial.
 
 **PARCIAL.** Profile first, then optimize only measured hot paths. On the H1 Linux VPS described in the supplied report, `-O2` took 5.1–5.6 s for 2,740 frames (9.8–10.6x); `-O3 -march=native` took 4.5–4.8 s (11.5–12.3x). These are third-party reference measurements, not measurements from this checkout.
