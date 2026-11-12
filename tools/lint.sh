@@ -3,7 +3,7 @@
 #  1. every portable C source compiles with -Wall -Wextra -Wshadow -Werror (at -O0 and at the -O2 build-headless uses;
 #     some diagnostics only exist with optimisation on),
 #  2. the files listed in FORMATTED are exactly what clang-format (pinned: 23.1.5) would write.
-# Overridable: CC, CLANG_FORMAT. Sources/cpcrun is not part of it.
+# Overridable: CC, CLANG_FORMAT.
 set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
@@ -15,7 +15,7 @@ FORMATTED="Sources/CPCApi/api.c Sources/CPCApi/api_util.c Sources/CPCServer/netw
 
 fail=0
 for opt in -O0 -O2; do
-    for f in Sources/CPCCore/*.c Sources/CPCApi/*.c Sources/CPCServer/*.c Sources/CPCHost/*.c Sources/bluepixel-headless/main.c; do
+    for f in Sources/CPCCore/*.c Sources/CPCApi/*.c Sources/CPCServer/*.c Sources/CPCHost/*.c Sources/bluepixel-headless/main.c Sources/cpcrun/main.c; do
         if ! "$CC" -std=gnu11 -D_DEFAULT_SOURCE $opt -DNDEBUG -pthread \
             -ISources/CPCCore/include -ISources/CPCApi/include -ISources/CPCApi \
             -ISources/CPCServer/include -ISources/CPCHost/include \
