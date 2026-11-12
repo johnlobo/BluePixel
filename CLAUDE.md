@@ -193,7 +193,7 @@ controls blank (tab strips, segmented controls); use `screencapture` when the re
 
 ## Not done yet
 
-Headless (status table in `docs/HEADLESS.md`): the 50x realtime target is not met (about 21x on the 4 vCPU VPS after the exact optimizations in `docs/perf/h2-profile.md`; going further needs a decision about the frame buffers in the canonical state; `perf` is blocked
+Headless (status table in `docs/HEADLESS.md`): the 50x realtime target is not met (about 21x on the 4 vCPU VPS after the exact optimizations in `docs/perf/h2-profile.md`; 50x was analysed on 2026-11-12 and judged feasible but not worth it yet: it needs an event-driven PSG and CRTC, a lazy span painter, a debugger-free run loop and a flat-switch Z80 together, see "Análisis de viabilidad de 50x" there; `perf` is blocked
 in the container, use callgrind); CPCApi 1.4 and the browser JSON-RPC migration are complete, with native/WASM state conformance
 passing locally. Chrome game loading, stepping and breakpoints are verified; the WASM adapter has a functional test in CI; desktop control and Unix/WebSocket transports are implemented (off by default), with shutdown cancellation and owner-thread dispatch;
 `boot_ready.configure` takes an explicit `address` or a `file` whose AMSDOS header gives the entry address (API 1.4); Linux/macOS/WASM trace comparison and all-direction state handoff are in `.github/workflows/portable.yml` / `Tests/wasm/portable.mjs`; GlasnostFWK has a stdio adapter and its own freshly built nave CI smoke (see steps 18/19 in `docs/HEADLESS.md`); check the latest runs. For VPS performance work, follow `docs/HANDOFF-VPS-H2.md` and `tools/measure-headless.py`.
