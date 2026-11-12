@@ -1,0 +1,29 @@
+# Applies to the hand-formatted transport and API files listed in CLAUDE.md (Conventions).
+# Sources/CPCCore deliberately keeps its dense style and is NOT run through clang-format;
+# the vendored Sources/CPCApi/jsmn.h is not formatted either (the file list is in CLAUDE.md and lint.yml).
+# Pinned tool version: clang-format 23.1.5 (pip install clang-format==23.1.5), same as .github/workflows/lint.yml.
+Language: Cpp
+BasedOnStyle: LLVM
+Standard: c++11
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 120
+BreakBeforeBraces: Attach
+PointerAlignment: Right
+ContinuationIndentWidth: 4
+AccessModifierOffset: -4
+IndentCaseLabels: true
+SortIncludes: Never
+ReflowComments: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AlignAfterOpenBracket: Align
+BinPackArguments: true
+BinPackParameters: true
+InsertBraces: true
+MaxEmptyLinesToKeep: 1
+SeparateDefinitionBlocks: Always
