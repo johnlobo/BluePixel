@@ -49,10 +49,11 @@ select { width: 100%; border: 1px solid #354b72; border-radius: 8px; background:
 footer { padding: 18px 4px; font-size: .85rem; }
 @media (max-width: 600px) { .shell { width: min(100% - 20px, 1000px); margin: 18px auto; } .machine, .files { padding: 12px; } #status { width: 100%; margin: 2px 0 0; } }
 
-/* ?embed=1 (iframe): the screen alone, letterboxed to the frame at 4:3. */
+/* ?embed=1 (iframe): the screen alone, letterboxed to the frame at 4:3. !important beats the inline
+   max-width that Settings → Display → Screen Size sets, which would crop the screen in a wide frame. */
 .embed body { min-width: 0; background: #000; overflow: hidden; }
 .embed .shell { width: 100%; margin: 0; }
 .embed header, .embed footer { display: none; }
 .embed .machine { padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
-.embed .screen-wrap { display: grid; place-items: center; width: 100vw; height: 100vh; max-width: none; aspect-ratio: auto; border-radius: 0; box-shadow: none; }
+.embed .screen-wrap { display: grid; place-items: center; width: 100vw; height: 100vh; max-width: none !important; aspect-ratio: auto; border-radius: 0; box-shadow: none; }
 .embed .screen-wrap canvas { grid-area: 1 / 1; width: min(100vw, 133.333vh); height: min(100vh, 75vw); }
