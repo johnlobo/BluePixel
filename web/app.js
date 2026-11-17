@@ -405,6 +405,14 @@ async function startFromUrl() {
     if (summary.symbols) parts.push(`${summary.symbols} symbols`);
     if (summary.typed) parts.push(`typed ${params.run}`);
     status.textContent = problems.length ? `URL start-up: ${problems.join("; ")}` : `URL start-up: ${parts.join(", ")}.`;
+    if (problems.length) {
+      // #status is off screen; show what failed over the CPC screen for a few seconds.
+      console.warn("URL start-up:", problems.join("; "));
+      hint.textContent = problems.join(" · ");
+      hint.hidden = false;
+      clearHintAfterFrame = false;   // otherwise the next drawn frame hides it
+      setTimeout(() => { hint.hidden = true; }, 8000);
+    }
   } catch (error) {
     status.textContent = `URL start-up failed: ${error.message}`;
   } finally {
