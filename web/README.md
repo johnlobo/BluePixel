@@ -37,6 +37,18 @@ tools/build-web.sh
 
 The web UI is intentionally separate from the macOS AppKit frontend. Session recording/replay, cartridges, and Plus-specific configuration are not part of this browser version.
 
+## Find Graphics
+
+En el depurador (F7), el botón **Graphics…** abre una ventana flotante que muestra la memoria como gráficos del CPC: modo 0, 1 o 2, lineal o con el entrelazado de pantalla (8 líneas), con la paleta actual o en grises.
+
+- **Dirección:** hex (`C000`, `#C000`), un símbolo, un registro (`hl`, `de`…) o una suma con `+`/`-` (`spr_jugador+10`; los números son hexadecimales). Los símbolos vienen de **Load Symbols…** o de `?sym=`.
+- **Hoja de fotogramas:** *Frames*, *Columns* y *Stride* dibujan varios fotogramas del mismo tamaño; el stride por defecto es ancho × alto.
+- **Recorrer la memoria:** rueda o ↑↓ (una fila), ←→ (un byte), RePág/AvPág (un fotograma; con ⇧, toda la hoja).
+- **Ratón:** muestra fotograma, posición, dirección, byte, pluma y símbolo del píxel.
+- **Live** refresca 10 veces por segundo; **Export PNG…** guarda al zoom elegido; **Copy** lo copia al portapapeles; **Mark as data** marca el rango como `DB` en el desensamblado.
+
+La lógica está en `graphics-viewer.js` y la prueba en `Tests/wasm/test_graphics_viewer.mjs`.
+
 ## Carga por URL
 
 La página acepta parámetros para arrancar un juego sin pasar por los menús:

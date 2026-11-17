@@ -35,6 +35,8 @@ jobs:
         run: node Tests/wasm/test_web_client.mjs
       - name: Start the web build from URL parameters (disc, symbols, run)
         run: node Tests/wasm/test_autoload.mjs
+      - name: Find Graphics in the web debugger (decoding, addresses, palette)
+        run: node Tests/wasm/test_graphics_viewer.mjs
       - name: Compare native and WebAssembly with the pinned fixture ROMs
         env:
           BLUEPIXEL_ROM_DIR: ${{ github.workspace }}/web/roms

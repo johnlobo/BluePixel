@@ -162,6 +162,11 @@ export async function createBluePixelApi(createModule) {
     debugSymbolName(index, ptr, size) { const name = rpc("debug.symbols.list").symbols[index]?.name || ""; wasm.stringToUTF8(name, ptr, size); return name.length; },
     debugResetTstates() { return rpc("run.reset_tstates"); },
     debugTstates(ptr, size) { const value = String(reg().nops * 4); wasm.stringToUTF8(value, ptr, size); return value.length; },
+    // Current screen mode and the 16 pen colours (0xRRGGBB), read from the screen-capture metadata.
+    debugPalette() {
+      const meta = rpc("screen.capture", { metadata: true }).metadata;
+      return { mode: meta.screen_mode, colors: meta.palette_argb.slice(0, 16).map(value => parseInt(value, 16) & 0xFFFFFF) };
+    },
     debugMarkData(start, end) { return rpc("debug.data.mark", { start, end }); },
     debugClearData(address) { return rpc("debug.data.clear", { address }); },
   });

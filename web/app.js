@@ -603,6 +603,7 @@ function pauseForDebugger() {
   drawFrame();
 }
 
+let paletteCache = null;
 window.bluePixelDebugger = {
   getState: getDebuggerState,
   getInstructions: getDebuggerInstructions,
@@ -654,6 +655,11 @@ window.bluePixelDebugger = {
     core.debugResetTstates();
     debuggerMessage = "T-state counter reset.";
     status.textContent = debuggerMessage;
+  },
+  getPalette() {
+    const now = performance.now();   // screen.capture renders a frame: reuse the answer between the viewer's refreshes
+    if (!paletteCache || now - paletteCache.time > 250) paletteCache = { time: now, value: core.debugPalette() };
+    return paletteCache.value;
   },
   markData(start, end) { core.debugMarkData(Number(start) & 0xFFFF, Number(end) & 0xFFFF); },
   clearData(address) { core.debugClearData(Number(address) & 0xFFFF); },

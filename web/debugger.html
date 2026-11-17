@@ -21,6 +21,7 @@
       <button id="load-symbols" type="button">Load Symbols…</button>
       <button id="show-symbols" type="button">Symbols…</button>
       <button id="clear-symbols" type="button">Clear Symbols</button>
+      <button id="show-graphics" type="button">Graphics…</button>
       <input id="symbol-file" type="file" accept=".sym,.noi,.map,.txt" hidden>
       <span id="symbol-status"></span>
     </nav>
@@ -100,6 +101,32 @@
     <input id="symbol-filter" type="search" placeholder="Search symbols…" autocomplete="off">
     <p id="symbol-count" class="symbol-count"></p>
     <div id="symbol-list" class="symbol-list"></div>
+  </dialog>
+  <dialog id="graphics-dialog" class="graphics-dialog" aria-labelledby="graphics-title">
+    <div class="dialog-header">
+      <h2 id="graphics-title">Find Graphics</h2>
+      <button id="close-graphics" type="button">Close</button>
+    </div>
+    <form id="graphics-form" class="graphics-controls">
+      <label>Address <input id="gfx-address" value="C000" size="12" autocomplete="off" placeholder="C000, symbol, hl, sym+4"></label>
+      <label>Mode <select id="gfx-mode"><option value="0">Mode 0</option><option value="1" selected>Mode 1</option><option value="2">Mode 2</option></select></label>
+      <label>Width (bytes) <input id="gfx-width" type="number" min="1" max="128" value="16"></label>
+      <label>Height <input id="gfx-height" type="number" min="1" max="512" value="64"></label>
+      <label>Frames <input id="gfx-frames" type="number" min="1" max="256" value="1"></label>
+      <label>Columns <input id="gfx-cols" type="number" min="1" max="64" value="4"></label>
+      <label>Stride (bytes) <input id="gfx-stride" type="number" min="0" placeholder="auto"></label>
+      <label>Encoding <select id="gfx-encoding"><option value="linear">Linear</option><option value="screen">CPC screen (8 lines)</option></select></label>
+      <label>Zoom <select id="gfx-zoom"><option>1</option><option>2</option><option selected>4</option><option>8</option></select></label>
+      <label>Colours <select id="gfx-colours"><option value="current">Current palette</option><option value="grey">Greyscale</option></select></label>
+      <label class="check"><input id="gfx-live" type="checkbox"> Live</label>
+      <button type="submit">Refresh</button>
+      <button id="gfx-copy" type="button">Copy</button>
+      <button id="gfx-export" type="button">Export PNG…</button>
+      <button id="gfx-mark" type="button">Mark as data</button>
+    </form>
+    <div id="gfx-view" class="graphics-view" tabindex="0" aria-label="Graphics: mouse wheel and arrow keys move through memory"><canvas id="gfx-canvas"></canvas></div>
+    <p id="gfx-info" class="graphics-info"></p>
+    <p class="condition-help">Wheel or ↑↓ move one row, ←→ one byte, PgUp/PgDn one frame (⇧ for the whole sheet). The address accepts hex, a symbol, a register (HL…) and + or − (numbers are hex: sprite+10 is sprite plus 16).</p>
   </dialog>
   <script type="module" src="debugger-window.js"></script>
 </body>

@@ -1,3 +1,4 @@
+import { parseAddress, renderGraphics, pixelInfo, lastAddress, greyPalette } from "./graphics-viewer.js";
 const status = document.querySelector("#debugger-status");
 const registers = document.querySelector("#registers");
 const disassembly = document.querySelector("#disassembly");
@@ -421,6 +422,107 @@ document.querySelector("#memory-breakpoint-form").addEventListener("submit", eve
     renderBreakpoints(bridge().getState().breakpoints);
   } else status.textContent = "Could not add memory breakpoint; the breakpoint limit may be reached.";
 });
+
+// ---- Find Graphics ----
+const gfxDialog = document.querySelector("#graphics-dialog");
+const gfxCanvas = document.querySelector("#gfx-canvas");
+const gfxView = document.querySelector("#gfx-view");
+const gfxInfo = document.querySelector("#gfx-info");
+const gfxField = id => document.querySelector(`#gfx-${id}`);
+let gfxPicture = null, gfxAddress = 0xC000;
+
+function gfxContext() {
+  const symbolMap = new Map(symbols.map(symbol => [symbol.name, symbol.address]));
+  let registers = null;   // read only when the address actually names a register
+  return { symbols: symbolMap, registers: new Proxy({}, { get: (_, name) => (registers ??= bridge()?.getState().registers || {})[name] }) };
+}
+function gfxParams() {
+  return {
+    address: gfxAddress, mode: gfxField("mode").value, widthBytes: gfxField("width").value, height: gfxField("height").value,
+    frames: gfxField("frames").value, cols: gfxField("cols").value, stride: gfxField("stride").value,
+    interleaved: gfxField("encoding").value === "screen",
+  };
+}
+function gfxInfoText() {
+  const layout = gfxPicture?.layout;
+  return layout ? `Address: ${hex(layout.address).slice(1)}   ${layout.w} x ${layout.height} pixels per frame, ${layout.frames} frame${layout.frames === 1 ? "" : "s"}` : "";
+}
+function renderGfx() {
+  const api = bridge();
+  if (!api || !gfxDialog.open) return;
+  const typed = parseAddress(gfxField("address").value, gfxContext());
+  if (typed === null) { gfxInfo.textContent = "Unknown address: use hex, a symbol, a register or symbol+offset."; return; }
+  gfxAddress = typed;
+  let palette;
+  try { palette = gfxField("colours").value === "grey" ? greyPalette(Number(gfxField("mode").value)) : api.getPalette().colors; }
+  catch (error) { gfxInfo.textContent = `Could not read the palette: ${error.message}`; return; }
+  try { gfxPicture = renderGraphics(gfxParams(), (start, count) => api.readMemory(start, count), palette); }
+  catch (error) { gfxInfo.textContent = error.message; return; }
+  const { layout, rgba } = gfxPicture, zoom = Number(gfxField("zoom").value);
+  if (gfxCanvas.width !== layout.width || gfxCanvas.height !== layout.imageHeight) { gfxCanvas.width = layout.width; gfxCanvas.height = layout.imageHeight; }
+  gfxCanvas.style.width = `${layout.width * zoom}px`; gfxCanvas.style.height = `${layout.imageHeight * zoom}px`;
+  gfxCanvas.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer), layout.width, layout.imageHeight), 0, 0);
+  if (!gfxCanvas.matches(":hover")) gfxInfo.textContent = gfxInfoText();
+}
+function gfxMove(delta) {
+  gfxAddress = (gfxAddress + delta + 0x10000) & 0xFFFF;
+  gfxField("address").value = gfxAddress.toString(16).toUpperCase().padStart(4, "0");
+  renderGfx();
+}
+document.querySelector("#show-graphics").addEventListener("click", () => { if (!gfxDialog.open) gfxDialog.show(); renderGfx(); gfxView.focus(); });
+document.querySelector("#close-graphics").addEventListener("click", () => gfxDialog.close());
+document.querySelector("#graphics-form").addEventListener("submit", event => { event.preventDefault(); renderGfx(); });
+for (const id of ["mode", "width", "height", "frames", "cols", "stride", "encoding", "zoom", "colours"]) gfxField(id).addEventListener("change", renderGfx);
+gfxView.addEventListener("wheel", event => {
+  event.preventDefault();
+  const rows = Math.sign(event.deltaY) * Math.max(1, Math.round(Math.abs(event.deltaY) / (event.deltaMode === 0 ? 40 : 1)));
+  gfxMove(rows * (gfxPicture?.layout.widthBytes ?? 1));
+}, { passive: false });
+gfxView.addEventListener("keydown", event => {
+  const layout = gfxPicture?.layout; if (!layout) return;
+  const page = layout.widthBytes * layout.height * (event.shiftKey ? layout.frames : 1);
+  const moves = { ArrowUp: -layout.widthBytes, ArrowDown: layout.widthBytes, ArrowLeft: -1, ArrowRight: 1, PageUp: -page, PageDown: page };
+  if (event.key in moves) { event.preventDefault(); gfxMove(moves[event.key]); }
+});
+gfxCanvas.addEventListener("mousemove", event => {
+  if (!gfxPicture) return;
+  const rect = gfxCanvas.getBoundingClientRect(), zoom = Number(gfxField("zoom").value);
+  const info = pixelInfo(gfxPicture, (event.clientX - rect.left) / zoom, (event.clientY - rect.top) / zoom);
+  if (!info) { gfxInfo.textContent = gfxInfoText(); return; }
+  const value = bridge()?.readMemory(info.address, 1)[0] ?? 0;
+  const names = symbolsAtAddress.get(info.address);
+  gfxInfo.textContent = `Frame ${info.frame}  x=${info.x} y=${info.y}   ${hex(info.address).slice(1)} = ${value.toString(16).toUpperCase().padStart(2, "0")}   pen ${info.pen}${names ? "   " + names.join(", ") : ""}`;
+});
+gfxCanvas.addEventListener("mouseleave", () => { gfxInfo.textContent = gfxInfoText(); });
+function gfxPngCanvas() {
+  const zoom = Number(gfxField("zoom").value), out = document.createElement("canvas");
+  out.width = gfxCanvas.width * zoom; out.height = gfxCanvas.height * zoom;
+  const context = out.getContext("2d"); context.imageSmoothingEnabled = false;
+  context.drawImage(gfxCanvas, 0, 0, out.width, out.height);
+  return out;
+}
+document.querySelector("#gfx-export").addEventListener("click", () => {
+  if (!gfxPicture) return;
+  gfxPngCanvas().toBlob(blob => {
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob); link.download = `graphics_${gfxAddress.toString(16).toUpperCase().padStart(4, "0")}.png`;
+    link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  }, "image/png");
+});
+document.querySelector("#gfx-copy").addEventListener("click", () => {
+  if (!gfxPicture || !navigator.clipboard?.write) { status.textContent = "This browser cannot copy images; use Export PNG."; return; }
+  gfxPngCanvas().toBlob(blob => navigator.clipboard.write([new ClipboardItem({ "image/png": blob })])
+    .then(() => { status.textContent = "Image copied."; }, error => { status.textContent = `Could not copy the image: ${error.message}`; }), "image/png");
+});
+document.querySelector("#gfx-mark").addEventListener("click", () => {
+  if (!gfxPicture) return;
+  const start = gfxPicture.layout.address, end = lastAddress(gfxPicture.layout);
+  if (end < start) { status.textContent = "The range wraps past FFFF; mark it in two parts."; return; }
+  bridge()?.markData(start, end);
+  status.textContent = `Marked ${hex(start)}–${hex(end)} as data.`;
+  disassemblyRenderStart = -1; renderDisassembly(disassemblyStart ?? start, Number(bridge()?.getState().pc) & 0xFFFF);
+});
+setInterval(() => { if (gfxDialog.open && gfxField("live").checked) renderGfx(); }, 100);
 
 window.addEventListener("beforeunload", () => bridge()?.windowClosed());
 refreshSymbols();
