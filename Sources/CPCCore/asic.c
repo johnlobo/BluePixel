@@ -16,6 +16,8 @@ static void apply_monitor(CPC *c, uint32_t *rgb) {
     *rgb = 0xFF000000u | (c->cfg.monitor == CPC_MONITOR_GREEN ? ((l / 4) << 16 | l << 8 | l / 4) : (l << 16 | l << 8 | l));
 }
 
+const uint8_t *asic_register_page(const CPC *c) { return c->asic.ram; }
+
 /* Recomputes display colours after the monitor or linear palette option changes. */
 void asic_refresh_palette(CPC *c) {
     CPCAsic *a = &c->asic;

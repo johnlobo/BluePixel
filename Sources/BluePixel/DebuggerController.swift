@@ -15,6 +15,7 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
     let emu: Emulator
     let model: DebugModel
     let disasm = DisasmView(), memory = MemoryView()
+    private var asicWindow: AsicController?
     private var regFields: [Reg: NSTextField] = [:]
     private let flagsField = NSTextField(string: "00000000")
     private let tLabel = NSTextField(string: "0")
@@ -483,6 +484,7 @@ final class DebuggerController: NSWindowController, NSWindowDelegate {
 
     @objc func showBreakpoints(_ s: Any?) { if breakpointsWindow == nil { breakpointsWindow = BreakpointsController(emu: emu, debugger: self) }; breakpointsWindow?.show() }
     @objc func showDataAreas(_ s: Any?) { if dataAreasWindow == nil { dataAreasWindow = DataAreasController(emu: emu, debugger: self) }; dataAreasWindow?.show() }
+    @objc func showAsic(_ s: Any?) { if asicWindow == nil { asicWindow = AsicController(emu: emu) }; asicWindow?.show() }
     @objc func showTimers(_ s: Any?) { if timersWindow == nil { timersWindow = TimersController(emu: emu) }; timersWindow?.show() }
     @objc func showGraphics(_ s: Any?) { if graphicsWindow == nil { graphicsWindow = GraphicsController(model: model) }; graphicsWindow?.show() }
     @objc func showChipRegisters(_ s: Any?) { if registersWindow == nil { registersWindow = RegistersController(emu: emu) }; registersWindow?.show() }

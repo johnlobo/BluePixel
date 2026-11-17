@@ -255,6 +255,7 @@ void cpc_render_vram(CPC *c, uint32_t *out);
 /* Palette intensity (0..15) to 8-bit, honouring the linear palette option. */
 uint8_t cpc_level8(const CPC *c, int intensity);
 void asic_refresh_palette(CPC *c);
+const uint8_t *asic_register_page(const CPC *c);   /* 16 KB ASIC page: sprite pixels at 0, attributes at 0x2000 (too large for Swift to import as a field) */
 /* AMX mouse: report relative movement (x right, y down) and button state. */
 void cpc_amx_mouse(CPC *c, int dx, int dy, uint8_t buttons);
 /* Multiface II: load its 8K ROM (NULL removes it) and press the Stop button. */

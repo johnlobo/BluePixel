@@ -349,6 +349,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     @objc func showRegisters(_ s: Any?) { let d = ensureDebugger(); d.showChipRegisters(s) }
     @objc func showBreakpoints(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showBreakpoints(s) }
     @objc func showDataAreas(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showDataAreas(s) }
+    @objc func showAsic(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showAsic(s) }
     @objc func showTimers(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showTimers(s) }
     @objc func showGraphics(_ s: Any?) { let d = ensureDebugger(); d.show(); d.showGraphics(s) }
     @objc func showAssembler(_ s: Any?) { todo(s) }
@@ -471,7 +472,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             item("Run", #selector(debugRun(_:)), fkey(9)), item("Pause", #selector(debugPause(_:)), fkey(7)), item("Step Into", #selector(debugStep(_:)), fkey(7), shift), item("Step Over", #selector(debugStepOver(_:)), fkey(8)), item("Step Out", #selector(debugStepOut(_:)), fkey(8), shift),
             item("Step Scanline", #selector(debugStepScanline(_:)), fkey(8), .option), item("Step Frame", #selector(debugStepFrame(_:)), fkey(8), [.option, shift]), item("Run to Cursor", #selector(debugRunToCursor(_:)), fkey(4)), item("Find Again", #selector(debugFindAgain(_:)), fkey(3)),
             item("Registers", #selector(showRegisters(_:))), item("Breakpoints", #selector(showBreakpoints(_:))),
-            item("Data Areas", #selector(showDataAreas(_:))), item("Timers", #selector(showTimers(_:))), item("Find Graphics", #selector(showGraphics(_:))),
+            item("Data Areas", #selector(showDataAreas(_:))), item("Timers", #selector(showTimers(_:))), item("ASIC Sprites…", #selector(showAsic(_:))), item("Find Graphics", #selector(showGraphics(_:))),
             .separator(),
             item("Reload Disc & Symbols", #selector(reloadDiscAndSymbols(_:)), "r", .command),
             .separator(),

@@ -367,7 +367,8 @@
   <tr><td>Data Areas</td><td>Debug → Data Areas, botón de la lista</td><td>Zonas marcadas como datos (<code>DB</code>/<code>DW</code>) en el desensamblado.</td></tr>
   <tr><td>Timers</td><td>Debug → Timers, botón del cronómetro</td><td>Tiempos medidos con <code>timer_start(n)</code> / <code>timer_stop(n)</code> en condiciones de breakpoints.</td></tr>
   <tr><td>Registers</td><td>Debug → Registers, botón del chip</td><td>Registros de Gate Array, PSG, CRTC (VCC, VLC, HCC…) y ASIC del Plus.</td></tr>
-  <tr><td>Find Graphics</td><td>Debug → Find Graphics, botón de la imagen</td><td>Ver y editar memoria como gráficos en modo 0, 1 o 2.</td></tr>
+  <tr><td>ASIC Sprites</td><td>Debug → ASIC Sprites…</td><td>Solo CPC+: los 16 sprites hardware (píxeles, posición, ampliación; los ocultos salen atenuados), las paletas de plumas y de sprites en formato <code>#0GRB</code> y los registros del ASIC (PRI, SPLT, SSA, SSCR, IVR, DMA). Se refresca mientras está abierta. Con el ASIC bloqueado los sprites no se dibujan en pantalla.</td></tr>
+  <tr><td>Find Graphics</td><td>Debug → Find Graphics, botón de la imagen</td><td>Ver la memoria como gráficos del CPC (modo 0, 1 o 2; lineal o con el entrelazado de pantalla). La dirección admite hex, un símbolo o una expresión (<code>hl</code>, <code>spr_jugador+16</code>). La rueda y las flechas recorren la memoria (⇧ con PgUp/PgDn salta un bloque entero de fotogramas). <em>Frames</em>, <em>Columns</em> y <em>Stride</em> dibujan una hoja con varios fotogramas del mismo tamaño. Al pasar el ratón se ve fotograma, posición, dirección, byte y pluma del píxel. <em>Live</em> refresca mientras corre la emulación, <em>Colours</em> alterna entre la paleta actual y una escala de grises, y <em>Export PNG…</em> guarda la imagen al zoom elegido.</td></tr>
   <tr><td>Log</td><td>Debug → Log…, botón de las líneas</td><td>Salida de los logpoints.</td></tr>
 </table>
 </div>
