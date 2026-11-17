@@ -28,7 +28,6 @@ let soundEnabled = true;
 let menuTipTimer;
 let debuggerWindow = null;
 const menuTip = document.querySelector("#menu-tip");
-let touchControlsEnabled = matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
 const joystickSources = new Map();
 function readPreference(key, fallback) {
   try { return localStorage.getItem(`bluepixel-${key}`) ?? fallback; }
@@ -44,6 +43,16 @@ let displayWidth = Number(readPreference("screen-width", "720"));
 if (![540, 720, 960].includes(displayWidth)) displayWidth = 720;
 let emulationSpeed = Number(readPreference("speed", "1"));
 if (![0.5, 1, 2, 5].includes(emulationSpeed)) emulationSpeed = 1;
+// Touch joystick: on by default only where touch is the main input (phones, tablets). A laptop with a
+// touch screen or a precision touchpad reports maxTouchPoints > 0 but still has a mouse, so that is not
+// enough. The user's choice in Settings → Controls is remembered.
+const touchPreference = readPreference("touch", "");
+let touchControlsEnabled = touchPreference === "1" ? true : touchPreference === "0" ? false
+  : matchMedia("(hover: none) and (pointer: coarse)").matches;
+const VOLUME_LEVELS = [0.25, 0.5, 0.75, 1];
+let volume = Number(readPreference("volume", "1"));
+if (!VOLUME_LEVELS.includes(volume)) volume = 1;
+let audioGain;
 
 function closeMenu() {
   menuOpen = false;
@@ -126,9 +135,10 @@ function menuGroups() {
       menuBranch("Sound", [
         menuItem(`Sound On${soundEnabled ? "  ✓" : ""}`, () => setSoundEnabled(true)),
         menuItem(`Sound Off${soundEnabled ? "" : "  ✓"}`, () => setSoundEnabled(false)),
+        menuBranch("Volume", VOLUME_LEVELS.map(level => menuItem(`${level * 100}%${volume === level ? "  ✓" : ""}`, () => setVolume(level)))),
       ]),
       menuBranch("Controls", [
-        menuItem(`Touch Joystick ${touchControlsEnabled ? "On  ✓" : "Off"}`, () => setTouchControlsEnabled(!touchControlsEnabled)),
+        menuItem(`Touch Joystick ${touchControlsEnabled ? "On  ✓" : "Off"}`, () => { setTouchControlsEnabled(!touchControlsEnabled); writePreference("touch", touchControlsEnabled ? 1 : 0); }),
         menuItem(`Gamepad: ${navigator.getGamepads?.().some(Boolean) ? "Connected" : "Not connected"}`, () => {
           status.textContent = navigator.getGamepads?.().some(Boolean)
             ? "Gamepad connected. Use the D-pad or left stick; A/B are fire buttons."
@@ -982,7 +992,10 @@ function initializeAudioGraph() {
       right[i] = interleaved[i * 2 + 1];
     }
   };
-  audioNode.connect(audioContext.destination);
+  audioGain ??= audioContext.createGain();
+  audioGain.gain.value = volume;
+  audioNode.connect(audioGain);
+  audioGain.connect(audioContext.destination);
   audioConnected = true;
   soundButton.textContent = soundEnabled ? "Sound On" : "Sound Off";
 }
@@ -1005,6 +1018,14 @@ async function setSoundEnabled(enabled) {
   if (enabled) await resumeAudio();
   else if (audioContext?.state === "running") await audioContext.suspend();
   status.textContent = soundEnabled ? "Sound is on." : "Sound is off.";
+  if (menuOpen) drawFrame();
+}
+
+function setVolume(level) {
+  volume = level;
+  if (audioGain) audioGain.gain.setTargetAtTime(level, audioContext.currentTime, 0.02);   // no click
+  writePreference("volume", level);
+  status.textContent = `Volume ${level * 100}%.`;
   if (menuOpen) drawFrame();
 }
 
