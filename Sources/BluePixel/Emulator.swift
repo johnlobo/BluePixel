@@ -307,6 +307,15 @@ final class Emulator {
     func key(_ k: Int, down: Bool) { lock.lock(); cpc_key(cpc, Int32(k), down); lock.unlock() }
     func joystick(_ bit: Int, down: Bool) { lock.lock(); cpc_joystick(cpc, Int32(bit), down); lock.unlock() }
 
+    /// Live volume change (0...15, the scale of the Sound settings slider); no reset, remembered in the INI.
+    func setVolume(_ level: Int) {
+        lock.lock()
+        settings.set("Configuration", "Sound Volume", level)
+        if settings.int("Configuration", "Sound Mode", 2) != 0 { cpc.pointee.cfg.volume = Float(level) / 15.0 }
+        lock.unlock()
+        saveSettings()
+    }
+
     func saveSettings() { settings.save(AppPaths.ini) }
 }
 

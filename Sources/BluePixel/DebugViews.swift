@@ -101,7 +101,7 @@ func paneCommand(for e: NSEvent) -> PaneCommand? {
 // MARK: - Disassembly pane
 final class DisasmView: NSView {
     var model: DebugModel!
-    var topAddr = 0 { didSet { topAddr &= 0xFFFF; needsDisplay = true } }
+    var topAddr = 0 { didSet { topAddr &= 0xFFFF; updateScroller(); needsDisplay = true } }
     var selected = -1
     var anchor: Int?                       // start of a dragged/shift-clicked range
     var onSelect: ((Int) -> Void)?
@@ -121,6 +121,37 @@ final class DisasmView: NSView {
     private var lines: [(addr: Int, len: Int, text: String, isLabel: Bool)] = []
     private var charWidth: CGFloat { ("0" as NSString).size(withAttributes: [.font: monoFont]).width }
     private let gutterWidth: CGFloat = 14
+
+    // Vertical scroller over the whole 64 KB address space (the knob position is the top address).
+    private let scroller = NSScroller(frame: NSRect(x: 0, y: 0, width: 15, height: 100))
+    override init(frame: NSRect) { super.init(frame: frame); setupScroller() }
+    required init?(coder: NSCoder) { super.init(coder: coder); setupScroller() }
+    private func setupScroller() {
+        scroller.scrollerStyle = .legacy; scroller.isEnabled = true
+        scroller.target = self; scroller.action = #selector(scrollerHit(_:))
+        addSubview(scroller); updateScroller()
+    }
+    override func layout() {
+        super.layout()
+        let w = NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy)
+        scroller.frame = NSRect(x: bounds.maxX - w - 1, y: 1, width: w, height: max(0, bounds.height - 2))
+        updateScroller()
+    }
+    private func updateScroller() {
+        scroller.doubleValue = Double(topAddr) / 65535
+        scroller.knobProportion = min(1, max(0.02, Double(rows * 3) / 65536))
+    }
+    @objc private func scrollerHit(_ s: NSScroller) {
+        followPC = false
+        switch s.hitPart {
+        case .knob, .knobSlot: topAddr = Int((s.doubleValue * 65535).rounded()); reload()
+        case .decrementPage: scrollLines(-(rows - 1))
+        case .incrementPage: scrollLines(rows - 1)
+        case .decrementLine: scrollLines(-1)
+        case .incrementLine: scrollLines(1)
+        default: break
+        }
+    }
 
     func reload() {
         let pc = model.pc

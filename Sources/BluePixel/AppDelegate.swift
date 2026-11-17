@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     var settings = Settings()
     var emu: Emulator!
+    private var gamepad: GamepadInput?
     var main: MainWindowController!
     var currentProfile = "CPC6128"
     var driveSetup: DriveSetupController!
@@ -42,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         }
         if let p = settings["BluePixel", "Profile"] { currentProfile = p }
         emu = Emulator(settings: settings)
+        gamepad = GamepadInput(emu: emu)
         main = MainWindowController(emulator: emu)
         transport = TransportController(emu: emu, main: main)
         transport.onTakeControl = { [weak self] in self?.stopPlayback(nil) }
@@ -270,6 +272,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         main.view.hideMouse = settings.bool("Configuration", "Hide Mouse" + sfx, true)
         if fs { NSApp.presentationOptions = settings.bool("Configuration", "Hide Menus FS", true) ? [.autoHideMenuBar, .autoHideDock] : [] }
     }
+    @objc func setVolume(_ s: NSMenuItem) { emu.setVolume(s.tag) }
     @objc func normalSpeed(_ s: Any?) { emu.speed = 1.0 }
     @objc func highSpeed(_ s: Any?) { emu.speed = 10.0 }
     /// F10, like the web build: the whole menu as a popup over the emulator window.
@@ -356,6 +359,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         if item.action == #selector(toggleControlServer(_:)) { item.state = controlServer == nil ? .off : .on; return !emu.isRecording && !emu.isReplaying && !emu.isSearching }
         if item.action == #selector(showControlServerInfo(_:)) { return controlServer != nil }
         if controlServer != nil && (item.action == #selector(recordSession(_:)) || item.action == #selector(playSession(_:))) { return false }
+        if item.action == #selector(setVolume(_:)) { item.state = emu.settings.int("Configuration", "Sound Volume", 15) == item.tag ? .on : .off }
         if item.action == #selector(amxMouse(_:)) { item.state = emu.amxEnabled ? .on : .off }
         if item.action == #selector(recordSession(_:)) { item.title = emu.isRecording ? "Stop Recording…" : "Record Session"; return !emu.isReplaying }
         if item.action == #selector(playSession(_:)) { return !emu.isRecording }
@@ -451,6 +455,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         let settingsMenu = submenu("Settings", [
             item("General…", #selector(showGeneral(_:)), fkey(12)), item("Display…", #selector(showDisplay(_:))), item("Sound…", #selector(showSound(_:))),
             item("Memory…", #selector(showMemory(_:))), item("Input…", #selector(showInput(_:))), item("Other…", #selector(showOther(_:))),
+            submenu("Volume", [("Mute", 0), ("25%", 4), ("50%", 8), ("75%", 11), ("100%", 15)].map { t, v in let i = item(t, #selector(setVolume(_:))); i.tag = v; return i }),
             profiles,
             submenu("Control Server", [item("Enable Local Control", #selector(toggleControlServer(_:))), item("Connection Info…", #selector(showControlServerInfo(_:)))]),
             .separator(),

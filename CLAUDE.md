@@ -217,6 +217,6 @@ Session record/playback is complete: core, File menu, transport bar (`Transport.
 ⌥F7, Step Back Over ⌥⌘F8, Reverse Continue ⌥F9, Run Back to Cursor ⌥F4, "Who Wrote/Read This?"), disc writes and markers (`CPC_MARK_TEXT`,
 stored in the `.cpcrec` and saved back when edited). Integrated Maxam-compatible assembler
 (menu item says "Not available yet"), disc/sector editor, Format Disc, Flip Disc, AVI/WAV/YM recording, Symbiface II (IDE/RTC/PS2 mouse), 4 MB Yarek RAM, printer, ZIP/RAR,
-tape CSV, DSC/HDR discs, gamepad joystick. Debugger ideas not built: DeZog/VS Code protocol, AY channel viewer.
+tape CSV, DSC/HDR discs. Debugger ideas not built: DeZog/VS Code protocol, AY channel viewer.
 The browser port is in `web/`: CPC 6128, bundled ROMs with automatic CPC 6128 startup, DSK, SNA, tape, keyboard, audio, disk export and debugger. Plus
 configuration and session tools are not available in the browser UI.
