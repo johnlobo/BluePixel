@@ -51,6 +51,8 @@ index.html?disk=../gamez/catdoku.dsk&sym=../gamez/catdoku.noi&run=run%22catdoku&
 | `run` | Teclea el texto y Return tras 150 frames de arranque. Máximo 200 caracteres, sin caracteres de control. |
 | `warp` | Frames que se ejecutan sin dibujar al arrancar (incluye los 150 de arranque), máximo 3000. |
 
+Con `embed=1` la página muestra solo la pantalla del CPC, ajustada a 4:3 dentro de la ventana, sin cabecera ni pie: es el modo para meterla en un `<iframe>`. Los menús (F10) y el depurador (F7) siguen disponibles.
+
 `disk` y `sym` se resuelven respecto a la página y solo se aceptan del mismo origen; una URL de otro sitio se rechaza y se indica en la barra de estado. Si un recurso falla, el resto se carga igual. Sin parámetros la página arranca como siempre. La lógica está en `autoload.js` y la prueba en `Tests/wasm/test_autoload.mjs`.
 
 ## Publishing

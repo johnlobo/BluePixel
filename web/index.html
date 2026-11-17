@@ -7,6 +7,10 @@
   <title>BluePixel CPC</title>
   <link rel="icon" type="image/png" href="icon.png">
   <link rel="stylesheet" href="style.css">
+  <script>
+    // ?embed=1: only the screen, filling the page (for an iframe). Set before the first paint.
+    if (new URLSearchParams(location.search).get("embed") === "1") document.documentElement.classList.add("embed");
+  </script>
 </head>
 <body>
   <main class="shell">
