@@ -33,6 +33,8 @@ jobs:
         run: node Tests/wasm/conformance.mjs --wasm web/bluepixel-capi.js
       - name: Exercise the browser adapter with the nave fixture
         run: node Tests/wasm/test_web_client.mjs
+      - name: Start the web build from URL parameters (disc, symbols, run)
+        run: node Tests/wasm/test_autoload.mjs
       - name: Compare native and WebAssembly with the pinned fixture ROMs
         env:
           BLUEPIXEL_ROM_DIR: ${{ github.workspace }}/web/roms

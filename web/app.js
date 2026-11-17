@@ -1,5 +1,6 @@
 import createBluePixelCore from "./bluepixel-capi.js";
 import { createBluePixelApi } from "./capi-rpc-client.js";
+import { parseLaunchParams, runAutoload } from "./autoload.js";
 
 const canvas = document.querySelector("#screen");
 const screenWrap = document.querySelector(".screen-wrap");
@@ -371,8 +372,47 @@ async function loadDefaultROMs() {
   runButton.textContent = "Pause";
   clearHintAfterFrame = true;
   status.textContent = results[2] ? "CPC 6128 ROM set loaded. Running." : "CPC 6128 is running without the optional disk ROM.";
+  await startFromUrl();
 }
 loadDefaultROMs();
+
+// ?disk=…&sym=…&run=…&warp=… (see web/README.md, "Carga por URL")
+async function startFromUrl() {
+  const params = parseLaunchParams(location.search, location.href);
+  if (!params.active && !params.errors.length) return;
+  const problems = [];
+  running = false;   // the animation loop must not run frames while the start-up sequence does
+  try {
+    const summary = await runAutoload(params, {
+      async fetchBytes(url) {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`${url.pathname}: HTTP ${response.status}`);
+        return new Uint8Array(await response.arrayBuffer());
+      },
+      insertDisk(bytes, name) {
+        if (!transfer(bytes, (ptr, size) => core.loadDisc(0, ptr, size, name))) return false;
+        currentDiskNames[0] = name;
+        saveDiskButtons[0].disabled = false;
+        return true;
+      },
+      loadSymbols: bytes => transfer(bytes, (ptr, size) => core.loadSymbols(ptr, size)),
+      runFrames(count) { for (let i = 0; i < count; i++) core.runFrame(); if (count) drawFrame(); },
+      typeText: text => transfer(new TextEncoder().encode(text + "\0"), ptr => core.typeText(ptr)),
+      report: message => problems.push(message),
+    });
+    const parts = [];
+    if (summary.disk) parts.push(`${currentDiskNames[0]} in drive A`);
+    if (summary.symbols) parts.push(`${summary.symbols} symbols`);
+    if (summary.typed) parts.push(`typed ${params.run}`);
+    status.textContent = problems.length ? `URL start-up: ${problems.join("; ")}` : `URL start-up: ${parts.join(", ")}.`;
+  } catch (error) {
+    status.textContent = `URL start-up failed: ${error.message}`;
+  } finally {
+    running = true;
+    lastTime = 0;
+    frameDebt = 0;
+  }
+}
 
 [0, 1].forEach(drive => {
   const input = document.querySelector(drive === 0 ? "#disk-a" : "#disk-b");
