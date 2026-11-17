@@ -39,22 +39,24 @@ idéntico al actual (GitHub Pages no cambia).
 | `disk` | `../gamez/catdoku.dsk` | `fetch` + `core.loadDisc(0, …)` (unidad A) |
 | `sym` | `../gamez/catdoku.noi` | `fetch`, parseo, `setSymbol()` por símbolo |
 | `run` | `run"catdoku` | `core.typeText(run + "\n")` |
-| `warp` | `1000` | ejecuta N frames con `core.runFrame()` sin dibujar, máx. 3000 |
+| `warp` | `1000` | ejecuta N frames con `core.runFrame()` sin dibujar, máx. 3000 (incluye el arranque) |
 
-Orden, tras `loadDefaultROMs()` con éxito: disco, símbolos, warp de arranque (100 frames
-para que el CPC llegue a `Ready`), `typeText`, resto del warp.
+Orden, tras `loadDefaultROMs()` con éxito: disco, símbolos, warp de arranque (150 frames,
+el mismo valor que `test_web_client.mjs`), `typeText`, resto del warp.
 
 - Rutas resueltas con `new URL(valor, location.href)`; se rechaza todo origen distinto
   de `location.origin` (mensaje en `status`, no se carga nada).
-- Parser de símbolos: `.noi` (`DEF nombre 0xADDR`) y `.map` de SDCC (columna de
-  dirección de 8 dígitos hex), mismas reglas que el nativo: se omiten `s__*`, `l__*`,
-  `.__.`. Va en un módulo aparte (`web/symbols.js`) para probarlo en Node.
+- Símbolos: se usa el método `symbols.load` del core (`dbg_symbols_parse`, el mismo parser
+  que la app nativa: `.noi`, `.map` de SDCC, RASM, sjasmplus), expuesto como
+  `loadSymbols` en `capi-rpc-client.js`. No hay parser en JS.
+- La lógica (parámetros, validación de origen, orden de arranque) va en `web/autoload.js`,
+  sin DOM ni core, para probarla en Node.
 - Errores de red o formato: mensaje en `status` y en el `hint`; el emulador sigue
   arrancado sin ese recurso.
 - Docs: sección "Carga por URL" en `web/README.md`.
 
-Tests: `Tests/wasm/` (Node) para `symbols.js` (noi, map, prefijos omitidos, líneas
-basura) y para la validación de origen.
+Tests: `Tests/wasm/test_autoload.mjs` (Node): parámetros, validación de origen, orden con
+fakes y arranque real de nave con símbolos contra el core wasm. Paso añadido a CI.
 
 ## Pieza 2: `cpc-publish` (`/config/workspace/tools/cpc-publish`)
 
@@ -72,7 +74,7 @@ cpc-publish <id> <dsk> [--sym FICHERO.noi] [--run 'run"x'] [--title T] [--warp N
   si no, añade una entrada mínima (`title` o `<id>`, `genre: 'Dev build'`).
   La edición es textual sobre el bloque del objeto con ese `id`; si el fichero no se
   puede parsear con seguridad, no escribe y lo dice.
-- `--sync-emulator`: copia `BluePixel/web/{index.html,app.js,symbols.js,*.css,
+- `--sync-emulator`: copia `BluePixel/web/{index.html,app.js,autoload.js,*.css,
   debugger*,bluepixel-capi.*,roms/}` a `<www>/bluepixel/`.
 - Imprime la URL directa:
   `bluepixel/?disk=../gamez/<id>.dsk&sym=../gamez/<id>.noi&run=…&warp=…`.

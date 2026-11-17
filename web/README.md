@@ -36,6 +36,23 @@ tools/build-web.sh
 
 The web UI is intentionally separate from the macOS AppKit frontend. Session recording/replay, cartridges, and Plus-specific configuration are not part of this browser version.
 
+## Carga por URL
+
+La página acepta parámetros para arrancar un juego sin pasar por los menús:
+
+```
+index.html?disk=../gamez/catdoku.dsk&sym=../gamez/catdoku.noi&run=run%22catdoku&warp=1000
+```
+
+| Parámetro | Efecto |
+|---|---|
+| `disk` | Inserta el DSK en la unidad A. |
+| `sym` | Carga símbolos `.noi` o `.map` de SDCC (los mismos formatos que la app nativa; se omiten `s__*`, `l__*`, `.__.`). Se ven en el depurador (F7). |
+| `run` | Teclea el texto y Return tras 150 frames de arranque. Máximo 200 caracteres, sin caracteres de control. |
+| `warp` | Frames que se ejecutan sin dibujar al arrancar (incluye los 150 de arranque), máximo 3000. |
+
+`disk` y `sym` se resuelven respecto a la página y solo se aceptan del mismo origen; una URL de otro sitio se rechaza y se indica en la barra de estado. Si un recurso falla, el resto se carga igual. Sin parámetros la página arranca como siempre. La lógica está en `autoload.js` y la prueba en `Tests/wasm/test_autoload.mjs`.
+
 ## Publishing
 
 The repository includes a GitHub Pages workflow at `.github/workflows/deploy-pages.yml`. It deploys the precompiled contents of `web/` on every push to `main`; it can also be run manually from the Actions tab. Emscripten is not needed for deployment.

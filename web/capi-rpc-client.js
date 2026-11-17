@@ -73,6 +73,7 @@ export async function createBluePixelApi(createModule) {
       return discExportPtr;
     },
     releaseDiscExport() { if (discExportPtr) wasm._free(discExportPtr); discExportPtr = 0; },
+    loadSymbols(ptr, size) { return rpc("symbols.load", { data_base64: toBase64(fromHeap(ptr, size)) }).loaded; },
     loadSnapshot(ptr, size) { return rpc("snapshot.load", { data_base64: toBase64(fromHeap(ptr, size)) }); },
     saveSnapshot(sizePtr) { return copyOut(fromBase64(rpc("snapshot.save").data_base64), sizePtr); },
     freeBuffer(ptr) { wasm._free(ptr); },
