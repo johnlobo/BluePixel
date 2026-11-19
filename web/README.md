@@ -68,6 +68,26 @@ Con `embed=1` la página muestra solo la pantalla del CPC, ajustada a 4:3 dentro
 
 `disk` y `sym` se resuelven respecto a la página y solo se aceptan del mismo origen; una URL de otro sitio se rechaza y se indica en la barra de estado. Si un recurso falla, el resto se carga igual. Sin parámetros la página arranca como siempre. La lógica está en `autoload.js` y la prueba en `Tests/wasm/test_autoload.mjs`.
 
+## Ficheros guardados en el navegador
+
+Un disco cargado con `?disk=` conserva lo que el programa escribe en él (partidas guardadas, récords, opciones) entre visitas, sin descargar el disco.
+
+- **Qué se guarda.** Cada 2 segundos la página exporta el disco de la unidad A. Cuando ha cambiado y sigue igual en la comprobación siguiente (el programa terminó de escribir), compara sus ficheros con los del disco publicado y guarda en IndexedDB los nuevos o modificados. No se guarda el disco entero.
+- **Cuándo vuelve.** En la siguiente visita, la página baja el disco publicado, le escribe esos ficheros y lo inserta. La barra de estado lo indica: `restored CATDOKU.SAV`.
+- **Versiones nuevas del juego.** Como solo se guardan los ficheros escritos, una versión nueva del disco publicado carga con los ficheros guardados de la anterior.
+- **Clave.** La ruta del disco sin parámetros: `../gamez/catdoku.dsk?v=123` y `../gamez/catdoku.dsk` comparten los mismos ficheros guardados.
+- **Empezar de cero.** Menú (F10) > File > Drive A: > Forget Saved Files, y recargar la página.
+
+Límites:
+
+- Solo discos en formato DATA de AMSDOS (9 sectores de 512 bytes, `C1`..`C9`). En otros formatos no se guarda nada y el disco carga como siempre.
+- Un fichero del disco publicado que el programa borra vuelve a aparecer en la siguiente visita (se guarda lo nuevo o cambiado, no los borrados). Un fichero creado por el programa y luego borrado sí desaparece.
+- Los ficheros quedan en este navegador; otro navegador u otro equipo no los ve. Borrar los datos del sitio los elimina.
+- Si un fichero guardado no cabe en el disco publicado, se avisa en la barra de estado y se carga el resto.
+- Un disco insertado a mano (F1) no se vigila.
+
+El formato de disco está en `amsdos.js` (listar, leer, escribir y borrar ficheros dentro de un DSK, estándar o extendido) y la lógica de guardado en `persist.js`. Pruebas: `Tests/wasm/test_amsdos.mjs` comprueba los ficheros contra la ROM AMSDOS real (el CPC lee un fichero escrito por `amsdos.js` y `amsdos.js` lee uno grabado con `SAVE`); `Tests/wasm/test_persist.mjs` cubre qué ficheros se guardan, cuándo y cómo vuelven a un disco nuevo.
+
 ## Publishing
 
 The repository includes a GitHub Pages workflow at `.github/workflows/deploy-pages.yml`. It deploys the precompiled contents of `web/` on every push to `main`; it can also be run manually from the Actions tab. Emscripten is not needed for deployment.

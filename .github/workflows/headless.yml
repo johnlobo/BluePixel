@@ -35,6 +35,10 @@ jobs:
         run: node Tests/wasm/test_web_client.mjs
       - name: Start the web build from URL parameters (disc, symbols, run)
         run: node Tests/wasm/test_autoload.mjs
+      - name: Read and write AMSDOS files in DSK images (checked against the real AMSDOS ROM)
+        run: node Tests/wasm/test_amsdos.mjs
+      - name: Keep the files a program writes, for discs loaded by URL
+        run: node Tests/wasm/test_persist.mjs
       - name: Find Graphics in the web debugger (decoding, addresses, palette)
         run: node Tests/wasm/test_graphics_viewer.mjs
       - name: Compare native and WebAssembly with the pinned fixture ROMs
