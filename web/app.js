@@ -1,5 +1,7 @@
 import createBluePixelCore from "./bluepixel-capi.js";
 import { createBluePixelApi } from "./capi-rpc-client.js";
+import { AmsdosDisc } from "./amsdos.js";
+import { applySavedFiles, createDiscWatcher, discKey, openFileStore } from "./persist.js";
 import { parseLaunchParams, runAutoload } from "./autoload.js";
 
 const canvas = document.querySelector("#screen");
@@ -97,6 +99,7 @@ function menuGroups() {
       ...[0, 1].map(drive => menuBranch(`Drive ${drive === 0 ? "A" : "B"}:`, [
         menuItem("Insert Disc Image…", () => diskInputs[drive].click()),
         menuItem("Download Changed Disc…", () => saveDiskButtons[drive].click(), { disabled: saveDiskButtons[drive].disabled }),
+        ...(drive === 0 ? [menuItem("Forget Saved Files", forgetSavedFiles, { disabled: !savedDisc })] : []),
       ])),
       menuBranch("Tape", [
         menuItem("Insert Tape…", () => tapeInput.click()),
@@ -391,6 +394,8 @@ async function startFromUrl() {
   const params = parseLaunchParams(location.search, location.href);
   if (!params.active && !params.errors.length) return;
   const problems = [];
+  let pending = null;   // saved-files set-up for the disc, until it is in the drive
+  let restored = [];
   running = false;   // the animation loop must not run frames while the start-up sequence does
   try {
     const summary = await runAutoload(params, {
@@ -399,10 +404,25 @@ async function startFromUrl() {
         if (!response.ok) throw new Error(`${url.pathname}: HTTP ${response.status}`);
         return new Uint8Array(await response.arrayBuffer());
       },
+      async prepareDisk(bytes, url) {
+        let originalFiles;
+        try { originalFiles = new AmsdosDisc(bytes).files(); }
+        catch { return bytes; }   // not a DATA disc: no saved files for it
+        const key = discKey(url);
+        let saved = [];
+        try { saved = await fileStore.get(key); }
+        catch (error) { problems.push(`saved files: ${error.message}`); }
+        const result = applySavedFiles(bytes, saved);
+        for (const message of result.errors) problems.push(`saved files: ${message}`);
+        restored = result.applied;
+        pending = { key, originalFiles };
+        return result.image;
+      },
       insertDisk(bytes, name) {
         if (!transfer(bytes, (ptr, size) => core.loadDisc(0, ptr, size, name))) return false;
         currentDiskNames[0] = name;
         saveDiskButtons[0].disabled = false;
+        if (pending) watchSavedFiles(pending.key, pending.originalFiles, bytes);
         return true;
       },
       loadSymbols: bytes => transfer(bytes, (ptr, size) => core.loadSymbols(ptr, size)),
@@ -413,6 +433,7 @@ async function startFromUrl() {
     const parts = [];
     if (summary.disk) parts.push(`${currentDiskNames[0]} in drive A`);
     if (summary.symbols) parts.push(`${summary.symbols} symbols`);
+    if (restored.length) parts.push(`restored ${restored.join(", ")}`);
     if (summary.typed) parts.push(`typed ${params.run}`);
     status.textContent = problems.length ? `URL start-up: ${problems.join("; ")}` : `URL start-up: ${parts.join(", ")}.`;
     if (problems.length) {
@@ -444,6 +465,7 @@ async function startFromUrl() {
       }
       currentDiskNames[drive] = file.name;
       saveDiskButtons[drive].disabled = false;
+      if (drive === 0) stopSavedFiles();
       status.textContent = `${file.name} inserted in drive ${drive === 0 ? "A" : "B"}.`;
     } catch (error) {
       status.textContent = `Disk error: ${error.message}`;
@@ -797,6 +819,57 @@ typeButton.addEventListener("click", () => {
   input.value = "";
   canvas.focus();
 });
+
+// Disc image of a drive as a Uint8Array, or null when the drive is empty.
+function exportDiscBytes(drive) {
+  const sizePtr = core._malloc(4);
+  try {
+    core.HEAPU32[sizePtr >> 2] = 0;
+    const dataPtr = core.exportDisc(drive, sizePtr);
+    const size = core.HEAPU32[sizePtr >> 2];
+    return dataPtr && size ? core.HEAPU8.slice(dataPtr, dataPtr + size) : null;
+  } finally {
+    core.releaseDiscExport();
+    core._free(sizePtr);
+  }
+}
+
+// Saved files (web/persist.js): a disc loaded by URL is checked every SAVED_FILES_POLL_MS, and the
+// files the program wrote are kept in this browser for the next visit.
+const SAVED_FILES_POLL_MS = 2000;
+const fileStore = openFileStore();
+let savedDisc = null;   // { key, watcher, timer } while drive A holds a disc loaded by URL
+
+function watchSavedFiles(key, originalFiles, image) {
+  stopSavedFiles();
+  const watcher = createDiscWatcher({
+    key, originalFiles, store: fileStore,
+    exportDisc: () => exportDiscBytes(0),
+    report: message => { status.textContent = `Drive A: ${message}.`; },
+  });
+  watcher.start(image);
+  const timer = setInterval(() => {
+    watcher.poll().catch(error => { status.textContent = `Saved files: ${error.message}`; });
+  }, SAVED_FILES_POLL_MS);
+  savedDisc = { key, watcher, timer };
+}
+
+function stopSavedFiles() {
+  if (savedDisc) clearInterval(savedDisc.timer);
+  savedDisc = null;
+}
+
+async function forgetSavedFiles() {
+  if (!savedDisc) return;
+  const { key } = savedDisc;
+  stopSavedFiles();   // otherwise the next write would store the files again
+  try {
+    await fileStore.delete(key);
+    status.textContent = "Saved files forgotten. Reload the page to start from the published disc.";
+  } catch (error) {
+    status.textContent = `Could not forget saved files: ${error.message}`;
+  }
+}
 
 function downloadDisc(drive) {
   const sizePtr = core._malloc(4);

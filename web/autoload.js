@@ -53,6 +53,8 @@ function fileName(url) {
 
 // io: fetchBytes(url) -> Uint8Array, insertDisk(bytes, name) -> boolean, loadSymbols(bytes) -> count,
 //     runFrames(count), typeText(text), report(message).
+//     Optional: prepareDisk(bytes, url) -> Uint8Array (async), to change the disc before it goes in
+//     (web/persist.js puts the saved files back there).
 // Order: disc, symbols, boot frames, typed command, rest of the warp. A failing resource is reported
 // and skipped; the machine keeps running without it.
 export async function runAutoload(params, io) {
@@ -61,7 +63,8 @@ export async function runAutoload(params, io) {
 
   if (params.disk) {
     try {
-      const bytes = await io.fetchBytes(params.disk);
+      let bytes = await io.fetchBytes(params.disk);
+      if (io.prepareDisk) bytes = await io.prepareDisk(bytes, params.disk);
       if (!io.insertDisk(bytes, fileName(params.disk))) throw new Error("not a supported DSK image");
       summary.disk = true;
     } catch (error) { summary.errors.push(`disk: ${error.message}`); io.report(`disk: ${error.message}`); }
