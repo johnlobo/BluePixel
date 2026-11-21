@@ -25,7 +25,7 @@ final class Emulator {
     private let frameLock = NSLock()
     private(set) var rendered = [UInt32](repeating: 0, count: 768 * 540)
     private(set) var renderedSize = (w: 768, h: 540)
-    var renderPAL = true, renderBoth = true, halfSize = false, brightness = 0
+    var scanlinesLevel = 1, halfSize = false, brightness = 0
     /// What the display shows while paused in the debugger.
     enum ScreenView: Int { case normal, raster, videoMemory }
     var screenView = ScreenView.normal { didSet { if paused { publish() } } }
@@ -121,8 +121,14 @@ final class Emulator {
         cfg.multiface = settings.bool("ROMS", "Multiface Enabled", true)
         cpc_configure(cpc, &cfg)
         cpc.pointee.amx_enabled = settings.bool("Configuration", "AMX Mouse Enabled", false)
-        renderPAL = settings.bool("Configuration", "PAL Emulation", true)
-        renderBoth = settings.bool("Configuration", "Render Both", true)
+        // Migrate legacy PAL/Render Both keys into the new 3-level Scanlines setting.
+        if settings["Configuration", "Scanlines"] == nil {
+            let pal = settings.bool("Configuration", "PAL Emulation", true)
+            let both = settings.bool("Configuration", "Render Both", true)
+            let level = both ? (pal ? 1 : 0) : 2
+            settings.set("Configuration", "Scanlines", level)
+        }
+        scanlinesLevel = settings.int("Configuration", "Scanlines", 1)
         halfSize = settings.bool("Configuration", "Half Size", false)
         brightness = settings.int("Configuration", "Monitor Brightness", 0)
         let skip = settings.int("Configuration", "Refresh Rate", 0)
@@ -253,7 +259,13 @@ final class Emulator {
             lock.unlock()
         }
         rendered.withUnsafeMutableBufferPointer { dst in
-            if view == .normal { cpc_render(picture ?? cpc_frame(cpc), dst.baseAddress, renderPAL, renderBoth, half, Int32(brightness)) }
+            let pal: Bool, both: Bool
+            switch scanlinesLevel {
+            case 0: pal = false; both = true
+            case 2: pal = false; both = false
+            default: pal = true; both = true
+            }
+            if view == .normal { cpc_render(picture ?? cpc_frame(cpc), dst.baseAddress, pal, both, half, Int32(brightness)) }
             else { viewBuffer.withUnsafeBufferPointer { cpc_render($0.baseAddress, dst.baseAddress, false, true, half, 0) } }
         }
         renderedSize = half ? (384, 270) : (768, 540)

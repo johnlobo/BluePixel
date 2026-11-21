@@ -22,8 +22,8 @@ WPF profiles (INI), KBD keyboard maps, POK pokes, symbol files, Auto-Type files,
 ## UI
 Main window (control panel: run/step/step-over/pause/registers/assembler/disc/cart/tape/snap load/save;
 status: settings, pokes, fullscreen, help, drive LEDs, track numbers, playback timer), menus File/Settings/Debug/
-Assembler/Help, right-click menu, full screen (separate options), half size, render-both-lines, stretch, PAL
-emulation, linear palette, colour/green/grey monitor, brightness, V-hold, speed 5%-1000%, frame skip.
+Assembler/Help, right-click menu, full screen (separate options), compact display (384x270), scanlines (Off/Soft/Hard), stretch, PAL
+blend, linear palette, colour/green/grey monitor, brightness, V-hold, speed 5%-1000%, frame skip.
 Settings tabs: General, Display, Sound, Memory(ROMs), Input (key map 3 keys x NumLock states, joystick), Other.
 
 ## Debugger
