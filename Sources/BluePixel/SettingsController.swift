@@ -100,12 +100,12 @@ final class SettingsController: NSObject, NSWindowDelegate {
         let vhold = slider(-20, 20, "Configuration", "VHOLD Position", 0), bright = slider(-50, 50, "Configuration", "Monitor Brightness", 0)
         vhold.widthAnchor.constraint(equalToConstant: 160).isActive = true; bright.widthAnchor.constraint(equalToConstant: 160).isActive = true
         func winOpts(_ suffix: String, _ title: String) -> NSView {
-            group(title, [check("Half Size Display", "Configuration", "Half Size" + suffix, false), check("Render both lines", "Configuration", "Render Both" + suffix, true),
+            group(title, [check("Compact display (384x270)", "Configuration", "Half Size" + suffix, false),
                           check("Hide Mouse Pointer", "Configuration", "Hide Mouse" + suffix, suffix.isEmpty ? true : true), check("Hide Control Panel", "Configuration", "Hide Panel" + suffix, false),
                           check("Hide Menus", "Configuration", "Hide Menus" + suffix, false), check("No Right-Click Menu", "Configuration", "No Right Click" + suffix, false)])
         }
         let displayCol1 = column([group("Monitor", [row([makeLabel("Type"), monitor]), row([makeLabel("V Hold"), vhold]), row([makeLabel("Brightness"), bright])]),
-                                  group("Rendering", [check("PAL Emulation", "Configuration", "PAL Emulation", true), check("Linear Palette", "Configuration", "Linear Palette", false),
+                                  group("Rendering", [row([makeLabel("Scanlines"), popup(["Off", "Soft (PAL)", "Hard"], "Configuration", "Scanlines", 1)]), check("Linear Palette", "Configuration", "Linear Palette", false),
                                                       check("On-Screen Drive LED", "Configuration", "On Screen Drive LED", false), check("Show Drive Cylinders", "Configuration", "Show Track", false)])])
         let displayRow = row([displayCol1, winOpts("", "Windowed"), winOpts(" FS", "Full Screen")]); displayRow.alignment = .top
         tab("Display", displayRow)
