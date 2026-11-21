@@ -9,6 +9,7 @@ export async function createBluePixelApi(createModule) {
   const textDecoder = new TextDecoder();
   let discExportPtr = 0;
   let destroyed = false;
+  let scanlinesLevel = 1;
   function rpc(method, params = {}) {
     const request = JSON.stringify({ jsonrpc: "2.0", id: ++requestId, method, params });
     const size = wasm.lengthBytesUTF8(request) + 1;
@@ -87,11 +88,14 @@ export async function createBluePixelApi(createModule) {
     runFrame() { return rpc("run.frames", { count: 1 }).break; },
     reset() { return rpc("machine.reset"); },
     setMonitor(monitor) { return rpc("display.set_monitor", { monitor }); },
+    setScanlines(level) { scanlinesLevel = level; },
     typeText(ptr) { return rpc("input.text", { text: fromStringPtr(ptr) }); },
     key(key, down) { return rpc("input.key", { key, down: Boolean(down) }); },
     joystick(bit, down) { return rpc("input.joystick", { bit, down: Boolean(down) }); },
     renderFrame() {
-      const rendered = rpc("screen.render");
+      const pal = scanlinesLevel === 1;
+      const scanlines = scanlinesLevel !== 2;
+      const rendered = rpc("screen.render", { pal, scanlines, half_size: false, brightness: 0 });
       const rgba = fromBase64(rendered.data_base64);
       const ptr = wasm._malloc(rgba.length);
       if (!ptr) return 0;

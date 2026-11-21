@@ -41,6 +41,8 @@ let displayMonitor = Number(readPreference("monitor", "0"));
 if (![0, 1, 2].includes(displayMonitor)) displayMonitor = 0;
 let displayWidth = Number(readPreference("screen-width", "720"));
 if (![540, 720, 960].includes(displayWidth)) displayWidth = 720;
+let displayScanlines = Number(readPreference("scanlines", "1"));
+if (![0, 1, 2].includes(displayScanlines)) displayScanlines = 1;
 let emulationSpeed = Number(readPreference("speed", "1"));
 if (![0.5, 1, 2, 5].includes(emulationSpeed)) emulationSpeed = 1;
 // Touch joystick: on by default only where touch is the main input (phones, tablets). A laptop with a
@@ -124,6 +126,9 @@ function menuGroups() {
       menuBranch("Display", [
         menuBranch("Monitor", [
           ...["Colour", "Green", "Greyscale"].map((name, mode) => menuItem(`${name}${displayMonitor === mode ? "  ✓" : ""}`, () => setMonitorMode(mode))),
+        ]),
+        menuBranch("Scanlines", [
+          ...["Off", "Soft (PAL)", "Hard"].map((name, level) => menuItem(`${name}${displayScanlines === level ? "  ✓" : ""}`, () => setScanlinesLevel(level))),
         ]),
         menuBranch("Screen Size", [
           ...[[540, "Small"], [720, "Medium"], [960, "Large"]].map(([width, name]) => menuItem(`${name}${displayWidth === width ? "  ✓" : ""}`, () => setDisplaySize(width))),
@@ -295,6 +300,7 @@ try {
   core = await createBluePixelApi(createBluePixelCore);
   if (!core.initialize()) throw new Error("Could not allocate the CPC machine.");
   core.setMonitor(displayMonitor);
+  core.setScanlines(displayScanlines);
   screenWrap.style.maxWidth = `${displayWidth}px`;
   try { initializeAudioGraph(); }
   catch (error) { soundEnabled = false; soundButton.textContent = "Sound Off"; console.warn(error.message); }
@@ -743,6 +749,14 @@ function setMonitorMode(mode) {
   core.setMonitor(mode);
   writePreference("monitor", mode);
   status.textContent = `Monitor set to ${["colour", "green", "greyscale"][mode]}.`;
+  drawFrame();
+}
+
+function setScanlinesLevel(level) {
+  displayScanlines = level;
+  core.setScanlines(level);
+  writePreference("scanlines", level);
+  status.textContent = `Scanlines set to ${["Off", "Soft (PAL)", "Hard"][level]}.`;
   drawFrame();
 }
 
