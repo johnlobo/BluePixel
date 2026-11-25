@@ -13,7 +13,9 @@
 #include <mach-o/dyld.h>
 #endif
 
-#define BLUEPIXEL_VERSION "0.3.0"
+#ifndef BLUEPIXEL_VERSION
+#define BLUEPIXEL_VERSION "unknown" /* tools/build-headless.sh passes it from VERSION */
+#endif
 static volatile sig_atomic_t stopping;
 
 static void stop_signal(int sig) {

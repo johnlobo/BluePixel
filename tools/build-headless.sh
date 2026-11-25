@@ -2,9 +2,10 @@
 set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 OUT="${1:-$ROOT/build/bluepixel-headless}"
+VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 CC="${CC:-cc}"
 CFLAGS="${CFLAGS:--O2}"
 mkdir -p "$(dirname "$OUT")"
 set -- "$ROOT"/Sources/CPCCore/*.c
-"$CC" -std=gnu11 -D_DEFAULT_SOURCE $CFLAGS -DNDEBUG -pthread -I"$ROOT/Sources/CPCCore/include" -I"$ROOT/Sources/CPCApi/include" -I"$ROOT/Sources/CPCApi" -I"$ROOT/Sources/CPCServer/include" -I"$ROOT/Sources/CPCHost/include" "$@" "$ROOT/Sources/CPCApi/api.c" "$ROOT/Sources/CPCApi/api_util.c" "$ROOT/Sources/CPCApi/api_media.c" "$ROOT/Sources/CPCApi/api_debug.c" "$ROOT/Sources/CPCServer/stdio.c" "$ROOT/Sources/CPCServer/network.c" "$ROOT/Sources/CPCHost/host_files.c" "$ROOT/Sources/CPCHost/rom_files.c" "$ROOT/Sources/CPCHost/sha256.c" "$ROOT/Sources/bluepixel-headless/main.c" -lz ${LDFLAGS:-} -o "$OUT"
+"$CC" -std=gnu11 -D_DEFAULT_SOURCE $CFLAGS -DNDEBUG "-DBLUEPIXEL_VERSION=\"$VERSION\"" -pthread -I"$ROOT/Sources/CPCCore/include" -I"$ROOT/Sources/CPCApi/include" -I"$ROOT/Sources/CPCApi" -I"$ROOT/Sources/CPCServer/include" -I"$ROOT/Sources/CPCHost/include" "$@" "$ROOT/Sources/CPCApi/api.c" "$ROOT/Sources/CPCApi/api_util.c" "$ROOT/Sources/CPCApi/api_media.c" "$ROOT/Sources/CPCApi/api_debug.c" "$ROOT/Sources/CPCServer/stdio.c" "$ROOT/Sources/CPCServer/network.c" "$ROOT/Sources/CPCHost/host_files.c" "$ROOT/Sources/CPCHost/rom_files.c" "$ROOT/Sources/CPCHost/sha256.c" "$ROOT/Sources/bluepixel-headless/main.c" -lz ${LDFLAGS:-} -o "$OUT"
 printf 'Built %s\n' "$OUT"

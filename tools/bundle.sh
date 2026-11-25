@@ -2,6 +2,7 @@
 # Builds BluePixel.app into ./build
 set -e
 cd "$(dirname "$0")/.."
+VERSION="$(tr -d '[:space:]' < VERSION)"
 swift build -c release --product BluePixel
 APP=build/BluePixel.app
 rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -23,7 +24,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <key>CFBundleExecutable</key><string>BluePixel</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.2.4</string>
+<key>CFBundleShortVersionString</key><string>$VERSION</string>
 <key>CFBundleVersion</key><string>6</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>NSHighResolutionCapable</key><true/>
